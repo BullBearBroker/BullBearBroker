@@ -1,0 +1,21 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Python
+__pycache__/
+*.pyc
+venv/
+
+# Node.js
+node_modules/
+npm-debug.log*
+
+# Environments
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
