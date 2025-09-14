@@ -3,10 +3,115 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BullBearBroker - Asistente Financiero</title>
+    <title>BullBearBroker - Asistente Financiero Inteligente</title>
+    <link rel="stylesheet" href="css/style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
 <body>
-    <h1>🚀 BullBearBroker - Próximamente</h1>
-    <p>Tu asistente de IA para mercados financieros</p>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h2><i class="fas fa-chart-line"></i> BullBearBroker</h2>
+            </div>
+            
+            <div class="market-section">
+                <h3><i class="fas fa-fire"></i> Top Performers</h3>
+                <div class="ticker-list" id="topTickers">
+                    <div class="ticker-item">
+                        <span class="ticker-symbol">BTC</span>
+                        <span class="ticker-price positive">+2.5%</span>
+                    </div>
+                    <div class="ticker-item">
+                        <span class="ticker-symbol">ETH</span>
+                        <span class="ticker-price positive">+1.8%</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="market-section">
+                <h3><i class="fas fa-arrow-down"></i> Worst Performers</h3>
+                <div class="ticker-list" id="worstTickers">
+                    <div class="ticker-item">
+                        <span class="ticker-symbol">TSLA</span>
+                        <span class="ticker-price negative">-0.8%</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="quick-actions">
+                <h3><i class="fas fa-bolt"></i> Acciones Rápidas</h3>
+                <button class="quick-btn" onclick="askQuestion('Analiza el mercado de Bitcoin')">
+                    <i class="fab fa-bitcoin"></i> Análisis BTC
+                </button>
+                <button class="quick-btn" onclick="askQuestion('Qué acciones recomiendas hoy?')">
+                    <i class="fas fa-chart-bar"></i> Stocks Recomendados
+                </button>
+                <button class="quick-btn" onclick="askQuestion('Mostrar estrategias conservadoras')">
+                    <i class="fas fa-shield-alt"></i> Estrategias
+                </button>
+            </div>
+        </div>
+
+        <!-- Main Chat Area -->
+        <div class="main-content">
+            <div class="chat-header">
+                <div class="header-info">
+                    <h1><i class="fas fa-robot"></i> Asistente Financiero</h1>
+                    <p>Conectado a mercados en tiempo real</p>
+                </div>
+                <div class="header-actions">
+                    <button class="action-btn" onclick="clearChat()">
+                        <i class="fas fa-trash"></i> Limpiar
+                    </button>
+                    <button class="action-btn" onclick="exportChat()">
+                        <i class="fas fa-download"></i> Exportar
+                    </button>
+                </div>
+            </div>
+
+            <div class="chat-messages" id="chatMessages">
+                <div class="message ai-message">
+                    <div class="message-icon">🤖</div>
+                    <div class="message-content">
+                        <div class="message-sender">BullBearBroker AI</div>
+                        <div class="message-text">
+                            ¡Hola! Soy tu asistente especializado en mercados financieros. 
+                            Puedo ayudarte con análisis de acciones, criptomonedas, forex y más.
+                            ¿En qué te puedo ayudar hoy?
+                        </div>
+                        <div class="message-time">Justo ahora</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="chat-input-container">
+                <div class="input-actions">
+                    <button class="input-btn" onclick="addQuickQuestion('Precio de Bitcoin')">
+                        <i class="fab fa-bitcoin"></i>
+                    </button>
+                    <button class="input-btn" onclick="addQuickQuestion('Análisis del S&P 500')">
+                        <i class="fas fa-chart-line"></i>
+                    </button>
+                    <button class="input-btn" onclick="addQuickQuestion('Noticias de mercado')">
+                        <i class="fas fa-newspaper"></i>
+                    </button>
+                </div>
+                <div class="input-wrapper">
+                    <textarea 
+                        id="messageInput" 
+                        placeholder="Escribe tu pregunta sobre mercados financieros..."
+                        rows="1"
+                    ></textarea>
+                    <button class="send-button" onclick="sendMessage()">
+                        <i class="fas fa-paper-plane"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/market-data.js"></script>
+    <script src="js/chat.js"></script>
 </body>
 </html>
