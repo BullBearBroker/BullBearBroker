@@ -39,11 +39,37 @@ class ChatManager {
         input.value = '';
         this.autoResize();
 
-        // Simular respuesta de la IA
-        setTimeout(() => {
-            const response = this.generateAIResponse(message);
+        try {
+            // Intentar obtener respuesta del backend
+            const response = await this.fetchAIResponse(message);
             this.addMessage(response, 'ai');
-        }, 1000 + Math.random() * 1000);
+        } catch (error) {
+            console.log('Using local AI response:', error);
+            // Fallback a respuesta local
+            const localResponse = this.generateAIResponse(message);
+            this.addMessage(localResponse, 'ai');
+        }
+    }
+
+    async fetchAIResponse(message) {
+        try {
+            const response = await fetch('http://localhost:8000/api/chat/message', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ message })
+            });
+
+            if (!response.ok) {
+                throw new Error('API response not OK');
+            }
+
+            const data = await response.json();
+            return data.response;
+        } catch (error) {
+            throw new Error('Failed to fetch AI response');
+        }
     }
 
     addMessage(text, sender) {
@@ -112,35 +138,67 @@ class ChatManager {
     generateAIResponse(userMessage) {
         const lowerMessage = userMessage.toLowerCase();
         
+        // Patrones para detectar consultas de precio
+        const pricePatterns = [
+            /precio de (\w+)/i,
+            /valor de (\w+)/i,
+            /cuánto vale (\w+)/i,
+            /price of (\w+)/i,
+            /cotización de (\w+)/i
+        ];
+    
+        // Verificar si es consulta de precio
+        for (const pattern of pricePatterns) {
+            const match = userMessage.match(pattern);
+            if (match) {
+                const symbol = match[1].toUpperCase();
+                const priceInfo = marketData.getPrice(symbol);
+                
+                if (priceInfo) {
+                    return `El precio actual de ${symbol} es ${priceInfo.price} (${priceInfo.change} en 24h).`;
+                } else {
+                    return `No tengo información del precio de ${symbol} en este momento. ¿Podrías verificar el símbolo?`;
+                }
+            }
+        }
+    
+        // Respuestas predefinidas
         const responses = {
-            'bitcoin': 'Bitcoin está mostrando fortaleza en el corto plazo. El soporte clave está en $40,000 y la resistencia en $45,000. El volumen de trading ha aumentado un 15% en las últimas 24 horas.',
-            'ethereum': 'Ethereum se mantiene estable alrededor de $2,500. El upcoming merge podría impulsar el precio significativamente. Technical analysis muestra un patrón alcista en formación.',
-            'tesla': 'TSLA cerró con una caída del 0.8% hoy. Las expectativas de ganancias para el próximo trimestre son positivas. El consensus de analistas es "Buy" con target price de $300.',
-            'acciones': 'Basado en el análisis actual, recomiendo diversificar en: tecnología (AAPL, MSFT), energía renovable (ENPH), y healthcare (JNJ). Considera un 60% stocks, 20% crypto, 20% cash.',
-            'mercado': 'Los mercados globales muestran mixed signals hoy. El S&P 500 +0.3%, NASDAQ +0.8%, DOW -0.2%. Recomiendo cautela y dollar-cost averaging en posiciones largas.',
-            'estrategia': 'Para perfiles conservadores: 40% bonds, 40% blue chips, 20% gold. Para agresivos: 50% growth stocks, 30% crypto, 20% emerging markets. Rebalancear trimestralmente.'
+            'bitcoin': '📈 Bitcoin está mostrando fortaleza. Soporte en $40K, resistencia en $45K. Volumen +15% en 24h. Recomendación: acumular en dips.',
+            'ethereum': '🔷 Ethereum consolidando en $2,500. El merge próximamente podría impulsar el precio. Technicals muestran patrón alcista.',
+            'acciones': '💼 Recomiendo diversificar: Tech (AAPL, MSFT), Renewable Energy (ENPH), Healthcare (JNJ). Allocation sugerida: 60% stocks, 20% crypto, 20% cash.',
+            'estrategia': '🎯 Estrategias: Conservadora (40% bonds, 40% blue chips, 20% gold). Agresiva (50% growth stocks, 30% crypto, 20% emerging markets). Rebalancear trimestralmente.',
+            'mercado': '🌍 Mercados globales: S&P 500 +0.3%, NASDAQ +0.8%, DOW -0.2%. Recomiendo dollar-cost averaging y diversificación.',
+            'forex': '💱 Forex: EUR/USD 1.0850, GBP/USD 1.2450, USD/JPY 150.20. Atención a reuniones del Fed para cambios en tasas.'
         };
-
+    
         for (const [keyword, response] of Object.entries(responses)) {
             if (lowerMessage.includes(keyword)) {
                 return response;
             }
         }
+    
+        return `He analizado tu consulta sobre "${userMessage}". Como asistente financiero, recomiendo: 
+        
+1. 📊 Diversificar across asset classes
+2. ⏰ Considerar horizonte temporal de inversión  
+3. 📉 Mantener cash para oportunidades de mercado
+4. 🔍 Hacer due diligence antes de cada inversión
 
-        return `He analizado tu consulta sobre "${userMessage}". Como asistente financiero, recomiendo considerar el horizonte temporal de inversión y diversificar across diferentes asset classes. ¿Te gustaría que profundice en algún aspecto específico?`;
+¿Te gustaría que profundice en algún aspecto específico?`;
     }
-
+    
     saveToLocalStorage() {
         localStorage.setItem('chatMessages', JSON.stringify(this.messages));
     }
-
+    
     loadFromLocalStorage() {
         const saved = localStorage.getItem('chatMessages');
         if (saved) {
             this.messages = JSON.parse(saved);
         }
     }
-
+    
     clearChat() {
         if (confirm('¿Estás seguro de que quieres limpiar toda la conversación?')) {
             this.messages = [];
@@ -151,12 +209,12 @@ class ChatManager {
             this.addMessage('¡Hola! Conversación reiniciada. ¿En qué puedo ayudarte con los mercados financieros hoy?', 'ai');
         }
     }
-
+    
     exportChat() {
         const chatText = this.messages.map(msg => 
             `${msg.sender === 'user' ? 'Tú' : 'AI'} (${this.formatTime(msg.timestamp)}): ${msg.text}`
         ).join('\n\n');
-
+    
         const blob = new Blob([chatText], { type: 'text/plain' });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
