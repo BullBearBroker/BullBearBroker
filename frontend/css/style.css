@@ -11,16 +11,94 @@ body {
     overflow: hidden;
 }
 
+/* Market Header */
+.market-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 20px;
+    background: #2c3e50;
+    color: white;
+    border-bottom: 1px solid #34495e;
+    font-size: 0.9em;
+}
+
+.market-ticker {
+    display: flex;
+    gap: 25px;
+    overflow: hidden;
+}
+
+.ticker-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+.ticker-name {
+    font-weight: 600;
+    color: #ecf0f1;
+}
+
+.ticker-price {
+    font-weight: 700;
+}
+
+.ticker-change {
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.85em;
+}
+
+.ticker-change.positive {
+    background: rgba(46, 204, 113, 0.2);
+    color: #2ecc71;
+}
+
+.ticker-change.negative {
+    background: rgba(231, 76, 60, 0.2);
+    color: #e74c3c;
+}
+
+.market-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.status-indicator {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.status-indicator.positive {
+    background: #2ecc71;
+    box-shadow: 0 0 5px #2ecc71;
+}
+
+.status-indicator.negative {
+    background: #e74c3c;
+    box-shadow: 0 0 5px #e74c3c;
+}
+
+.status-text {
+    font-size: 0.85em;
+    color: #bdc3c7;
+}
+
 .app-container {
     display: flex;
-    height: 100vh;
+    height: calc(100vh - 48px);
     max-width: 1600px;
     margin: 0 auto;
     background: white;
     box-shadow: 0 0 50px rgba(0, 0, 0, 0.3);
 }
 
-/* Sidebar */
+/* Sidebar Mejorado */
 .sidebar {
     width: 320px;
     background: #1e1e1e;
@@ -28,6 +106,7 @@ body {
     display: flex;
     flex-direction: column;
     border-right: 1px solid #333;
+    overflow-y: auto;
 }
 
 .sidebar-header {
@@ -39,19 +118,94 @@ body {
 .sidebar-header h2 {
     color: #00c853;
     font-size: 1.5em;
+    margin-bottom: 15px;
 }
 
-.market-section {
-    padding: 20px;
+.portfolio-summary {
+    padding: 15px;
+    background: #2c2c2c;
+    border-radius: 8px;
+}
+
+.portfolio-value {
+    font-size: 1.4em;
+    font-weight: 700;
+    color: #00c853;
+}
+
+.portfolio-change {
+    font-size: 0.9em;
+}
+
+.portfolio-change.positive {
+    color: #2ecc71;
+}
+
+.portfolio-change.negative {
+    color: #e74c3c;
+}
+
+.sidebar-section {
+    padding: 15px;
     border-bottom: 1px solid #333;
 }
 
-.market-section h3 {
-    margin-bottom: 15px;
+.sidebar-section h3 {
+    margin-bottom: 12px;
     color: #00c853;
     font-size: 0.9em;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.watchlist-items {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.watchlist-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    background: #2c2c2c;
+    border-radius: 6px;
+    transition: background 0.3s;
+}
+
+.watchlist-item:hover {
+    background: #3c3c3c;
+}
+
+.item-symbol {
+    font-weight: bold;
+    font-size: 0.9em;
+}
+
+.item-price {
+    font-size: 0.9em;
+}
+
+.item-change {
+    font-weight: bold;
+    font-size: 0.8em;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.item-change.positive {
+    background: rgba(46, 204, 113, 0.2);
+    color: #2ecc71;
+}
+
+.item-change.negative {
+    background: rgba(231, 76, 60, 0.2);
+    color: #e74c3c;
 }
 
 .ticker-list {
@@ -92,8 +246,26 @@ body {
     color: #f44336;
 }
 
+.sidebar-btn {
+    width: 100%;
+    padding: 10px;
+    background: #2c2c2c;
+    border: 1px solid #444;
+    color: white;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.3s;
+    text-align: center;
+    font-size: 0.9em;
+}
+
+.sidebar-btn:hover {
+    background: #00c853;
+    border-color: #00c853;
+}
+
 .quick-actions {
-    padding: 20px;
+    padding: 15px;
 }
 
 .quick-actions h3 {
@@ -237,6 +409,59 @@ body {
     color: rgba(255, 255, 255, 0.7);
 }
 
+/* Mejoras para mensajes de chat */
+.highlight-price {
+    font-weight: 700;
+    color: #1a237e;
+    background: rgba(26, 35, 126, 0.1);
+    padding: 2px 4px;
+    border-radius: 3px;
+}
+
+.highlight-percent {
+    font-weight: 700;
+    padding: 2px 4px;
+    border-radius: 3px;
+}
+
+.highlight-percent.positive {
+    color: #2ecc71;
+    background: rgba(46, 204, 113, 0.1);
+}
+
+.highlight-percent.negative {
+    color: #e74c3c;
+    background: rgba(231, 76, 60, 0.1);
+}
+
+.highlight-symbol {
+    font-weight: 700;
+    color: #3949ab;
+    background: rgba(57, 73, 171, 0.1);
+    padding: 2px 4px;
+    border-radius: 3px;
+}
+
+.chart-container {
+    margin: 10px 0;
+    padding: 15px;
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #e0e0e0;
+}
+
+.chart-placeholder {
+    text-align: center;
+    padding: 20px;
+    color: #666;
+}
+
+.chart-placeholder i {
+    font-size: 2em;
+    margin-bottom: 10px;
+    color: #1a237e;
+}
+
 .chat-input-container {
     padding: 20px;
     background: white;
@@ -302,13 +527,195 @@ body {
     background: #3949ab;
 }
 
+/* Alertas y Modales */
+.alert-container {
+    position: fixed;
+    top: 60px;
+    right: 20px;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.alert {
+    padding: 15px;
+    border-radius: 8px;
+    color: white;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    animation: slideIn 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: 350px;
+}
+
+.alert-success {
+    background: #27ae60;
+    border-left: 4px solid #2ecc71;
+}
+
+.alert-warning {
+    background: #f39c12;
+    border-left: 4px solid #f1c40f;
+}
+
+.alert-error {
+    background: #e74c3c;
+    border-left: 4px solid #c0392b;
+}
+
+.alert-info {
+    background: #3498db;
+    border-left: 4px solid #2980b9;
+}
+
+.alert-close {
+    background: none;
+    border: none;
+    color: white;
+    cursor: pointer;
+    margin-left: auto;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+.modal {
+    display: none;
+    position: fixed;
+    z-index: 1000;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+.modal-content {
+    background-color: #2c2c2c;
+    margin: 5% auto;
+    padding: 0;
+    border-radius: 8px;
+    width: 90%;
+    max-width: 450px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.modal-header {
+    padding: 15px 20px;
+    border-bottom: 1px solid #444;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.modal-header h3 {
+    margin: 0;
+    color: #00c853;
+}
+
+.close {
+    color: #aaa;
+    font-size: 24px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.close:hover {
+    color: white;
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.modal-footer {
+    padding: 15px 20px;
+    border-top: 1px solid #444;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.form-group {
+    margin-bottom: 15px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    color: #ddd;
+    font-size: 0.9em;
+}
+
+.form-group input,
+.form-group select {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #444;
+    border-radius: 4px;
+    background: #3c3c3c;
+    color: white;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+    outline: none;
+    border-color: #00c853;
+}
+
+.btn-primary {
+    padding: 10px 20px;
+    background: #00c853;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+.btn-primary:hover {
+    background: #009944;
+}
+
+.btn-secondary {
+    padding: 10px 20px;
+    background: #555;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.3s;
+}
+
+.btn-secondary:hover {
+    background: #666;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
+    .market-header {
+        display: none;
+    }
+    
     .sidebar {
         display: none;
     }
     
     .message {
         max-width: 90%;
+    }
+    
+    .app-container {
+        height: 100vh;
     }
 }

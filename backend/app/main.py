@@ -121,6 +121,33 @@ async def get_available_symbols():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/market/news")
+async def get_market_news():
+    """
+    Obtener noticias del mercado (placeholder)
+    """
+    try:
+        # Esto es un placeholder - integrar NewsAPI después
+        news = [
+            {
+                "title": "Mercado alcista continúa con ganancias sólidas",
+                "source": "Financial Times",
+                "date": "2024-01-15",
+                "url": "#",
+                "summary": "Los principales índices registran ganancias por tercer día consecutivo."
+            },
+            {
+                "title": "Bitcoin supera los $45,000 impulsado por adopción institucional",
+                "source": "CoinDesk",
+                "date": "2024-01-15", 
+                "url": "#",
+                "summary": "La criptomoneda líder alcanza su máximo en 3 meses."
+            }
+        ]
+        return {"success": True, "data": news}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

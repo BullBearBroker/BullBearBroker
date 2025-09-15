@@ -8,38 +8,91 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
 <body>
+    <!-- Market Header -->
+    <div class="market-header">
+        <div class="market-ticker">
+            <div class="ticker-item">
+                <span class="ticker-name">S&P 500</span>
+                <span class="ticker-price">4,890.15</span>
+                <span class="ticker-change positive">+1.25%</span>
+            </div>
+            <div class="ticker-item">
+                <span class="ticker-name">NASDAQ</span>
+                <span class="ticker-price">15,234.67</span>
+                <span class="ticker-change positive">+0.89%</span>
+            </div>
+            <div class="ticker-item">
+                <span class="ticker-name">DOW</span>
+                <span class="ticker-price">38,456.12</span>
+                <span class="ticker-change negative">-0.32%</span>
+            </div>
+            <div class="ticker-item">
+                <span class="ticker-name">BTC</span>
+                <span class="ticker-price">$45,123.45</span>
+                <span class="ticker-change positive">+2.54%</span>
+            </div>
+            <div class="ticker-item">
+                <span class="ticker-name">ETH</span>
+                <span class="ticker-price">$2,567.89</span>
+                <span class="ticker-change positive">+1.82%</span>
+            </div>
+        </div>
+        <div class="market-status">
+            <span class="status-indicator positive"></span>
+            <span class="status-text">Mercado Abierto</span>
+        </div>
+    </div>
+
     <div class="app-container">
         <!-- Sidebar -->
         <div class="sidebar">
             <div class="sidebar-header">
                 <h2><i class="fas fa-chart-line"></i> BullBearBroker</h2>
+                <div class="portfolio-summary">
+                    <div class="portfolio-value">$25,430.50</div>
+                    <div class="portfolio-change positive">+$320.50 (1.25%)</div>
+                </div>
             </div>
             
-            <div class="market-section">
+            <div class="sidebar-section">
+                <h3><i class="fas fa-star"></i> Watchlist</h3>
+                <div class="watchlist-items" id="watchlistItems">
+                    <div class="watchlist-item">
+                        <span class="item-symbol">AAPL</span>
+                        <span class="item-price">$178.90</span>
+                        <span class="item-change positive">+0.7%</span>
+                    </div>
+                    <div class="watchlist-item">
+                        <span class="item-symbol">MSFT</span>
+                        <span class="item-price">$345.21</span>
+                        <span class="item-change positive">+0.3%</span>
+                    </div>
+                    <div class="watchlist-item">
+                        <span class="item-symbol">TSLA</span>
+                        <span class="item-price">$245.67</span>
+                        <span class="item-change negative">-0.8%</span>
+                    </div>
+                </div>
+                <button class="sidebar-btn" onclick="showAddToWatchlist()">
+                    <i class="fas fa-plus"></i> Añadir a Watchlist
+                </button>
+            </div>
+
+            <div class="sidebar-section">
                 <h3><i class="fas fa-fire"></i> Top Performers</h3>
                 <div class="ticker-list" id="topTickers">
-                    <div class="ticker-item">
-                        <span class="ticker-symbol">BTC</span>
-                        <span class="ticker-price positive">+2.5%</span>
-                    </div>
-                    <div class="ticker-item">
-                        <span class="ticker-symbol">ETH</span>
-                        <span class="ticker-price positive">+1.8%</span>
-                    </div>
+                    <!-- Los datos se cargarán dinámicamente -->
                 </div>
             </div>
 
-            <div class="market-section">
+            <div class="sidebar-section">
                 <h3><i class="fas fa-arrow-down"></i> Worst Performers</h3>
                 <div class="ticker-list" id="worstTickers">
-                    <div class="ticker-item">
-                        <span class="ticker-symbol">TSLA</span>
-                        <span class="ticker-price negative">-0.8%</span>
-                    </div>
+                    <!-- Los datos se cargarán dinámicamente -->
                 </div>
             </div>
 
-            <div class="quick-actions">
+            <div class="sidebar-section">
                 <h3><i class="fas fa-bolt"></i> Acciones Rápidas</h3>
                 <button class="quick-btn" onclick="askQuestion('Analiza el mercado de Bitcoin')">
                     <i class="fab fa-bitcoin"></i> Análisis BTC
@@ -49,6 +102,9 @@
                 </button>
                 <button class="quick-btn" onclick="askQuestion('Mostrar estrategias conservadoras')">
                     <i class="fas fa-shield-alt"></i> Estrategias
+                </button>
+                <button class="quick-btn" onclick="showMarketOverview()">
+                    <i class="fas fa-globe-americas"></i> Visión General
                 </button>
             </div>
         </div>
@@ -66,6 +122,9 @@
                     </button>
                     <button class="action-btn" onclick="exportChat()">
                         <i class="fas fa-download"></i> Exportar
+                    </button>
+                    <button class="action-btn" onclick="showAlertModal()">
+                        <i class="fas fa-bell"></i> Alertas
                     </button>
                 </div>
             </div>
@@ -96,6 +155,9 @@
                     <button class="input-btn" onclick="addQuickQuestion('Noticias de mercado')">
                         <i class="fas fa-newspaper"></i>
                     </button>
+                    <button class="input-btn" onclick="addQuickQuestion('Tendencias del día')">
+                        <i class="fas fa-trending-up"></i>
+                    </button>
                 </div>
                 <div class="input-wrapper">
                     <textarea 
@@ -111,9 +173,45 @@
         </div>
     </div>
 
+    <!-- Alertas Toast -->
+    <div id="alertContainer" class="alert-container"></div>
+
+    <!-- Modal para Configurar Alertas -->
+    <div id="alertModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Configurar Alerta</h3>
+                <span class="close" onclick="closeModal('alertModal')">&times;</span>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label>Activo</label>
+                    <input type="text" id="alertSymbol" placeholder="Ej: BTC, AAPL" />
+                </div>
+                <div class="form-group">
+                    <label>Condición</label>
+                    <select id="alertCondition">
+                        <option value="above">Por encima de</option>
+                        <option value="below">Por debajo de</option>
+                        <option value="change">Cambio % mayor a</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Valor</label>
+                    <input type="number" id="alertValue" placeholder="0.00" step="0.01" />
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeModal('alertModal')">Cancelar</button>
+                <button class="btn-primary" onclick="saveAlert()">Guardar Alerta</button>
+            </div>
+        </div>
+    </div>
+
     <!-- ✅ ORDEN CORRECTO DE SCRIPTS -->
     <script src="js/api.js"></script>
     <script src="js/market-data.js"></script>
     <script src="js/chat.js"></script>
+    <script src="js/ui-components.js"></script>
 </body>
 </html>
