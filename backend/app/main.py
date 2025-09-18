@@ -1,20 +1,101 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
+import asyncio
+import json
+import jwt
+from datetime import datetime, timedelta
+import sys
+import os
+
+# Añadir el directorio backend al path para importaciones
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
 from services.market_service import market_service
 from services.ai_service import ai_service
 
+# Importar routers de autenticación
+try:
+    from routers import auth
+except ImportError:
+    try:
+        from backend.routers import auth
+    except ImportError:
+        from fastapi import APIRouter
+        auth = APIRouter()
+        @auth.get("/test")
+        def auth_test():
+            return {"message": "Auth module placeholder"}
+
 app = FastAPI(title="BullBearBroker API", version="1.0.0")
 
-# Configurar CORS
+# Configuración de seguridad
+security = HTTPBearer()
+SECRET_KEY = "bullbearbroker_secret_key_2024"
+ALGORITHM = "HS256"
+
+# ✅ CONFIGURACIÓN CORS MEJORADA - ORIGENS COMPLETOS PARA DESARROLLO
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "http://localhost:5500", "file://"],
+    allow_origins=[
+        "http://localhost:3000", 
+        "http://127.0.0.1:3000", 
+        "http://localhost:5500", 
+        "http://127.0.0.1:5500",
+        "http://localhost:8000", 
+        "http://127.0.0.1:8000",
+        "http://localhost:8080", 
+        "http://127.0.0.1:8080",
+        "http://[::1]:3000",       # ← ¡IPv6 LOCALHOST!
+        "http://[::]:3000",        # ← ¡IPv6 TODAS LAS INTERFACES!
+        "null", 
+        "file://",
+        "*"                        # ← TEMPORAL: Permitir todos para desarrollo
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
+
+# ✅ MIDDLEWARE MEJORADO PARA CORS
+@app.middleware("http")
+async def add_cors_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, Accept, Origin"
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Expose-Headers"] = "*"
+    return response
+
+# ✅ MANEJAR OPTIONS PARA CORS - MEJORADO
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(rest_of_path: str):
+    return {
+        "status": "ok",
+        "headers": {
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, Accept, Origin",
+            "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Max-Age": "3600"
+        }
+    }
+
+# Incluir routers de autenticación
+if hasattr(auth, 'router'):
+    app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
+else:
+    @app.post("/api/auth/register")
+    async def register(user_data: dict):
+        return {"message": "Auth module not fully implemented", "status": "placeholder"}
+    
+    @app.post("/api/auth/login")
+    async def login(credentials: dict):
+        return {"message": "Auth module not fully implemented", "status": "placeholder"}
 
 # Modelo Pydantic para el request del chat
 class ChatRequest(BaseModel):
@@ -22,22 +103,207 @@ class ChatRequest(BaseModel):
     context: Optional[Dict[str, Any]] = None
 
 # Configurar servicios
-ai_service.set_market_service(market_service)
+try:
+    ai_service.set_market_service(market_service)
+except Exception as e:
+    print(f"Warning: Could not set market service: {e}")
+
+# ✅ ALMACEN DE CONEXIONES WEB SOCKET MEJORADO
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+        self.connection_data: Dict[WebSocket, Dict] = {}
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+        self.connection_data[websocket] = {
+            "connected_at": datetime.now(),
+            "last_activity": datetime.now(),
+            "ip": websocket.client.host if websocket.client else "unknown",
+            "origin": websocket.headers.get("origin", "unknown")
+        }
+        print(f"✅ Nueva conexión WebSocket. Total: {len(self.active_connections)}")
+        print(f"   Origen: {self.connection_data[websocket]['origin']}")
+        print(f"   IP: {self.connection_data[websocket]['ip']}")
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+            if websocket in self.connection_data:
+                del self.connection_data[websocket]
+            print(f"❌ Conexión WebSocket cerrada. Total: {len(self.active_connections)}")
+
+    def update_activity(self, websocket: WebSocket):
+        if websocket in self.connection_data:
+            self.connection_data[websocket]["last_activity"] = datetime.now()
+
+manager = ConnectionManager()
+
+# Función para verificar tokens JWT
+async def get_current_user(token: HTTPAuthorizationCredentials = Depends(security)):
+    try:
+        payload = jwt.decode(token.credentials, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="Token expirado")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="Token inválido")
 
 @app.get("/")
 async def root():
-    return {"message": "BullBearBroker API Running", "status": "active"}
+    return {"message": "BullBearBroker API está funcionando!", "version": "1.0.0"}
 
 @app.get("/api/health")
 async def health_check():
-    """Endpoint para verificar que la API está funcionando"""
     return {
         "status": "healthy",
         "services": {
             "market_service": "active",
-            "ai_service": "active"
-        }
+            "ai_service": "active",
+            "websocket": "active"
+        },
+        "websocket_connections": len(manager.active_connections),
+        "timestamp": datetime.now().isoformat()
     }
+
+@app.websocket("/ws/market-data")
+async def websocket_market_data(websocket: WebSocket):
+    print("🔌 Cliente intentando conectar WebSocket...")
+    
+    # ✅ VERIFICACIÓN DE ORIGEN MEJORADA (PERMITIR TODO TEMPORALMENTE)
+    origin = websocket.headers.get("origin") or websocket.headers.get("Origin") or websocket.headers.get("ORIGIN") or "unknown"
+    print(f"   Origen detectado: {origin}")
+    
+    # ✅ PERMITIR TODOS LOS ORÍGENES TEMPORALMENTE PARA DEBUG
+    allow_all_origins = True  # ← CAMBIAR A False EN PRODUCCIÓN
+    
+    if not allow_all_origins:
+        allowed_origins = [
+            "http://localhost:3000", "http://127.0.0.1:3000", 
+            "http://localhost:5500", "http://127.0.0.1:5500",
+            "http://localhost:8000", "http://127.0.0.1:8000",
+            "http://localhost:8080", "http://127.0.0.1:8080",
+            "http://[::1]:3000", "http://[::]:3000",
+            "null", "file://"
+        ]
+        
+        if origin and origin not in allowed_origins and not origin.startswith("file://"):
+            print(f"❌ Origen no permitido: {origin}")
+            await websocket.close(code=1008, reason="Origin not allowed")
+            return
+    
+    await manager.connect(websocket)
+    print(f"✅ Cliente conectado. Total: {len(manager.active_connections)}")
+    
+    try:
+        # ✅ ENVIAR MENSAJE DE BIENVENIDA INMEDIATAMENTE
+        await websocket.send_json({
+            "type": "connection_established",
+            "message": "Conexión WebSocket establecida correctamente",
+            "timestamp": datetime.now().isoformat(),
+            "connection_id": id(websocket)
+        })
+        
+        # ✅ PRIMER ENVÍO DE DATOS CON MEJOR MANEJO DE ERRORES
+        try:
+            data = await market_service.get_top_performers()
+            await websocket.send_json({
+                "type": "market_data",
+                "data": data,
+                "timestamp": datetime.now().isoformat()
+            })
+            print("📊 Datos de mercado enviados via WebSocket")
+        except Exception as e:
+            print(f"⚠️ Error obteniendo datos iniciales: {e}")
+            await websocket.send_json({
+                "type": "error",
+                "message": "Error obteniendo datos de mercado iniciales",
+                "timestamp": datetime.now().isoformat()
+            })
+
+        # ✅ BUCLE PRINCIPAL MEJORADO CON RECONEXIÓN ROBUSTA
+        while True:
+            try:
+                # Esperar mensaje del cliente (timeout más largo)
+                data = await asyncio.wait_for(websocket.receive_text(), timeout=300.0)
+                manager.update_activity(websocket)
+                
+                try:
+                    message_data = json.loads(data)
+                    
+                    if message_data.get("type") == "ping":
+                        # Responder a ping inmediatamente
+                        await websocket.send_json({
+                            "type": "pong",
+                            "timestamp": datetime.now().isoformat(),
+                            "received_at": message_data.get("timestamp")
+                        })
+                    elif message_data.get("type") == "get_market_data":
+                        # Enviar datos de mercado
+                        try:
+                            market_data = await market_service.get_top_performers()
+                            await websocket.send_json({
+                                "type": "market_data",
+                                "data": market_data,
+                                "timestamp": datetime.now().isoformat()
+                            })
+                        except Exception as e:
+                            print(f"⚠️ Error obteniendo datos de mercado: {e}")
+                            await websocket.send_json({
+                                "type": "error",
+                                "message": "Error obteniendo datos de mercado",
+                                "timestamp": datetime.now().isoformat()
+                            })
+                    else:
+                        # Mensaje no reconocido
+                        await websocket.send_json({
+                            "type": "error",
+                            "message": "Tipo de mensaje no reconocido",
+                            "timestamp": datetime.now().isoformat()
+                        })
+                        
+                except json.JSONDecodeError:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "Mensaje JSON inválido",
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    
+            except asyncio.TimeoutError:
+                # ✅ ENVIAR HEARTBEAT PERIÓDICO (MANTIENE CONEXIÓN ACTIVA)
+                try:
+                    # Enviar heartbeat para mantener conexión activa
+                    await websocket.send_json({
+                        "type": "heartbeat",
+                        "message": "Connection alive",
+                        "timestamp": datetime.now().isoformat()
+                    })
+                    print(f"💓 Heartbeat enviado a conexión {id(websocket)}")
+                except Exception as e:
+                    print(f"⚠️ Error enviando heartbeat: {e}")
+                    break  # Salir del bucle si no se puede enviar
+                
+            except WebSocketDisconnect:
+                print("❌ Cliente desconectado normalmente")
+                break
+                
+    except WebSocketDisconnect:
+        print("❌ WebSocket desconectado por cliente")
+    except Exception as e:
+        print(f"❌ Error crítico en WebSocket: {str(e)}")
+        # Intentar enviar mensaje de error antes de cerrar
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": f"Error de conexión: {str(e)}",
+                "timestamp": datetime.now().isoformat()
+            })
+        except:
+            pass  # Ignorar si no se puede enviar
+    finally:
+        manager.disconnect(websocket)
+        print(f"🔌 Conexión WebSocket cerrada. Total: {len(manager.active_connections)}")
 
 @app.get("/api/market/top-performers")
 async def get_top_performers():
@@ -45,12 +311,12 @@ async def get_top_performers():
         data = await market_service.get_top_performers()
         return {"success": True, "data": data}
     except Exception as e:
+        print(f"Error en top-performers: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/market/price/{symbol}")
 async def get_price(symbol: str):
     try:
-        # Detectar automáticamente el tipo de activo
         asset_type = await market_service.detect_asset_type(symbol)
         price = await market_service.get_price(symbol.upper(), asset_type)
         
@@ -64,6 +330,40 @@ async def get_price(symbol: str):
         else:
             raise HTTPException(status_code=404, detail=f"Precio no encontrado para {symbol}")
     except Exception as e:
+        print(f"Error en price endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/market/orderbook/{symbol}")
+async def get_orderbook(symbol: str, limit: int = 10):
+    try:
+        orderbook = await market_service.get_binance_orderbook(symbol.upper(), limit)
+        if orderbook:
+            return {
+                "success": True, 
+                "symbol": symbol.upper(),
+                "data": orderbook
+            }
+        else:
+            raise HTTPException(status_code=404, detail=f"Orderbook no encontrado para {symbol}")
+    except Exception as e:
+        print(f"Error en orderbook endpoint: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/market/klines/{symbol}")
+async def get_klines(symbol: str, interval: str = "1h", limit: int = 24):
+    try:
+        klines = await market_service.get_binance_klines(symbol.upper(), interval, limit)
+        if klines:
+            return {
+                "success": True, 
+                "symbol": symbol.upper(),
+                "interval": interval,
+                "data": klines
+            }
+        else:
+            raise HTTPException(status_code=404, detail=f"Klines no encontrados para {symbol}")
+    except Exception as e:
+        print(f"Error en klines endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/chat/message")
@@ -115,7 +415,7 @@ async def get_available_symbols():
     try:
         symbols = {
             "stocks": ["AAPL", "TSLA", "MSFT", "GOOGL", "AMZN", "NVDA", "META", "NFLX"],
-            "crypto": ["BTC", "ETH", "BNB", "XRP", "ADA", "SOL", "DOT", "DOGE"]
+            "crypto": ["BTC", "ETH", "BNB", "XRP", "ADA", "SOL", "DOT", 'DOGE', "AVAX", "MATIC", "LTC", "LINK"]
         }
         return {"success": True, "data": symbols}
     except Exception as e:
@@ -127,7 +427,6 @@ async def get_market_news():
     Obtener noticias del mercado (placeholder)
     """
     try:
-        # Esto es un placeholder - integrar NewsAPI después
         news = [
             {
                 "title": "Mercado alcista continúa con ganancias sólidas",
@@ -148,6 +447,54 @@ async def get_market_news():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/debug/websockets")
+async def debug_websockets():
+    """Endpoint de debug para ver conexiones activas"""
+    connections_info = []
+    for ws, data in manager.connection_data.items():
+        connections_info.append({
+            "connection_id": id(ws),
+            "connected_at": data["connected_at"].isoformat(),
+            "last_activity": data["last_activity"].isoformat(),
+            "ip": data["ip"],
+            "origin": data["origin"]
+        })
+    
+    return {
+        "active_connections": len(manager.active_connections),
+        "connections": connections_info,
+        "status": "running"
+    }
+
+@app.get("/api/auth/test")
+async def auth_test():
+    """Endpoint de prueba para auth"""
+    return {"message": "Auth endpoint is working!"}
+
+@app.get("/api/debug/cors")
+async def debug_cors():
+    """Endpoint para debug de CORS"""
+    return {
+        "cors_enabled": True,
+        "allowed_origins": [
+            "http://localhost:3000", "http://127.0.0.1:3000", 
+            "http://localhost:5500", "http://127.0.0.1:5500",
+            "http://localhost:8000", "http://127.0.0.1:8000",
+            "http://localhost:8080", "http://127.0.0.1:8080",
+            "http://[::1]:3000", "http://[::]:3000",
+            "null", "file://",
+            "*"
+        ],
+        "timestamp": datetime.now().isoformat()
+    }
+
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    print("🚀 Iniciando BullBearBroker API con soporte WebSocket y Auth...")
+    print("📊 WebSocket disponible en: ws://localhost:8000/ws/market-data")  # ← CORREGIDO
+    print("🔐 Endpoints Auth disponibles en: /api/auth/")
+    print("🌐 CORS configurado para desarrollo (todos los orígenes permitidos)")
+    print("🔧 Debug CORS disponible en: /api/debug/cors")
+    print("💓 Heartbeat activado cada 30 segundos")
+    print("⚠️  MODO DESARROLLO: CORS permitiendo todos los orígenes")
+    uvicorn.run(app, host="0.0.0.0", port=8000, ws_ping_interval=10, ws_ping_timeout=10)

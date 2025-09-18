@@ -6,40 +6,57 @@
     <title>BullBearBroker - Asistente Financiero Inteligente</title>
     <link rel="stylesheet" href="css/style.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    
+    <!-- ✅ CONFIGURACIÓN GLOBAL - DEBE IR PRIMERO -->
+    <script src="js/config.js"></script>
 </head>
 <body>
+    <!-- ✅ VERIFICACIÓN DE AUTENTICACIÓN -->
+    <script src="js/auth.js"></script>
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const authManager = new AuthManager();
+        
+        if (!authManager.isAuthenticated()) {
+            window.location.href = 'login.html';
+            return;
+        }
+
+        // Mostrar información del usuario
+        const user = authManager.getUser();
+        if (user) {
+            // Actualizar UI con info del usuario
+            const userInfoElement = document.getElementById('userInfo');
+            if (userInfoElement) {
+                userInfoElement.innerHTML = `
+                    <span>${user.username}</span>
+                    <small>${user.email} • ${user.subscription_level}</small>
+                `;
+            }
+        }
+
+        // Inicializar el chat después de verificar autenticación
+        setTimeout(() => {
+            if (typeof initChat === 'function') {
+                initChat();
+            }
+        }, 100);
+    });
+    </script>
+
     <!-- Market Header -->
     <div class="market-header">
-        <div class="market-ticker">
+        <div class="market-ticker" id="liveMarketTicker">
+            <!-- Los datos se cargarán dinámicamente via WebSocket -->
             <div class="ticker-item">
-                <span class="ticker-name">S&P 500</span>
-                <span class="ticker-price">4,890.15</span>
-                <span class="ticker-change positive">+1.25%</span>
-            </div>
-            <div class="ticker-item">
-                <span class="ticker-name">NASDAQ</span>
-                <span class="ticker-price">15,234.67</span>
-                <span class="ticker-change positive">+0.89%</span>
-            </div>
-            <div class="ticker-item">
-                <span class="ticker-name">DOW</span>
-                <span class="ticker-price">38,456.12</span>
-                <span class="ticker-change negative">-0.32%</span>
-            </div>
-            <div class="ticker-item">
-                <span class="ticker-name">BTC</span>
-                <span class="ticker-price">$45,123.45</span>
-                <span class="ticker-change positive">+2.54%</span>
-            </div>
-            <div class="ticker-item">
-                <span class="ticker-name">ETH</span>
-                <span class="ticker-price">$2,567.89</span>
-                <span class="ticker-change positive">+1.82%</span>
+                <span class="ticker-name">Cargando...</span>
+                <span class="ticker-price">--</span>
+                <span class="ticker-change">--</span>
             </div>
         </div>
         <div class="market-status">
-            <span class="status-indicator positive"></span>
-            <span class="status-text">Mercado Abierto</span>
+            <span class="status-indicator" id="marketStatusIndicator"></span>
+            <span class="status-text" id="marketStatusText">Conectando...</span>
         </div>
     </div>
 
@@ -48,9 +65,9 @@
         <div class="sidebar">
             <div class="sidebar-header">
                 <h2><i class="fas fa-chart-line"></i> BullBearBroker</h2>
-                <div class="portfolio-summary">
-                    <div class="portfolio-value">$25,430.50</div>
-                    <div class="portfolio-change positive">+$320.50 (1.25%)</div>
+                <div class="user-info" id="userInfo">
+                    <div class="user-welcome">Bienvenido</div>
+                    <div class="user-email">Iniciando sesión...</div>
                 </div>
             </div>
             
@@ -58,19 +75,19 @@
                 <h3><i class="fas fa-star"></i> Watchlist</h3>
                 <div class="watchlist-items" id="watchlistItems">
                     <div class="watchlist-item">
+                        <span class="item-symbol">BTC</span>
+                        <span class="item-price" id="btcPrice">Cargando...</span>
+                        <span class="item-change" id="btcChange">--</span>
+                    </div>
+                    <div class="watchlist-item">
+                        <span class="item-symbol">ETH</span>
+                        <span class="item-price" id="ethPrice">Cargando...</span>
+                        <span class="item-change" id="ethChange">--</span>
+                    </div>
+                    <div class="watchlist-item">
                         <span class="item-symbol">AAPL</span>
-                        <span class="item-price">$178.90</span>
-                        <span class="item-change positive">+0.7%</span>
-                    </div>
-                    <div class="watchlist-item">
-                        <span class="item-symbol">MSFT</span>
-                        <span class="item-price">$345.21</span>
-                        <span class="item-change positive">+0.3%</span>
-                    </div>
-                    <div class="watchlist-item">
-                        <span class="item-symbol">TSLA</span>
-                        <span class="item-price">$245.67</span>
-                        <span class="item-change negative">-0.8%</span>
+                        <span class="item-price" id="aaplPrice">Cargando...</span>
+                        <span class="item-change" id="aaplChange">--</span>
                     </div>
                 </div>
                 <button class="sidebar-btn" onclick="showAddToWatchlist()">
@@ -81,14 +98,14 @@
             <div class="sidebar-section">
                 <h3><i class="fas fa-fire"></i> Top Performers</h3>
                 <div class="ticker-list" id="topTickers">
-                    <!-- Los datos se cargarán dinámicamente -->
+                    <div class="loading-text">Cargando datos en tiempo real...</div>
                 </div>
             </div>
 
             <div class="sidebar-section">
                 <h3><i class="fas fa-arrow-down"></i> Worst Performers</h3>
                 <div class="ticker-list" id="worstTickers">
-                    <!-- Los datos se cargarán dinámicamente -->
+                    <div class="loading-text">Cargando datos en tiempo real...</div>
                 </div>
             </div>
 
@@ -106,6 +123,12 @@
                 <button class="quick-btn" onclick="showMarketOverview()">
                     <i class="fas fa-globe-americas"></i> Visión General
                 </button>
+                <button class="quick-btn" onclick="showOrderbook('BTC')">
+                    <i class="fas fa-book"></i> Orderbook BTC
+                </button>
+                <button class="quick-btn" onclick="authManager.logout()" style="background: #e74c3c;">
+                    <i class="fas fa-sign-out-alt"></i> Cerrar Sesión
+                </button>
             </div>
         </div>
 
@@ -114,7 +137,7 @@
             <div class="chat-header">
                 <div class="header-info">
                     <h1><i class="fas fa-robot"></i> Asistente Financiero</h1>
-                    <p>Conectado a mercados en tiempo real</p>
+                    <p>Conectado a mercados en tiempo real • <span id="connectionStatusText">Conectando...</span></p>
                 </div>
                 <div class="header-actions">
                     <button class="action-btn" onclick="clearChat()">
@@ -136,10 +159,10 @@
                         <div class="message-sender">BullBearBroker AI</div>
                         <div class="message-text">
                             ¡Hola! Soy tu asistente especializado en mercados financieros. 
-                            Puedo ayudarte con análisis de acciones, criptomonedas, forex y más.
+                            Conectado a <strong>datos en tiempo real</strong> de Binance y mercados globales.
                             ¿En qué te puedo ayudar hoy?
                         </div>
-                        <div class="message-time">Justo ahora</div>
+                        <div class="message-time" id="currentTime">Justo ahora</div>
                     </div>
                 </div>
             </div>
@@ -149,14 +172,17 @@
                     <button class="input-btn" onclick="addQuickQuestion('Precio de Bitcoin')">
                         <i class="fab fa-bitcoin"></i>
                     </button>
-                    <button class="input-btn" onclick="addQuickQuestion('Análisis del S&P 500')">
+                    <button class="input-btn" onclick="addQuickQuestion('Análisis del mercado')">
                         <i class="fas fa-chart-line"></i>
                     </button>
-                    <button class="input-btn" onclick="addQuickQuestion('Noticias de mercado')">
+                    <button class="input-btn" onclick="addQuickQuestion('Noticias de trading')">
                         <i class="fas fa-newspaper"></i>
                     </button>
                     <button class="input-btn" onclick="addQuickQuestion('Tendencias del día')">
                         <i class="fas fa-trending-up"></i>
+                    </button>
+                    <button class="input-btn" onclick="showOrderbook('BTC')">
+                        <i class="fas fa-book"></i>
                     </button>
                 </div>
                 <div class="input-wrapper">
@@ -164,6 +190,7 @@
                         id="messageInput" 
                         placeholder="Escribe tu pregunta sobre mercados financieros..."
                         rows="1"
+                        onkeypress="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); }"
                     ></textarea>
                     <button class="send-button" onclick="sendMessage()">
                         <i class="fas fa-paper-plane"></i>
@@ -186,7 +213,7 @@
             <div class="modal-body">
                 <div class="form-group">
                     <label>Activo</label>
-                    <input type="text" id="alertSymbol" placeholder="Ej: BTC, AAPL" />
+                    <input type="text" id="alertSymbol" placeholder="Ej: BTC, AAPL, ETH" />
                 </div>
                 <div class="form-group">
                     <label>Condición</label>
@@ -208,10 +235,56 @@
         </div>
     </div>
 
+    <!-- Connection Status Indicator -->
+    <div id="connectionStatus" class="connection-status connecting">
+        <i class="fas fa-circle-notch fa-spin"></i> Conectando a datos en tiempo real...
+    </div>
+
     <!-- ✅ ORDEN CORRECTO DE SCRIPTS -->
     <script src="js/api.js"></script>
     <script src="js/market-data.js"></script>
     <script src="js/chat.js"></script>
     <script src="js/ui-components.js"></script>
+    
+    <!-- ✅ FIX PARA UI-COMPONENTS -->
+    <script src="js/fix-ui.js"></script>
+    
+    <!-- ✅ EMERGENCY FIX (SOLUCIÓN DE EMERGENCIA) -->
+    <script src="js/emergency-fix.js"></script>
+
+    <script>
+    // Actualizar hora actual
+    function updateCurrentTime() {
+        const now = new Date();
+        document.getElementById('currentTime').textContent = now.toLocaleTimeString();
+    }
+    
+    // Inicializar la aplicación
+    function initApp() {
+        updateCurrentTime();
+        setInterval(updateCurrentTime, 1000);
+        
+        // Inicializar el chat si está disponible
+        if (typeof initChat === 'function') {
+            initChat();
+        }
+        
+        console.log('✅ BullBearBroker inicializado correctamente');
+        
+        // Verificar conectividad
+        setTimeout(() => {
+            if (window.checkConnectivity) {
+                window.checkConnectivity();
+            }
+        }, 3000);
+    }
+
+    // Inicializar cuando el DOM esté listo
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initApp);
+    } else {
+        initApp();
+    }
+    </script>
 </body>
 </html>
