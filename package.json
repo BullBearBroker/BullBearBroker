@@ -1,0 +1,31 @@
+{
+  "name": "bullbearbroker",
+  "version": "1.0.0",
+  "description": "BullBearBroker - Asistente Especializado en Mercados Financieros",
+  "main": "frontend/index.html",
+  "scripts": {
+    "start": "python -m http.server 8080 --directory frontend",
+    "dev": "python -m http.server 8080 --directory frontend",
+    "backend": "cd backend && python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "keywords": [
+    "finance",
+    "trading",
+    "ai",
+    "chatbot",
+    "cryptocurrency",
+    "stocks"
+  ],
+  "author": "BullBearBroker Team",
+  "license": "MIT",
+  "devDependencies": {},
+  "dependencies": {},
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bullbearbroker/bullbearbroker.git"
+  }
+}
