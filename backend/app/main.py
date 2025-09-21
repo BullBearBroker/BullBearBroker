@@ -15,6 +15,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from services.market_service import market_service
 from services.ai_service import ai_service
+from utils.config import Config
 
 # Importar routers de autenticación
 try:
@@ -33,8 +34,8 @@ app = FastAPI(title="BullBearBroker API", version="1.0.0")
 
 # Configuración de seguridad
 security = HTTPBearer()
-SECRET_KEY = "bullbearbroker_secret_key_2024"
-ALGORITHM = "HS256"
+SECRET_KEY = Config.JWT_SECRET_KEY
+ALGORITHM = Config.JWT_ALGORITHM
 
 # ✅ CONFIGURACIÓN CORS MEJORADA - ORIGENS COMPLETOS PARA DESARROLLO
 app.add_middleware(

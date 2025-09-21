@@ -13,13 +13,14 @@ from services.user_service import (
     UserAlreadyExistsError,
     user_service,
 )
+from utils.config import Config
 
 router = APIRouter()
 security = HTTPBearer()
 
-# Secret key para JWT - EN PRODUCCIÓN USAR VARIABLE DE ENTORNO
-SECRET_KEY = "bullbearbroker_secret_key_2024"
-ALGORITHM = "HS256"
+# Secret key para JWT - obtenido desde configuración centralizada
+SECRET_KEY = Config.JWT_SECRET_KEY
+ALGORITHM = Config.JWT_ALGORITHM
 
 
 def create_jwt_token(user: User) -> str:
