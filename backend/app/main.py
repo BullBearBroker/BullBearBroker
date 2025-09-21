@@ -40,50 +40,22 @@ ALGORITHM = "HS256"
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000", 
-        "http://127.0.0.1:3000", 
-        "http://localhost:5500", 
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5500",
         "http://127.0.0.1:5500",
-        "http://localhost:8000", 
+        "http://localhost:8000",
         "http://127.0.0.1:8000",
-        "http://localhost:8080", 
+        "http://localhost:8080",
         "http://127.0.0.1:8080",
         "http://[::1]:3000",       # ← ¡IPv6 LOCALHOST!
-        "http://[::]:3000",        # ← ¡IPv6 TODAS LAS INTERFACES!
-        "null", 
-        "file://",
-        "*"                        # ← TEMPORAL: Permitir todos para desarrollo
+        "http://[::]:3000"        # ← ¡IPv6 TODAS LAS INTERFACES!
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"]
 )
-
-# ✅ MIDDLEWARE MEJORADO PARA CORS
-@app.middleware("http")
-async def add_cors_headers(request, call_next):
-    response = await call_next(request)
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, Accept, Origin"
-    response.headers["Access-Control-Allow-Credentials"] = "true"
-    response.headers["Access-Control-Expose-Headers"] = "*"
-    return response
-
-# ✅ MANEJAR OPTIONS PARA CORS - MEJORADO
-@app.options("/{rest_of_path:path}")
-async def preflight_handler(rest_of_path: str):
-    return {
-        "status": "ok",
-        "headers": {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, Accept, Origin",
-            "Access-Control-Allow-Credentials": "true",
-            "Access-Control-Max-Age": "3600"
-        }
-    }
 
 # Incluir routers de autenticación
 if hasattr(auth, 'router'):
