@@ -31,11 +31,81 @@ class MarketDataService {
         this.initialLoadDone = false;
         this.useWebSockets = true;
         this.pollingIntervals = []; // Track intervals para limpiarlos después
+        this.eventListeners = new Map();
+        this.lastEmittedTickers = {
+            top: [],
+            worst: []
+        };
+        this.ready = false;
+    }
+
+    on(event, callback) {
+        if (typeof callback !== 'function') {
+            return () => {};
+        }
+
+        if (!this.eventListeners.has(event)) {
+            this.eventListeners.set(event, new Set());
+        }
+
+        const listeners = this.eventListeners.get(event);
+        listeners.add(callback);
+
+        return () => this.off(event, callback);
+    }
+
+    off(event, callback) {
+        const listeners = this.eventListeners.get(event);
+        if (!listeners) return;
+
+        listeners.delete(callback);
+
+        if (!listeners.size) {
+            this.eventListeners.delete(event);
+        }
+    }
+
+    emit(event, payload) {
+        const listeners = this.eventListeners.get(event);
+        if (listeners) {
+            listeners.forEach(listener => {
+                try {
+                    listener(payload);
+                } catch (error) {
+                    console.error(`Error ejecutando listener para ${event}:`, error);
+                }
+            });
+        }
+
+        if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+            try {
+                window.dispatchEvent(new CustomEvent(`marketData:${event}`, { detail: payload }));
+            } catch (error) {
+                console.error('Error dispatching marketData event:', error);
+            }
+        }
+    }
+
+    emitTickers(source = 'unknown') {
+        const snapshot = this.getTickerSnapshot();
+        this.lastEmittedTickers = snapshot;
+        this.emit('tickers', {
+            ...snapshot,
+            source,
+            timestamp: Date.now()
+        });
+    }
+
+    getTickerSnapshot() {
+        return {
+            top: Array.isArray(this.tickers.top) ? [...this.tickers.top] : [],
+            worst: Array.isArray(this.tickers.worst) ? [...this.tickers.worst] : []
+        };
     }
 
     async init() {
         console.log('🚀 Inicializando MarketDataService...');
-        
+
         // Limpiar intervals anteriores si existen
         this.cleanup();
         
@@ -48,14 +118,15 @@ class MarketDataService {
             WS_URL: this.WS_URL
         });
 
-        this.start();
+        await this.start();
+        this.ready = true;
+        this.emit('ready', { service: this, timestamp: Date.now() });
     }
 
     async start() {
         // Cargar datos iniciales
         await this.loadInitialMarketData();
-        this.renderTickers();
-        
+
         // Intentar WebSockets solo si está habilitado
         if (this.useWebSockets) {
             this.initWebSocketManager();
@@ -66,23 +137,27 @@ class MarketDataService {
     }
 
     async loadInitialMarketData() {
-        if (this.initialLoadDone) return;
-        
+        if (this.initialLoadDone) {
+            this.emitTickers('cache');
+            return;
+        }
+
         try {
             console.log('📊 Cargando datos iniciales...');
             const apiData = await this.fetchFromBackend();
-            
+
             if (apiData && apiData.success) {
                 this.processApiData(apiData.data);
                 this.initialLoadDone = true;
                 console.log('✅ Datos iniciales cargados correctamente');
+                this.emitTickers('api');
             } else {
-                this.loadSimulatedData();
+                this.loadSimulatedData('api_unavailable');
                 console.log('⚠️ Usando datos simulados (API no disponible)');
             }
         } catch (error) {
             console.log('❌ Error cargando datos iniciales, usando simulados:', error);
-            this.loadSimulatedData();
+            this.loadSimulatedData('api_error');
         }
     }
 
@@ -194,7 +269,7 @@ class MarketDataService {
         return simulatedPrices[symbol.toUpperCase()] || { price: '--', change: '0%' };
     }
 
-    loadSimulatedData() {
+    loadSimulatedData(reason = 'fallback') {
         console.log('🔄 Cargando datos simulados...');
         this.tickers = {
             top: [
@@ -211,30 +286,15 @@ class MarketDataService {
                 { symbol: 'ADA', change: '-0.1%', price: '$0.45', changeValue: -0.1 }
             ]
         };
-    }
-
-    renderTickers() {
-        this.renderTickerList('topTickers', this.tickers.top);
-        this.renderTickerList('worstTickers', this.tickers.worst);
-        this.updateWatchlist();
-    }
-
-    renderTickerList(containerId, tickers) {
-        const container = document.getElementById(containerId);
-        if (!container) {
-            console.warn(`⚠️ Contenedor no encontrado: ${containerId}`);
-            return;
+        this.initialLoadDone = true;
+        this.emitTickers('simulated');
+        this.emit('fallback', {
+            reason,
+            timestamp: Date.now()
+        });
+        if (this.connectionStatus !== 'static') {
+            this.updateConnectionStatus('static', { reason });
         }
-
-        container.innerHTML = tickers.map(ticker => `
-            <div class="ticker-item" onclick="askQuestion('Precio de ${ticker.symbol}')">
-                <span class="ticker-symbol">${ticker.symbol}</span>
-                <span class="ticker-price">${ticker.price}</span>
-                <span class="ticker-change ${ticker.change.includes('-') ? 'negative' : 'positive'}">
-                    ${ticker.change}
-                </span>
-            </div>
-        `).join('');
     }
 
     handleMarketData(marketData) {
@@ -242,63 +302,17 @@ class MarketDataService {
             console.log('✅ Datos reales recibidos via WebSocket');
             this.tickers.top = marketData.top_performers.slice(0, 5);
             this.tickers.worst = marketData.worst_performers.slice(0, 5);
-            this.renderTickers();
-            this.updateMarketHeader();
+            this.emitTickers('realtime');
         }
     }
 
-    updateMarketHeader() {
-        const marketTicker = document.querySelector('.market-ticker');
-        if (!marketTicker || !this.tickers.top.length) return;
-
-        marketTicker.innerHTML = this.tickers.top.slice(0, 3).map(item => `
-            <div class="ticker-item">
-                <span class="ticker-name">${item.symbol}</span>
-                <span class="ticker-price">${item.price}</span>
-                <span class="ticker-change ${item.change.includes('-') ? 'negative' : 'positive'}">
-                    ${item.change}
-                </span>
-            </div>
-        `).join('');
-    }
-
-    updateWatchlist() {
-        const symbols = ['btc', 'eth', 'aapl'];
-        symbols.forEach(symbol => {
-            const priceElem = document.getElementById(`${symbol}Price`);
-            const changeElem = document.getElementById(`${symbol}Change`);
-            
-            if (priceElem && changeElem) {
-                const ticker = [...this.tickers.top, ...this.tickers.worst]
-                    .find(t => t.symbol.toLowerCase() === symbol);
-                
-                if (ticker) {
-                    priceElem.textContent = ticker.price;
-                    changeElem.textContent = ticker.change;
-                    changeElem.className = `item-change ${ticker.change.includes('-') ? 'negative' : 'positive'}`;
-                }
-            }
+    updateConnectionStatus(status, metadata = {}) {
+        this.connectionStatus = status;
+        this.emit('connection', {
+            status,
+            timestamp: Date.now(),
+            ...metadata
         });
-    }
-
-    updateConnectionStatus(status) {
-        const statusElement = document.getElementById('connectionStatus');
-        const statusTextElement = document.getElementById('connectionStatusText');
-        
-        if (statusElement) {
-            statusElement.className = `connection-status ${status}`;
-            const statusMessages = {
-                'connected': '✅ Conectado a datos en tiempo real',
-                'disconnected': '❌ Desconectado',
-                'error': '⚠️ Error de conexión - Modo estático',
-                'static': '📊 Usando datos estáticos'
-            };
-            statusElement.textContent = statusMessages[status] || 'Estado desconocido';
-        }
-        
-        if (statusTextElement) {
-            statusTextElement.textContent = status === 'connected' ? 'Conectado' : 'Desconectado';
-        }
     }
 
     cleanup() {
@@ -452,6 +466,11 @@ function initializeMarketData(options = {}) {
 
         if (!window.marketData) {
             window.marketData = new MarketDataService();
+            if (typeof window.dispatchEvent === 'function') {
+                window.dispatchEvent(new CustomEvent('marketData:service-created', {
+                    detail: { service: window.marketData }
+                }));
+            }
         }
 
         window.marketData.init();
