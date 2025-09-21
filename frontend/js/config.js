@@ -109,6 +109,9 @@
                 const origin = window.location?.origin || 'http://localhost:8000';
                 absoluteBase = base.startsWith('/') ? `${origin}${base}` : `${origin}/${base}`;
             }
+            if (!absoluteBase.endsWith('/')) {
+                absoluteBase += '/';
+            }
             const url = new URL(normalisedPath, absoluteBase);
             return url.href;
         } catch (error) {
