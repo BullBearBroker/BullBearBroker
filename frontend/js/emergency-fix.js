@@ -3,12 +3,27 @@ console.log('🆘 Activando solución de emergencia...');
 
 // 1. Detener TODOS los intervals y timeouts
 function stopAllIntervals() {
-    const maxId = setTimeout(() => {}, 0);
-    for (let i = 0; i < maxId; i++) {
-        clearInterval(i);
-        clearTimeout(i);
+    const protectedTimeouts = (typeof window !== 'undefined' && window.__marketDataTimers instanceof Set)
+        ? window.__marketDataTimers
+        : null;
+
+    const maxTimeoutId = setTimeout(() => {}, 0);
+    for (let i = 0; i <= maxTimeoutId; i++) {
+        if (!protectedTimeouts || !protectedTimeouts.has(i)) {
+            clearTimeout(i);
+        }
     }
-    console.log('🛑 Todos los intervals detenidos');
+
+    const maxIntervalId = setInterval(() => {}, 0);
+    for (let i = 0; i <= maxIntervalId; i++) {
+        clearInterval(i);
+    }
+
+    if (protectedTimeouts && protectedTimeouts.size > 0) {
+        console.log(`🛑 Intervals detenidos (timeouts protegidos: ${protectedTimeouts.size})`);
+    } else {
+        console.log('🛑 Todos los intervals detenidos');
+    }
 }
 
 // 2. Sobrescribir fetch para redirigir correctamente
@@ -99,5 +114,11 @@ function loadStaticData() {
 // Ejecutar solución de emergencia
 stopAllIntervals();
 loadStaticData();
+
+// Reiniciar el servicio de datos de mercado una vez limpia la capa de timers
+if (typeof window.initializeMarketData === 'function') {
+    console.log('🔄 Reforzando inicialización de datos de mercado tras el fix de emergencia');
+    window.initializeMarketData({ forceReinitialize: true });
+}
 
 console.log('✅ Solución de emergencia activada');
