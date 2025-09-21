@@ -295,8 +295,25 @@ class MarketService:
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, params=params) as response:
                     data = await response.json()
-                    price = float(data['Global Quote']['05. price'])
-                    change = float(data['Global Quote']['09. change'])
+                    quote = data.get('Global Quote', {})
+
+                    price_str = quote.get('05. price')
+                    if price_str is None:
+                        raise ValueError('Price field missing in Alpha Vantage response')
+
+                    price = float(price_str)
+
+                    change_percent = quote.get('10. change percent')
+                    change = 0.0
+                    if isinstance(change_percent, str):
+                        change_percent = change_percent.strip().replace('%', '')
+                        try:
+                            change = float(change_percent)
+                        except ValueError:
+                            change = 0.0
+                    elif isinstance(change_percent, (int, float)):
+                        change = float(change_percent)
+
                     return {'price': price, 'change': change, 'source': 'Alpha Vantage'}
                     
         except Exception as e:
