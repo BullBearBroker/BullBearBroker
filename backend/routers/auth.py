@@ -3,7 +3,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional
 import jwt
 from datetime import datetime, timedelta
-import hashlib
+
+from utils.config import password_context
 
 router = APIRouter()
 security = HTTPBearer()
@@ -15,7 +16,7 @@ ALGORITHM = "HS256"
 # Función para hashear contraseñas
 def hash_password(password: str) -> str:
     """Función simple para hashear contraseñas"""
-    return hashlib.sha256(password.encode()).hexdigest()
+    return password_context.hash(password)
 
 # Modelo de usuario simplificado (sin Pydantic para evitar dependencias)
 class User:
@@ -31,7 +32,7 @@ class User:
     
     def verify_password(self, password: str) -> bool:
         """Verificar si la contraseña coincide"""
-        return self.hashed_password == hash_password(password)
+        return password_context.verify(password, self.hashed_password)
     
     def reset_api_counter(self):
         """Resetear el contador de API calls si es un nuevo día"""

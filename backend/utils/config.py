@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+from passlib.context import CryptContext
 
 load_dotenv()
 
@@ -19,3 +20,6 @@ class Config:
     # Binance no necesita key
     # Yahoo Finance no necesita key
     # Twitter API necesita app registration
+
+
+password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

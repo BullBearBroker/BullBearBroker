@@ -1,11 +1,12 @@
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
-import hashlib
+
+from utils.config import password_context
 
 def hash_password(password: str) -> str:
     """Función simple para hashear contraseñas"""
-    return hashlib.sha256(password.encode()).hexdigest()
+    return password_context.hash(password)
 
 class User(BaseModel):
     id: Optional[int] = None
@@ -19,7 +20,7 @@ class User(BaseModel):
     
     def verify_password(self, password: str) -> bool:
         """Verificar si la contraseña coincide"""
-        return self.hashed_password == hash_password(password)
+        return password_context.verify(password, self.hashed_password)
     
     def reset_api_counter(self):
         """Resetear el contador de API calls si es un nuevo día"""
