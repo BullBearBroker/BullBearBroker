@@ -15,7 +15,9 @@
     <script src="js/auth.js"></script>
     <script>
     document.addEventListener('DOMContentLoaded', function() {
-        const authManager = new AuthManager();
+        const authManager = (window.authManager instanceof AuthManager)
+            ? window.authManager
+            : (window.authManager = new AuthManager());
         
         if (!authManager.isAuthenticated()) {
             window.location.href = 'login.html';

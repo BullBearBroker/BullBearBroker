@@ -138,8 +138,17 @@ class AuthManager {
     }
 
     redirectToApp() {
+        const targetUrl = new URL('index.html', window.location.href);
+        const normalizePath = (path) => path.replace(/\/+$/, '').replace(/\/index\.html$/, '');
+        const currentPath = normalizePath(window.location.pathname);
+        const targetPath = normalizePath(targetUrl.pathname);
+
+        if (currentPath === targetPath) {
+            return;
+        }
+
         setTimeout(() => {
-            window.location.href = 'index.html';
+            window.location.href = targetUrl.href;
         }, 1000);
     }
 
