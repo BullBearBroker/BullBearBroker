@@ -4,13 +4,19 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BullBearBroker - Login</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
 <body class="login-page">
     <div class="login-container">
         <div class="login-header">
-            <h1><i class="fas fa-chart-line"></i> BullBearBroker</h1>
+            <h1>
+                <i class="fas fa-chart-line"></i>
+                BullBearBroker
+            </h1>
             <p>Tu asistente inteligente de mercados financieros</p>
         </div>
 
@@ -20,11 +26,11 @@
                 <h2>Iniciar Sesión</h2>
                 <div class="form-group">
                     <label for="loginEmail">Email</label>
-                    <input type="email" id="loginEmail" required placeholder="tu@email.com">
+                    <input type="email" id="loginEmail" required placeholder="tu@email.com" autocomplete="email">
                 </div>
                 <div class="form-group">
                     <label for="loginPassword">Contraseña</label>
-                    <input type="password" id="loginPassword" required placeholder="••••••••">
+                    <input type="password" id="loginPassword" required placeholder="••••••••" autocomplete="current-password">
                 </div>
                 <button type="submit" class="btn-primary">
                     <i class="fas fa-sign-in-alt"></i> Ingresar
@@ -36,15 +42,15 @@
                 <h2>Crear Cuenta</h2>
                 <div class="form-group">
                     <label for="registerEmail">Email</label>
-                    <input type="email" id="registerEmail" required placeholder="tu@email.com">
+                    <input type="email" id="registerEmail" required placeholder="tu@email.com" autocomplete="email">
                 </div>
                 <div class="form-group">
                     <label for="registerUsername">Usuario</label>
-                    <input type="text" id="registerUsername" required placeholder="tu_usuario">
+                    <input type="text" id="registerUsername" required placeholder="tu_usuario" autocomplete="username">
                 </div>
                 <div class="form-group">
                     <label for="registerPassword">Contraseña</label>
-                    <input type="password" id="registerPassword" required placeholder="••••••••">
+                    <input type="password" id="registerPassword" required placeholder="••••••••" autocomplete="new-password">
                     <small>Mínimo 6 caracteres</small>
                 </div>
                 <button type="submit" class="btn-primary">
@@ -59,7 +65,11 @@
         </div>
 
         <div class="login-footer">
-            <p>📊 Datos en tiempo real • 🤖 IA especializada • 🔒 Seguro</p>
+            <div class="feature-badges">
+                <span class="badge">📊 Datos en tiempo real</span>
+                <span class="badge">🤖 IA especializada</span>
+                <span class="badge">🔒 Seguro</span>
+            </div>
         </div>
     </div>
 
