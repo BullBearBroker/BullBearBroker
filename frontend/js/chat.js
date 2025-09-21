@@ -95,7 +95,11 @@ class ChatManager {
 
     async fetchAIResponse(message) {
         try {
-            const response = await fetch('http://localhost:8000/api/chat/message', {
+            const apiUrl = typeof window.buildApiUrl === 'function'
+                ? window.buildApiUrl('chat/message')
+                : `${(window.APP_CONFIG?.API_BASE_URL || 'http://localhost:8000/api').replace(/\/$/, '')}/chat/message`;
+
+            const response = await fetch(apiUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
