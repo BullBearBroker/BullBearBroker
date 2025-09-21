@@ -2,7 +2,22 @@ class AuthManager {
     constructor() {
         this.token = localStorage.getItem('bb_token');
         this.user = JSON.parse(localStorage.getItem('bb_user') || 'null');
+
+        const computedBase = typeof window.buildApiUrl === 'function'
+            ? window.buildApiUrl('')
+            : (window.APP_CONFIG?.API_BASE_URL || 'http://localhost:8000/api');
+
+        this.apiBase = computedBase.replace(/\/$/, '');
         this.init();
+    }
+
+    buildUrl(path = '') {
+        if (typeof window.buildApiUrl === 'function') {
+            return window.buildApiUrl(path);
+        }
+
+        const normalisedPath = path ? `/${String(path).replace(/^\/+/g, '')}` : '';
+        return `${this.apiBase}${normalisedPath}`;
     }
 
     init() {
@@ -41,7 +56,7 @@ class AuthManager {
         const password = document.getElementById('loginPassword').value;
 
         try {
-            const response = await fetch('http://127.0.0.1:8000/api/auth/login', {
+            const response = await fetch(this.buildUrl('auth/login'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -83,7 +98,7 @@ class AuthManager {
         }
 
         try {
-            const response = await fetch('http://127.0.0.1:8000/api/auth/register', {
+            const response = await fetch(this.buildUrl('auth/register'), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

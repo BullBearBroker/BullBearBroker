@@ -1,11 +1,20 @@
 class APIService {
     constructor() {
-        this.baseURL = 'http://localhost:8000';
+        const computedBase = typeof window.buildApiUrl === 'function'
+            ? window.buildApiUrl('')
+            : (window.APP_CONFIG?.API_BASE_URL || 'http://localhost:8000/api');
+
+        this.baseURL = computedBase.replace(/\/$/, '');
+    }
+
+    buildUrl(endpoint = '') {
+        const normalisedEndpoint = endpoint ? `/${endpoint.replace(/^\/+/, '')}` : '';
+        return `${this.baseURL}${normalisedEndpoint}`;
     }
 
     async request(endpoint, options = {}) {
         try {
-            const response = await fetch(`${this.baseURL}${endpoint}`, {
+            const response = await fetch(this.buildUrl(endpoint), {
                 headers: {
                     'Content-Type': 'application/json',
                     ...options.headers
@@ -26,7 +35,7 @@ class APIService {
 
     async getMarketData() {
         try {
-            const response = await this.request('/api/market/top-performers');
+            const response = await this.request('market/top-performers');
             return response.data;
         } catch (error) {
             console.log('Using simulated market data');
@@ -36,7 +45,7 @@ class APIService {
 
     async getPrice(symbol) {
         try {
-            const response = await this.request(`/api/market/price/${symbol}`);
+            const response = await this.request(`market/price/${symbol}`);
             return response.data;
         } catch (error) {
             console.log(`Price not available for ${symbol}`);
@@ -46,7 +55,7 @@ class APIService {
 
     async sendChatMessage(message) {
         try {
-            const response = await this.request('/api/chat/message', {
+            const response = await this.request('chat/message', {
                 method: 'POST',
                 body: JSON.stringify({ message })
             });
