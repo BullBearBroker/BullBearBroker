@@ -53,8 +53,10 @@
         if (windowOrigin) {
             try {
                 const parsed = new URL(windowOrigin);
+                // Use the same protocol as the frontend to avoid mixed content issues
                 if (parsed.port && parsed.port !== '8000') {
-                    return fallbackHttpOrigin;
+                    // Frontend is on a different port, construct backend URL with same protocol
+                    return `${parsed.protocol}//localhost:8000`;
                 }
                 return windowOrigin;
             } catch (error) {
