@@ -1,4 +1,25 @@
 // Market Data Service - Versión Mejorada y Corregida
+
+// Registro global de timers asociados al servicio de datos de mercado.
+// Nos permite proteger timers críticos cuando la capa de emergencia limpia
+// los identificadores pendientes.
+if (typeof window !== 'undefined' && !window.__marketDataTimers) {
+    window.__marketDataTimers = new Set();
+}
+
+function registerMarketDataTimer(timerId) {
+    if (typeof window !== 'undefined' && typeof timerId === 'number') {
+        window.__marketDataTimers.add(timerId);
+    }
+    return timerId;
+}
+
+function unregisterMarketDataTimer(timerId) {
+    if (typeof window !== 'undefined' && window.__marketDataTimers) {
+        window.__marketDataTimers.delete(timerId);
+    }
+}
+
 class MarketDataService {
     constructor() {
         this.tickers = {
@@ -119,8 +140,10 @@ class MarketDataService {
                 console.log('🔗 Conectando WebSocket...');
                 this.wsManager.connect();
             }
+            unregisterMarketDataTimer(connectTimeout);
         }, 2000);
-        
+
+        registerMarketDataTimer(connectTimeout);
         this.pollingIntervals.push(connectTimeout);
     }
 
@@ -283,6 +306,7 @@ class MarketDataService {
         this.pollingIntervals.forEach(intervalId => {
             clearTimeout(intervalId);
             clearInterval(intervalId);
+            unregisterMarketDataTimer(intervalId);
         });
         this.pollingIntervals = [];
         
@@ -407,43 +431,85 @@ class WebSocketManager {
 }
 
 // Inicialización segura cuando el DOM esté listo
-function initializeMarketData() {
-    console.log('🚀 Inicializando BullBearBroker Market Data...');
-    
+function initializeMarketData(options = {}) {
+    const { forceReinitialize = false } = options;
+    console.log('🚀 Inicializando BullBearBroker Market Data...', options);
+
     // Configuración global
     window.APP_CONFIG = window.APP_CONFIG || {
         API_BASE_URL: 'http://localhost:8000/api',
         WS_URL: 'ws://localhost:8000/ws/market-data'
     };
-    
-    // Inicializar con retraso para asegurar que todo esté cargado
-    setTimeout(() => {
+
+    const setupService = () => {
+        if (forceReinitialize && window.marketData) {
+            console.log('♻️ Reiniciando instancia existente de MarketDataService');
+            if (typeof window.marketData.cleanup === 'function') {
+                window.marketData.cleanup();
+            }
+            window.marketData = null;
+        }
+
         if (!window.marketData) {
             window.marketData = new MarketDataService();
-            window.marketData.init();
         }
-        
-        // Funciones globales
+
+        window.marketData.init();
+    };
+
+    const setupGlobalHelpers = () => {
         window.getAssetPrice = async function(symbol) {
             if (window.marketData) {
                 return await window.marketData.getPrice(symbol);
             }
             return null;
         };
-        
+
         window.testWebSocketConnection = function() {
             if (window.marketData && window.marketData.wsManager) {
                 window.marketData.wsManager.disconnect();
                 setTimeout(() => window.marketData.wsManager.connect(), 1000);
             }
         };
-        
+
         window.cleanupMarketData = function() {
             if (window.marketData) {
                 window.marketData.cleanup();
             }
         };
-    }, 1000);
+    };
+
+    const ensureWebSocketConnection = () => {
+        const verificationTimeout = setTimeout(() => {
+            try {
+                if (window.marketData && window.marketData.useWebSockets) {
+                    if (!window.marketData.wsManager) {
+                        console.warn('⚠️ WebSocket manager no inicializado, reintentando init...');
+                        window.marketData.init();
+                    } else if (!window.marketData.wsManager.isConnected && typeof window.marketData.wsManager.connect === 'function') {
+                        console.log('🔁 Forzando conexión del WebSocket tras verificación...');
+                        window.marketData.wsManager.connect();
+                    }
+                }
+            } finally {
+                unregisterMarketDataTimer(verificationTimeout);
+            }
+        }, 1500);
+
+        registerMarketDataTimer(verificationTimeout);
+    };
+
+    const runInitialization = () => {
+        setupService();
+        setupGlobalHelpers();
+        ensureWebSocketConnection();
+    };
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', runInitialization, { once: true });
+    } else {
+        runInitialization();
+    }
 }
 
 // Inicializar cuando esté listo
