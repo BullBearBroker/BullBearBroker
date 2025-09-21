@@ -125,10 +125,15 @@ class MarketDataService {
     }
 
     processApiData(apiData) {
-        if (apiData && apiData.data) {
-            this.tickers.top = apiData.data.top_performers || [];
-            this.tickers.worst = apiData.data.worst_performers || [];
+        if (!apiData) {
+            console.warn('⚠️ Datos de API no válidos para procesar');
+            return;
         }
+
+        const { top_performers = [], worst_performers = [] } = apiData;
+
+        this.tickers.top = Array.isArray(top_performers) ? top_performers : [];
+        this.tickers.worst = Array.isArray(worst_performers) ? worst_performers : [];
     }
 
     async getPrice(symbol) {
