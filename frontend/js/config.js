@@ -98,8 +98,15 @@
     window.buildApiUrl = function buildApiUrl(path = '') {
         const base = ensureTrailingRemoved(window.APP_CONFIG.API_BASE_URL);
         if (!path) return base;
-        const normalisedPath = `/${String(path).replace(/^\/+/g, '')}`;
-        return `${base}${normalisedPath}`;
+        const normalisedPath = String(path).replace(/^\/+/g, '');
+        try {
+            const url = new URL(normalisedPath, base);
+            return url.href;
+        } catch (error) {
+            console.warn('Error constructing URL, falling back to string concatenation:', error);
+            const fallbackPath = `/${normalisedPath}`;
+            return `${base}${fallbackPath}`;
+        }
     };
 
     window.buildWsUrl = function buildWsUrl(path = '') {
