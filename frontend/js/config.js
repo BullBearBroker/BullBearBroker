@@ -100,7 +100,14 @@
         if (!path) return base;
         const normalisedPath = String(path).replace(/^\/+/g, '');
         try {
-            const url = new URL(normalisedPath, base);
+            // Ensure base is an absolute URL
+            let absoluteBase = base;
+            if (!base.match(/^https?:\/\//)) {
+                // If base is not absolute, make it absolute using window.location.origin
+                const origin = window.location?.origin || 'http://localhost:8000';
+                absoluteBase = base.startsWith('/') ? `${origin}${base}` : `${origin}/${base}`;
+            }
+            const url = new URL(normalisedPath, absoluteBase);
             return url.href;
         } catch (error) {
             console.warn('Error constructing URL, falling back to string concatenation:', error);
