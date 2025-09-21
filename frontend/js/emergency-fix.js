@@ -28,24 +28,88 @@ function stopAllIntervals() {
 
 // 2. Sobrescribir fetch para redirigir correctamente
 const originalFetch = window.fetch;
-window.fetch = function(url, options) {
-    // Redirigir solicitudes de API al backend correcto
-    if (typeof url === 'string') {
-        // Si es una ruta de API pero no tiene el host correcto
-        if (url.includes('/api/') && !url.includes('localhost:8000')) {
-            const newUrl = `http://localhost:8000${url.startsWith('/') ? '' : '/'}${url}`;
-            console.log('🔁 Redirigiendo solicitud:', url, '→', newUrl);
-            return originalFetch(newUrl, options);
+
+const getApiBaseUrl = () => {
+    const fallback = 'http://localhost:8000/api';
+    const apiBase = window.APP_CONFIG?.API_BASE_URL || fallback;
+    try {
+        return new URL(apiBase);
+    } catch (error) {
+        console.warn('API_BASE_URL inválido en modo emergencia. Usando fallback.', error);
+        return new URL(fallback);
+    }
+};
+
+const apiBaseUrl = getApiBaseUrl();
+const apiBasePath = apiBaseUrl.pathname.replace(/\/$/, '');
+
+const normalisePath = (path) => {
+    const normalised = `/${String(path || '').replace(/^\/+/, '')}`;
+    if (!apiBasePath) {
+        return normalised;
+    }
+    return normalised.startsWith(apiBasePath)
+        ? normalised
+        : `${apiBasePath}${normalised}`.replace(/\/{2,}/g, '/');
+};
+
+const rebuildBackendUrl = (inputUrl) => {
+    if (typeof inputUrl !== 'string') {
+        return null;
+    }
+
+    const toUrl = (value, base) => {
+        try {
+            return new URL(value, base);
+        } catch (error) {
+            return null;
         }
-        
-        // Si es una ruta relativa que debería ser API
-        if (url.startsWith('/market/') || url.startsWith('market/')) {
-            const newUrl = `http://localhost:8000/api/${url.replace(/^\//, '')}`;
-            console.log('🔁 Redirigiendo market request:', url, '→', newUrl);
-            return originalFetch(newUrl, options);
+    };
+
+    const parsed = toUrl(inputUrl, window.location?.origin || apiBaseUrl.origin);
+    if (!parsed) {
+        return null;
+    }
+
+    const { pathname, search, hash } = parsed;
+    const lowerPath = pathname.toLowerCase();
+
+    let targetPath = null;
+    if (lowerPath.startsWith('/api/')) {
+        targetPath = pathname;
+    } else if (lowerPath === '/api') {
+        targetPath = pathname;
+    } else if (lowerPath.startsWith('/market/')) {
+        targetPath = `/api/${pathname.replace(/^\/+/, '')}`;
+    }
+
+    if (!targetPath) {
+        return null;
+    }
+
+    const fullPath = normalisePath(targetPath);
+    return `${apiBaseUrl.origin}${fullPath}${search}${hash}`;
+};
+
+window.fetch = function(url, options) {
+    let targetUrl = null;
+
+    if (typeof url === 'string') {
+        targetUrl = rebuildBackendUrl(url);
+    } else if (url instanceof Request) {
+        targetUrl = rebuildBackendUrl(url.url);
+        if (targetUrl) {
+            const redirectedRequest = new Request(targetUrl, url);
+            console.log('🔁 Redirigiendo solicitud Request:', url.url, '→', targetUrl);
+            return originalFetch(redirectedRequest, options);
         }
     }
-    
+
+    if (targetUrl) {
+        console.log('🔁 Redirigiendo solicitud:', typeof url === 'string' ? url : url.url, '→', targetUrl);
+        return originalFetch(targetUrl, options);
+    }
+
     return originalFetch(url, options);
 };
 

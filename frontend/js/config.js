@@ -1,7 +1,33 @@
 // config.js - Configuración global de la aplicación
 (function initializeAppConfig() {
-    const existingConfig = typeof window.APP_CONFIG === 'object' ? window.APP_CONFIG : {};
-    const fallbackHttpOrigin = 'http://localhost:8000';
+    const globalWindow = typeof window !== 'undefined' ? window : undefined;
+    const preloadedConfig = globalWindow && typeof globalWindow.__BULL_BEAR_CONFIG__ === 'object'
+        ? globalWindow.__BULL_BEAR_CONFIG__
+        : {};
+    const existingConfig = globalWindow && typeof globalWindow.APP_CONFIG === 'object'
+        ? globalWindow.APP_CONFIG
+        : {};
+    const scriptConfig = (() => {
+        const currentScript = typeof document !== 'undefined' ? document.currentScript : null;
+        if (!currentScript) return {};
+        const { dataset = {} } = currentScript;
+        const normaliseValue = (value) => (typeof value === 'string' && value.trim().length > 0
+            ? value.trim()
+            : undefined);
+        return {
+            API_BASE_URL: normaliseValue(dataset.apiBaseUrl),
+            WS_URL: normaliseValue(dataset.wsUrl),
+            BACKEND_ORIGIN: normaliseValue(dataset.backendOrigin)
+        };
+    })();
+
+    const combinedConfig = {
+        ...preloadedConfig,
+        ...existingConfig,
+        ...scriptConfig
+    };
+
+    const fallbackHttpOrigin = combinedConfig.BACKEND_ORIGIN || 'http://localhost:8000';
 
     const getWindowOrigin = () => {
         try {
@@ -15,15 +41,28 @@
     };
 
     const resolveOrigin = () => {
-        if (existingConfig.API_BASE_URL) {
+        if (combinedConfig.API_BASE_URL) {
             try {
-                return new URL(existingConfig.API_BASE_URL).origin;
+                return new URL(combinedConfig.API_BASE_URL).origin;
             } catch (error) {
                 console.warn('API_BASE_URL inválido. Usando valores por defecto.', error);
             }
         }
 
-        return getWindowOrigin() || fallbackHttpOrigin;
+        const windowOrigin = getWindowOrigin();
+        if (windowOrigin) {
+            try {
+                const parsed = new URL(windowOrigin);
+                if (parsed.port && parsed.port !== '8000') {
+                    return fallbackHttpOrigin;
+                }
+                return windowOrigin;
+            } catch (error) {
+                console.warn('window.location.origin inválido. Usando valores por defecto.', error);
+            }
+        }
+
+        return fallbackHttpOrigin;
     };
 
     const ensureTrailingRemoved = (value) => value.replace(/\/$/, '');
@@ -34,8 +73,8 @@
     const normalizeApiBase = (value) => ensureTrailingRemoved(value || defaultApiBase);
 
     const resolveWsUrl = () => {
-        if (existingConfig.WS_URL) {
-            return ensureTrailingRemoved(existingConfig.WS_URL);
+        if (combinedConfig.WS_URL) {
+            return ensureTrailingRemoved(combinedConfig.WS_URL);
         }
 
         try {
@@ -49,10 +88,10 @@
     };
 
     window.APP_CONFIG = {
-        ...existingConfig,
-        ENV: existingConfig.ENV || 'development',
-        DEBUG: existingConfig.DEBUG !== undefined ? existingConfig.DEBUG : true,
-        API_BASE_URL: normalizeApiBase(existingConfig.API_BASE_URL),
+        ...combinedConfig,
+        ENV: combinedConfig.ENV || 'development',
+        DEBUG: combinedConfig.DEBUG !== undefined ? combinedConfig.DEBUG : true,
+        API_BASE_URL: normalizeApiBase(combinedConfig.API_BASE_URL),
         WS_URL: resolveWsUrl()
     };
 
