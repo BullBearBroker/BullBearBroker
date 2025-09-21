@@ -2,13 +2,20 @@
 class UIController {
     constructor() {
         this.alertCount = 0;
+        this.marketData = null;
+        this.marketDataUnsubscribers = [];
+        this.fallbackNotified = false;
+
+        this.handleTickersUpdate = this.handleTickersUpdate.bind(this);
+        this.handleConnectionUpdate = this.handleConnectionUpdate.bind(this);
+        this.handleFallbackEvent = this.handleFallbackEvent.bind(this);
+        this.onMarketDataReady = this.onMarketDataReady.bind(this);
         this.init();
     }
 
     init() {
         this.setupEventListeners();
-        this.loadMarketData();
-        this.startMarketDataInterval();
+        this.bindMarketData();
     }
 
     setupEventListeners() {
@@ -32,54 +39,130 @@ class UIController {
         }
     }
 
-    async loadMarketData() {
-        try {
-            const response = await fetch('/api/market/top-performers');
-            const data = await response.json();
-            
-            if (data.success) {
-                this.updateMarketTickers(data.data);
-                this.updateHeaderTickers(data.data.market_summary);
+    bindMarketData() {
+        if (typeof window === 'undefined') return;
+
+        this.attachMarketData(window.marketData);
+
+        window.addEventListener('marketData:ready', this.onMarketDataReady);
+        window.addEventListener('marketData:service-created', this.onMarketDataReady);
+    }
+
+    onMarketDataReady(event) {
+        const service = event?.detail?.service || (typeof window !== 'undefined' ? window.marketData : null);
+        this.attachMarketData(service);
+    }
+
+    attachMarketData(service) {
+        if (!service || this.marketData === service) {
+            return;
+        }
+
+        this.detachMarketData();
+        this.marketData = service;
+
+        const unsubscribers = [];
+
+        if (typeof service.on === 'function') {
+            unsubscribers.push(service.on('tickers', this.handleTickersUpdate));
+            unsubscribers.push(service.on('connection', this.handleConnectionUpdate));
+            unsubscribers.push(service.on('fallback', this.handleFallbackEvent));
+        }
+
+        this.marketDataUnsubscribers = unsubscribers.filter(Boolean);
+
+        if (typeof service.getTickerSnapshot === 'function') {
+            const snapshot = service.getTickerSnapshot();
+            if (snapshot && (snapshot.top.length || snapshot.worst.length)) {
+                this.handleTickersUpdate({ ...snapshot, source: 'snapshot' });
             }
-        } catch (error) {
-            console.error('Error loading market data:', error);
-            // Usar datos de ejemplo si la API falla
-            this.useSampleData();
+        }
+
+        if (service.connectionStatus) {
+            this.handleConnectionUpdate({ status: service.connectionStatus });
         }
     }
 
-    useSampleData() {
-        const sampleData = {
-            top_performers: [
-                {'symbol': 'BTC', 'price': '$45,123.45', 'change': '+2.5%', 'type': 'crypto'},
-                {'symbol': 'ETH', 'price': '$2,567.89', 'change': '+1.8%', 'type': 'crypto'},
-                {'symbol': 'AAPL', 'price': '$178.90', 'change': '+0.7%', 'type': 'stock'},
-                {'symbol': 'MSFT', 'price': '$345.21', 'change': '+0.3%', 'type': 'stock'},
-                {'symbol': 'SOL', 'price': '$95.67', 'change': '+1.2%', 'type': 'crypto'}
-            ],
-            worst_performers: [
-                {'symbol': 'TSLA', 'price': '$245.67', 'change': '-0.8%', 'type': 'stock'},
-                {'symbol': 'XRP', 'price': '$0.58', 'change': '-0.3%', 'type': 'crypto'},
-                {'symbol': 'NFLX', 'price': '$567.89', 'change': '-0.5%', 'type': 'stock'},
-                {'symbol': 'DOGE', 'price': '$0.12', 'change': '-0.2%', 'type': 'crypto'},
-                {'symbol': 'ADA', 'price': '$0.45', 'change': '-0.1%', 'type': 'crypto'}
-            ],
-            market_summary: {
-                'sp500': '+0.3%',
-                'nasdaq': '+0.8%', 
-                'dow_jones': '-0.2%',
-                'bitcoin_dominance': '52.3%'
+    detachMarketData() {
+        this.marketDataUnsubscribers.forEach(unsubscribe => {
+            try {
+                if (typeof unsubscribe === 'function') {
+                    unsubscribe();
+                }
+            } catch (error) {
+                console.error('Error detaching market data listener:', error);
             }
-        };
-        
-        this.updateMarketTickers(sampleData);
+        });
+        this.marketDataUnsubscribers = [];
+        this.marketData = null;
     }
 
-    updateMarketTickers(data) {
+    handleTickersUpdate(update = {}) {
+        const topTickers = Array.isArray(update.top)
+            ? update.top
+            : Array.isArray(update.top_performers) ? update.top_performers : [];
+        const worstTickers = Array.isArray(update.worst)
+            ? update.worst
+            : Array.isArray(update.worst_performers) ? update.worst_performers : [];
+
+        this.updateMarketTickers({ top: topTickers, worst: worstTickers });
+        this.updateHeaderTickers(topTickers);
+        this.updateWatchlist(topTickers, worstTickers);
+    }
+
+    handleConnectionUpdate(detail = {}) {
+        const status = detail.status || 'disconnected';
+        const statusElement = document.getElementById('connectionStatus');
+        const statusTextElement = document.getElementById('connectionStatusText');
+
+        if (statusElement) {
+            statusElement.className = `connection-status ${status}`;
+            const statusMessages = {
+                'connected': '✅ Conectado a datos en tiempo real',
+                'disconnected': '❌ Desconectado',
+                'error': '⚠️ Error de conexión - Modo estático',
+                'static': '📊 Usando datos estáticos'
+            };
+            statusElement.textContent = statusMessages[status] || 'Estado desconocido';
+        }
+
+        if (statusTextElement) {
+            if (status === 'connected') {
+                statusTextElement.textContent = 'Conectado';
+            } else if (status === 'static') {
+                statusTextElement.textContent = 'Modo estático';
+            } else {
+                statusTextElement.textContent = 'Desconectado';
+            }
+        }
+
+        if (status === 'connected') {
+            this.fallbackNotified = false;
+        }
+    }
+
+    handleFallbackEvent(detail = {}) {
+        const reason = detail.reason || 'fallback';
+        this.handleConnectionUpdate({ status: 'static', reason });
+
+        if (!this.fallbackNotified) {
+            this.showAlert('Mostrando datos estáticos mientras restablecemos la conexión en tiempo real.', 'warning');
+            this.fallbackNotified = true;
+        }
+    }
+
+    updateMarketTickers(data = {}) {
+        const topList = Array.isArray(data.top)
+            ? data.top
+            : Array.isArray(data.top_performers) ? data.top_performers : [];
+        const worstList = Array.isArray(data.worst)
+            ? data.worst
+            : Array.isArray(data.worst_performers) ? data.worst_performers : [];
+
         // Actualizar top performers
         const topTickers = document.getElementById('topTickers');
-        if (topTickers && data.top_performers) {
-            topTickers.innerHTML = data.top_performers.slice(0, 5).map(ticker => `
+        if (topTickers) {
+            topTickers.innerHTML = topList.slice(0, 5).map(ticker => `
                 <div class="ticker-item">
                     <span class="ticker-symbol">${ticker.symbol}</span>
                     <span class="ticker-price">${ticker.price}</span>
@@ -90,8 +173,8 @@ class UIController {
 
         // Actualizar worst performers
         const worstTickers = document.getElementById('worstTickers');
-        if (worstTickers && data.worst_performers) {
-            worstTickers.innerHTML = data.worst_performers.slice(0, 5).map(ticker => `
+        if (worstTickers) {
+            worstTickers.innerHTML = worstList.slice(0, 5).map(ticker => `
                 <div class="ticker-item">
                     <span class="ticker-symbol">${ticker.symbol}</span>
                     <span class="ticker-price">${ticker.price}</span>
@@ -101,28 +184,48 @@ class UIController {
         }
     }
 
-    updateHeaderTickers(marketSummary) {
-        if (!marketSummary) return;
-        
-        // Actualizar el header con datos del mercado
-        const headerTickers = document.querySelector('.market-ticker');
-        if (headerTickers && marketSummary) {
-            // Esta función se puede expandir para actualizar datos en tiempo real
-            console.log('Market summary actualizado:', marketSummary);
+    updateHeaderTickers(topTickers = []) {
+        const header = document.querySelector('.market-ticker');
+        if (!header || !Array.isArray(topTickers) || !topTickers.length) {
+            return;
         }
+
+        header.innerHTML = topTickers.slice(0, 3).map(item => `
+            <div class="ticker-item">
+                <span class="ticker-name">${item.symbol}</span>
+                <span class="ticker-price">${item.price}</span>
+                <span class="ticker-change ${item.change.includes('-') ? 'negative' : 'positive'}">${item.change}</span>
+            </div>
+        `).join('');
     }
 
-    startMarketDataInterval() {
-        // Actualizar datos cada 30 segundos
-        setInterval(() => {
-            this.loadMarketData();
-        }, 30000);
+    updateWatchlist(topTickers = [], worstTickers = []) {
+        const combined = [
+            ...(Array.isArray(topTickers) ? topTickers : []),
+            ...(Array.isArray(worstTickers) ? worstTickers : [])
+        ];
+
+        const symbols = ['btc', 'eth', 'aapl'];
+        symbols.forEach(symbol => {
+            const priceElem = document.getElementById(`${symbol}Price`);
+            const changeElem = document.getElementById(`${symbol}Change`);
+
+            if (!priceElem || !changeElem) return;
+
+            const ticker = combined.find(t => t.symbol && t.symbol.toLowerCase() === symbol);
+
+            if (ticker) {
+                priceElem.textContent = ticker.price;
+                changeElem.textContent = ticker.change;
+                changeElem.className = `item-change ${ticker.change.includes('-') ? 'negative' : 'positive'}`;
+            }
+        });
     }
 
     showAlert(message, type = 'info') {
         const alertContainer = document.getElementById('alertContainer');
         if (!alertContainer) return;
-        
+
         const alertId = `alert-${Date.now()}-${this.alertCount++}`;
         
         const alert = document.createElement('div');
@@ -172,34 +275,48 @@ class UIController {
 }
 
 // Funciones globales para uso en HTML
+function withUIController(callback) {
+    const ui = typeof window !== 'undefined' ? window.uiController : null;
+    if (!ui) {
+        console.warn('UIController no está inicializado todavía.');
+        return;
+    }
+
+    if (typeof callback === 'function') {
+        callback(ui);
+    }
+}
+
 function showAddToWatchlist() {
-    const ui = new UIController();
-    ui.showModal('alertModal');
-    ui.showAlert('Funcionalidad de watchlist en desarrollo', 'info');
+    withUIController((ui) => {
+        ui.showModal('alertModal');
+        ui.showAlert('Funcionalidad de watchlist en desarrollo', 'info');
+    });
 }
 
 function closeModal(modalId) {
-    const ui = new UIController();
-    ui.closeModal(modalId);
+    withUIController((ui) => ui.closeModal(modalId));
 }
 
 function saveAlert() {
     const symbol = document.getElementById('alertSymbol')?.value;
     const condition = document.getElementById('alertCondition')?.value;
     const value = document.getElementById('alertValue')?.value;
-    
-    if (symbol && value) {
-        const ui = new UIController();
-        ui.showAlert(`Alerta configurada para ${symbol} (${condition} ${value})`, 'success');
-        ui.closeModal('alertModal');
-        
-        // Limpiar formulario
-        document.getElementById('alertSymbol').value = '';
-        document.getElementById('alertValue').value = '';
-    } else {
-        const ui = new UIController();
-        ui.showAlert('Por favor, completa todos los campos', 'error');
-    }
+
+    withUIController((ui) => {
+        if (symbol && value) {
+            ui.showAlert(`Alerta configurada para ${symbol} (${condition} ${value})`, 'success');
+            ui.closeModal('alertModal');
+
+            // Limpiar formulario
+            const symbolInput = document.getElementById('alertSymbol');
+            const valueInput = document.getElementById('alertValue');
+            if (symbolInput) symbolInput.value = '';
+            if (valueInput) valueInput.value = '';
+        } else {
+            ui.showAlert('Por favor, completa todos los campos', 'error');
+        }
+    });
 }
 
 function showMarketOverview() {
@@ -209,8 +326,7 @@ function showMarketOverview() {
 }
 
 function showAlertModal() {
-    const ui = new UIController();
-    ui.showModal('alertModal');
+    withUIController((ui) => ui.showModal('alertModal'));
 }
 
 // Inicializar UI cuando el DOM esté listo
