@@ -56,26 +56,44 @@ class MarketService:
                         data = await response.json()
                         
                         # Filtrar solo USDT pairs y ordenar por cambio porcentual
-                        usdt_pairs = [item for item in data if item['symbol'].endswith('USDT')]
-                        sorted_pairs = sorted(usdt_pairs, 
-                                            key=lambda x: float(x['priceChangePercent']), 
-                                            reverse=True)
-                        
+                        usdt_pairs = []
+                        for item in data:
+                            if not item['symbol'].endswith('USDT'):
+                                continue
+                            try:
+                                change = float(item['priceChangePercent'])
+                            except (KeyError, TypeError, ValueError):
+                                continue
+                            item = dict(item)
+                            item['_change_float'] = change
+                            usdt_pairs.append(item)
+
+                        sorted_pairs = sorted(
+                            usdt_pairs,
+                            key=lambda x: x['_change_float'],
+                            reverse=True
+                        )
+
                         top_gainers = sorted_pairs[:5]
-                        top_losers = sorted_pairs[-5:]
+
+                        negative_pairs = [item for item in usdt_pairs if item['_change_float'] < 0]
+                        top_losers = sorted(
+                            negative_pairs,
+                            key=lambda x: x['_change_float']
+                        )[:5]
                         
                         return {
                             'top_gainers': [{
                                 'symbol': item['symbol'].replace('USDT', ''),
                                 'price': f"${float(item['lastPrice']):,.2f}",
-                                'change': f"{float(item['priceChangePercent']):.2f}%",
+                                'change': f"{item['_change_float']:.2f}%",
                                 'volume': f"${float(item['volume']):,.0f}",
                                 'type': 'crypto'
                             } for item in top_gainers],
                             'top_losers': [{
                                 'symbol': item['symbol'].replace('USDT', ''),
                                 'price': f"${float(item['lastPrice']):,.2f}",
-                                'change': f"{float(item['priceChangePercent']):.2f}%",
+                                'change': f"{item['_change_float']:.2f}%",
                                 'volume': f"${float(item['volume']):,.0f}",
                                 'type': 'crypto'
                             } for item in top_losers]
