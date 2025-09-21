@@ -1,4 +1,6 @@
 import os
+from secrets import token_urlsafe
+
 from dotenv import load_dotenv
 from passlib.context import CryptContext
 
@@ -16,6 +18,13 @@ class Config:
     # News APIs
     NEWSAPI_API_KEY = os.getenv('NEWSAPI_API_KEY')
     CRYPTOPANIC_API_KEY = os.getenv('CRYPTOPANIC_API_KEY')
+
+    # Authentication / security
+    JWT_SECRET_KEY = os.getenv(
+        'BULLBEARBROKER_SECRET_KEY',
+        token_urlsafe(64)
+    )
+    JWT_ALGORITHM = os.getenv('BULLBEARBROKER_JWT_ALGORITHM', 'HS256')
     
     # Binance no necesita key
     # Yahoo Finance no necesita key
