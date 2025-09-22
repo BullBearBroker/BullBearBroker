@@ -1,9 +1,15 @@
-import aiohttp
 import asyncio
+import logging
 from typing import Dict, List, Optional
+
+import aiohttp
 
 from utils.cache import CacheClient
 from utils.config import Config
+
+LOGGER = logging.getLogger(__name__)
+CLIENT_TIMEOUT = aiohttp.ClientTimeout(total=10)
+
 
 class CryptoService:
     def __init__(self, cache_client: Optional[CacheClient] = None):
@@ -64,32 +70,68 @@ class CryptoService:
             return float(price)
         return None
     
-    async def binance(self, symbol: str) -> float:
+    async def binance(self, symbol: str) -> Optional[float]:
         """API Secundaria: Binance"""
         url = f"https://api.binance.com/api/v3/ticker/price"
         params = {'symbol': f"{symbol}USDT"}
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params) as response:
-                data = await response.json()
-                return float(data['price'])
-    
-    async def coinmarketcap(self, symbol: str) -> float:
+
+        try:
+            async with aiohttp.ClientSession(timeout=CLIENT_TIMEOUT) as session:
+                data = await self._request_json(url, session=session, params=params)
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
+            LOGGER.error("Error obteniendo precio en Binance para %s: %s", symbol, exc)
+            return None
+
+        try:
+            return float(data['price'])
+        except (KeyError, TypeError, ValueError) as exc:
+            LOGGER.error("Respuesta inválida de Binance para %s: %s", symbol, exc)
+            return None
+
+    async def coinmarketcap(self, symbol: str) -> Optional[float]:
         """API Fallback: CoinMarketCap"""
         url = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest"
         headers = {'X-CMC_PRO_API_KEY': Config.COINMARKETCAP_API_KEY}
         params = {'symbol': symbol}
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=headers, params=params) as response:
-                data = await response.json()
-                return data['data'][symbol]['quote']['USD']['price']
+        try:
+            async with aiohttp.ClientSession(timeout=CLIENT_TIMEOUT) as session:
+                data = await self._request_json(
+                    url,
+                    session=session,
+                    headers=headers,
+                    params=params,
+                )
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
+            LOGGER.error("Error obteniendo precio en CoinMarketCap para %s: %s", symbol, exc)
+            return None
 
-    async def _request_json(self, url: str, **kwargs):
-        async with aiohttp.ClientSession() as session:
+        try:
+            symbol_key = symbol.upper()
+            return float(data['data'][symbol_key]['quote']['USD']['price'])
+        except (KeyError, TypeError, ValueError) as exc:
+            LOGGER.error("Respuesta inválida de CoinMarketCap para %s: %s", symbol, exc)
+            return None
+
+    async def _request_json(
+        self,
+        url: str,
+        *,
+        session: Optional[aiohttp.ClientSession] = None,
+        **kwargs,
+    ):
+        owns_session = session is None
+        session = session or aiohttp.ClientSession(timeout=CLIENT_TIMEOUT)
+        try:
             async with session.get(url, **kwargs) as response:
                 response.raise_for_status()
                 return await response.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
+            LOGGER.error("Error al solicitar %s: %s", url, exc)
+            raise
+        finally:
+            if owns_session:
+                await session.close()
 
     async def _resolve_coingecko_id(self, symbol: str) -> Optional[str]:
         normalized = symbol.lower()
@@ -100,7 +142,8 @@ class CryptoService:
         params = {'query': symbol}
 
         try:
-            data = await self._request_json(url, params=params)
+            async with aiohttp.ClientSession(timeout=CLIENT_TIMEOUT) as session:
+                data = await self._request_json(url, session=session, params=params)
         except Exception:
             self._coingecko_id_cache[normalized] = None
             return None

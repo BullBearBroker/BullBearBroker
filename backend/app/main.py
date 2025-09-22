@@ -16,6 +16,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from services.market_service import market_service
 from services.ai_service import ai_service
 from services.stock_service import stock_service
+from services.crypto_service import CryptoService
 from utils.config import Config
 
 # Importar routers de autenticación
@@ -32,6 +33,7 @@ except ImportError:
             return {"message": "Auth module placeholder"}
 
 app = FastAPI(title="BullBearBroker API", version="1.0.0")
+crypto_service = CryptoService()
 
 # Configuración de seguridad
 security = HTTPBearer()
@@ -157,6 +159,22 @@ async def get_stock(symbol: str):
         "price": result["price"],
         "change": result["change"],
         "source": result["source"],
+    }
+
+
+@app.get("/crypto/{symbol}")
+async def get_crypto(symbol: str):
+    try:
+        price = await crypto_service.get_price(symbol)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Error obteniendo precio de {symbol}: {exc}") from exc
+
+    if price is None:
+        raise HTTPException(status_code=404, detail=f"No se encontró información para {symbol}")
+
+    return {
+        "symbol": symbol.upper(),
+        "price": price,
     }
 
 @app.websocket("/ws/market-data")
