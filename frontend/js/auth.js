@@ -89,7 +89,6 @@ class AuthManager {
         e.preventDefault();
         
         const email = document.getElementById('registerEmail').value;
-        const username = document.getElementById('registerUsername').value;
         const password = document.getElementById('registerPassword').value;
 
         if (password.length < 6) {
@@ -104,7 +103,7 @@ class AuthManager {
                     'Content-Type': 'application/json',
                     'Accept': 'application/json'
                 },
-                body: JSON.stringify({ email, username, password }),
+                body: JSON.stringify({ email, password }),
                 mode: 'cors' // ✅ Important for CORS
             });
 

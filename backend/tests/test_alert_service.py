@@ -13,17 +13,14 @@ from services.alert_service import AlertService
 def test_alert_service_triggers_notification():
     alert = SimpleNamespace(
         id=1,
-        symbol="AAPL",
-        comparison="above",
-        target_price=100.0,
-        message=None,
-        telegram_chat_id=None,
+        asset="AAPL",
+        condition="above",
+        value=100.0,
     )
 
     service = AlertService(session_factory=True)
     service._session_factory = True  # type: ignore[attr-defined]
-    service._fetch_active_alerts = lambda: [alert]  # type: ignore[assignment]
-    service._mark_triggered = lambda alerts: None  # type: ignore[assignment]
+    service._fetch_alerts = lambda: [alert]  # type: ignore[assignment]
 
     async def fake_price(symbol):  # noqa: ANN001
         return 105.0
@@ -44,9 +41,9 @@ def test_alert_service_triggers_notification():
 def test_alert_service_should_trigger_conditions():
     service = AlertService(session_factory=None)
 
-    alert_above = SimpleNamespace(comparison="above", target_price=10.0)
-    alert_below = SimpleNamespace(comparison="below", target_price=10.0)
-    alert_equal = SimpleNamespace(comparison="equal", target_price=10.0)
+    alert_above = SimpleNamespace(condition="above", value=10.0)
+    alert_below = SimpleNamespace(condition="below", value=10.0)
+    alert_equal = SimpleNamespace(condition="equal", value=10.0)
 
     assert service._should_trigger(alert_above, 10.0) is True
     assert service._should_trigger(alert_below, 9.5) is True

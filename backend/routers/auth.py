@@ -27,7 +27,7 @@ def create_jwt_token(user: User) -> str:
     """Crear token JWT para el usuario"""
     payload = {
         "sub": user.email,
-        "username": user.username,
+        "user_id": user.id,
         "exp": datetime.utcnow() + timedelta(hours=24),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
@@ -36,10 +36,10 @@ def create_jwt_token(user: User) -> str:
 def serialize_user(user: User) -> Dict[str, object]:
     """Serializar la información básica del usuario."""
     return {
+        "id": user.id,
         "email": user.email,
-        "username": user.username,
-        "subscription_level": user.subscription_level,
-        "api_calls_today": user.api_calls_today,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "updated_at": user.updated_at.isoformat() if user.updated_at else None,
     }
 
 
@@ -53,7 +53,6 @@ async def register(user_data: dict):
         try:
             new_user = user_service.create_user(
                 email=user_data["email"],
-                username=user_data["username"],
                 password=user_data["password"],
             )
         except UserAlreadyExistsError as exc:

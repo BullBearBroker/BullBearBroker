@@ -4,8 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime
-from typing import Iterable, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
 # APScheduler es opcional en entornos de prueba donde no se pueda instalar.
 try:  # pragma: no cover - la importación depende del entorno
@@ -100,13 +99,13 @@ class AlertService:
         if self._session_factory is None:
             return
 
-        alerts = await asyncio.to_thread(self._fetch_active_alerts)
+        alerts = await asyncio.to_thread(self._fetch_alerts)
         if not alerts:
             return
 
         triggered: List[Tuple[Alert, float]] = []
         for alert in alerts:
-            price = await self._resolve_price(alert.symbol)
+            price = await self._resolve_price(alert.asset)
             if price is None:
                 continue
             if self._should_trigger(alert, price):
@@ -115,32 +114,16 @@ class AlertService:
         if not triggered:
             return
 
-        await asyncio.to_thread(self._mark_triggered, triggered)
-
         for alert, price in triggered:
             await self._notify(alert, price)
 
-    def _fetch_active_alerts(self) -> List[Alert]:
+    def _fetch_alerts(self) -> List[Alert]:
         assert self._session_factory is not None
         with self._session_factory() as session:
-            result = session.scalars(
-                select(Alert).where(Alert.is_active.is_(True))
-            ).all()
+            result = session.scalars(select(Alert)).all()
             for alert in result:
                 session.expunge(alert)
             return result
-
-    def _mark_triggered(self, alerts: Iterable[Tuple[Alert, float]]) -> None:
-        assert self._session_factory is not None
-        ids = [alert.id for alert, _ in alerts]
-        if not ids:
-            return
-        with self._session_factory() as session:
-            now = datetime.utcnow()
-            for alert in session.scalars(select(Alert).where(Alert.id.in_(ids))):
-                alert.last_triggered_at = now
-                alert.is_active = False
-            session.commit()
 
     async def _resolve_price(self, symbol: str) -> Optional[float]:
         stock = await market_service.get_stock_price(symbol)
@@ -159,25 +142,25 @@ class AlertService:
 
     @staticmethod
     def _should_trigger(alert: Alert, price: float) -> bool:
-        comparison = (alert.comparison or "above").lower()
-        if comparison == "above":
-            return price >= alert.target_price
-        if comparison == "below":
-            return price <= alert.target_price
-        if comparison == "equal":
-            return abs(price - alert.target_price) <= 1e-6
+        condition = (alert.condition or "above").lower()
+        if condition == "above":
+            return price >= alert.value
+        if condition == "below":
+            return price <= alert.value
+        if condition == "equal":
+            return abs(price - alert.value) <= 1e-6
         return False
 
     async def _notify(self, alert: Alert, price: float) -> None:
-        message = alert.message or (
-            f"Alerta para {alert.symbol}: precio actual {price:.2f}, objetivo {alert.target_price:.2f}"
+        message = (
+            f"Alerta para {alert.asset}: precio actual {price:.2f}, objetivo {alert.value:.2f}"
         )
         payload = {
             "type": "alert",
-            "symbol": alert.symbol,
+            "symbol": alert.asset,
             "price": price,
-            "target": alert.target_price,
-            "comparison": alert.comparison,
+            "target": alert.value,
+            "comparison": alert.condition,
             "message": message,
         }
         if self._websocket_manager is not None:
@@ -191,7 +174,7 @@ class AlertService:
     async def _notify_telegram(self, alert: Alert, message: str) -> None:
         if not self._telegram_bot:
             return
-        chat_id = alert.telegram_chat_id or Config.TELEGRAM_DEFAULT_CHAT_ID
+        chat_id = Config.TELEGRAM_DEFAULT_CHAT_ID
         if not chat_id:
             return
         try:

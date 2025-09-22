@@ -16,12 +16,9 @@ def upgrade() -> None:
         "users",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("email", sa.String(), nullable=False),
-        sa.Column("username", sa.String(), nullable=False),
-        sa.Column("hashed_password", sa.String(), nullable=False),
+        sa.Column("password_hash", sa.String(), nullable=False),
         sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
-        sa.Column("subscription_level", sa.String(), server_default="free", nullable=False),
-        sa.Column("api_calls_today", sa.Integer(), server_default="0", nullable=False),
-        sa.Column("last_reset", sa.DateTime(), server_default=sa.func.now(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
     )
     op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
     op.create_index(op.f("ix_users_id"), "users", ["id"], unique=False)
@@ -30,10 +27,11 @@ def upgrade() -> None:
         "alerts",
         sa.Column("id", sa.Integer(), primary_key=True),
         sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id", ondelete="CASCADE"), nullable=False),
-        sa.Column("channel", sa.String(length=50), nullable=False),
-        sa.Column("message", sa.String(), nullable=False),
+        sa.Column("asset", sa.String(length=50), nullable=False),
+        sa.Column("condition", sa.String(length=20), nullable=False),
+        sa.Column("value", sa.Float(), nullable=False),
         sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
-        sa.Column("acknowledged_at", sa.DateTime(), nullable=True),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
     )
 
     op.create_table(
@@ -43,8 +41,6 @@ def upgrade() -> None:
         sa.Column("token", sa.String(), nullable=False),
         sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
         sa.Column("expires_at", sa.DateTime(), nullable=True),
-        sa.Column("last_seen_at", sa.DateTime(), nullable=True),
-        sa.Column("revoked_at", sa.DateTime(), nullable=True),
     )
     op.create_index("ix_sessions_token", "sessions", ["token"], unique=True)
 

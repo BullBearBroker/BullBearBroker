@@ -33,9 +33,13 @@
             // Actualizar UI con info del usuario
             const userInfoElement = document.getElementById('userInfo');
             if (userInfoElement) {
+                const createdLabel = user.created_at
+                    ? new Date(user.created_at).toLocaleDateString()
+                    : '';
+                const meta = createdLabel ? `Cuenta creada: ${createdLabel}` : `ID: ${user.id ?? '—'}`;
                 userInfoElement.innerHTML = `
-                    <span>${user.username}</span>
-                    <small>${user.email} • ${user.subscription_level}</small>
+                    <span>${user.email}</span>
+                    <small>${meta}</small>
                 `;
             }
         }

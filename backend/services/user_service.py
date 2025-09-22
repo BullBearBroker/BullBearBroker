@@ -66,7 +66,7 @@ class UserService:
                 session.expunge(item)
         return self._detach_entity(session, user)
 
-    def create_user(self, email: str, username: str, password: str) -> User:
+    def create_user(self, email: str, password: str) -> User:
         hashed_password = password_context.hash(password)
         with self._session_scope() as session:
             if session.query(User).filter(User.email == email).first():
@@ -74,8 +74,7 @@ class UserService:
 
             user = User(
                 email=email,
-                username=username,
-                hashed_password=hashed_password,
+                password_hash=hashed_password,
             )
             session.add(user)
             return self._user_with_relationships(session, user)
@@ -102,27 +101,6 @@ class UserService:
             raise InvalidCredentialsError("Credenciales inválidas")
         return user
 
-    def increment_api_usage(self, email: str) -> User:
-        with self._session_scope() as session:
-            user = (
-                session.query(User)
-                .options(selectinload(User.alerts), selectinload(User.sessions))
-                .filter(User.email == email)
-                .first()
-            )
-            if not user:
-                raise UserNotFoundError("Usuario no encontrado")
-
-            user.reset_api_counter()
-            user.api_calls_today += 1
-            session.flush()
-            session.refresh(user)
-            session.expunge(user)
-            for collection in (user.alerts, user.sessions):
-                for item in collection:
-                    session.expunge(item)
-            return user
-
     def create_session(
         self, user_id: int, token: str, expires_in: timedelta | None = None
     ) -> SessionModel:
@@ -145,11 +123,13 @@ class UserService:
 
     def get_active_sessions(self, user_id: int) -> list[SessionModel]:
         with self._session_scope() as session:
+            now = datetime.utcnow()
             sessions = (
                 session.query(SessionModel)
                 .filter(
                     SessionModel.user_id == user_id,
-                    SessionModel.revoked_at.is_(None),
+                    (SessionModel.expires_at.is_(None))
+                    | (SessionModel.expires_at > now),
                 )
                 .all()
             )
@@ -158,25 +138,16 @@ class UserService:
             return sessions
 
     def register_session_activity(self, token: str) -> None:
-        with self._session_scope() as session:
-            session_obj = (
-                session.query(SessionModel)
-                .filter(SessionModel.token == token, SessionModel.revoked_at.is_(None))
-                .first()
-            )
-            if session_obj:
-                session_obj.last_seen_at = datetime.utcnow()
+        # La tabla de sesiones ya no registra actividad adicional; se mantiene para compatibilidad.
+        return None
 
     def create_alert(
         self,
         user_id: int,
         *,
-        symbol: str,
-        target_price: float,
-        comparison: str = "above",
-        channel: str = "websocket",
-        message: str | None = None,
-        telegram_chat_id: str | None = None,
+        asset: str,
+        value: float,
+        condition: str = "above",
     ) -> Alert:
         with self._session_scope() as session:
             if not session.get(User, user_id):
@@ -184,12 +155,9 @@ class UserService:
 
             alert = Alert(
                 user_id=user_id,
-                symbol=symbol.upper(),
-                target_price=target_price,
-                comparison=comparison,
-                channel=channel,
-                message=message,
-                telegram_chat_id=telegram_chat_id,
+                asset=asset.upper(),
+                value=value,
+                condition=condition,
             )
             session.add(alert)
             return self._detach_entity(session, alert)

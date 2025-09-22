@@ -21,14 +21,13 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
-    username: Mapped[str] = mapped_column(String, nullable=False)
-    hashed_password: Mapped[str] = mapped_column(String, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    subscription_level: Mapped[str] = mapped_column(String, default="free", nullable=False)
-    api_calls_today: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    last_reset: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
 
     alerts: Mapped[list["Alert"]] = relationship(
         "Alert", back_populates="user", cascade="all, delete-orphan"
@@ -39,23 +38,13 @@ class User(Base):
 
     def verify_password(self, password: str) -> bool:
         """Verificar si la contraseña coincide."""
-        return password_context.verify(password, self.hashed_password)
-
-    def reset_api_counter(self) -> None:
-        """Resetear el contador de llamadas diarias si cambió la fecha."""
-        now = datetime.utcnow()
-        if self.last_reset.date() < now.date():
-            self.api_calls_today = 0
-            self.last_reset = now
+        return password_context.verify(password, self.password_hash)
 
     def to_dict(self) -> dict:
         """Representación serializable del usuario."""
         return {
             "id": self.id,
             "email": self.email,
-            "username": self.username,
-            "subscription_level": self.subscription_level,
-            "api_calls_today": self.api_calls_today,
             "created_at": self.created_at.isoformat() if self.created_at else None,
-            "last_reset": self.last_reset.isoformat() if self.last_reset else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
