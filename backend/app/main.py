@@ -1,12 +1,10 @@
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 import asyncio
 import json
-import jwt
-from datetime import datetime, timedelta
+from datetime import datetime
 import sys
 import os
 
@@ -16,13 +14,9 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from aiohttp import ClientError
 
 from services.alert_service import alert_service
-from services.forex_service import forex_service
 from services.market_service import market_service
 from services.ai_service import ai_service
-from services.stock_service import stock_service
-from services.crypto_service import CryptoService
 from services.sentiment_service import sentiment_service
-from utils.config import Config
 
 # Importar routers de autenticación
 try:
@@ -37,13 +31,21 @@ except (ImportError, RuntimeError):
         def auth_test():
             return {"message": "Auth module placeholder"}
 
-app = FastAPI(title="BullBearBroker API", version="1.0.0")
-crypto_service = CryptoService()
+try:
+    from routers.markets import router as markets_router, get_crypto as get_crypto_handler
+    from routers.news import router as news_router
+    from routers.alerts import router as alerts_router
+except (ImportError, RuntimeError):
+    from backend.routers.markets import (  # type: ignore
+        router as markets_router,
+        get_crypto as get_crypto_handler,
+    )
+    from backend.routers.news import router as news_router  # type: ignore
+    from backend.routers.alerts import router as alerts_router  # type: ignore
 
-# Configuración de seguridad
-security = HTTPBearer()
-SECRET_KEY = Config.JWT_SECRET_KEY
-ALGORITHM = Config.JWT_ALGORITHM
+app = FastAPI(title="BullBearBroker API", version="1.0.0")
+crypto_service = market_service.crypto_service
+get_crypto = get_crypto_handler
 
 # ✅ CONFIGURACIÓN CORS MEJORADA - ORIGENS COMPLETOS PARA DESARROLLO
 app.add_middleware(
@@ -73,10 +75,14 @@ else:
     @app.post("/api/auth/register")
     async def register(user_data: dict):
         return {"message": "Auth module not fully implemented", "status": "placeholder"}
-    
+
     @app.post("/api/auth/login")
     async def login(credentials: dict):
         return {"message": "Auth module not fully implemented", "status": "placeholder"}
+
+app.include_router(markets_router)
+app.include_router(news_router)
+app.include_router(alerts_router)
 
 # Modelo Pydantic para el request del chat
 class ChatRequest(BaseModel):
@@ -143,16 +149,6 @@ async def startup_services():
 async def shutdown_services():
     await alert_service.stop()
 
-# Función para verificar tokens JWT
-async def get_current_user(token: HTTPAuthorizationCredentials = Depends(security)):
-    try:
-        payload = jwt.decode(token.credentials, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expirado")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Token inválido")
-
 @app.get("/")
 async def root():
     return {"message": "BullBearBroker API está funcionando!", "version": "1.0.0"}
@@ -170,38 +166,6 @@ async def health_check():
         "websocket_connections": len(manager.active_connections),
         "timestamp": datetime.now().isoformat()
     }
-
-
-@app.get("/stock/{symbol}")
-async def get_stock(symbol: str):
-    try:
-        result = await stock_service.get_price(symbol)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Error obteniendo precio de {symbol}: {exc}")
-
-    if not result:
-        raise HTTPException(status_code=404, detail=f"No se encontró información para {symbol}")
-
-    return {
-        "symbol": symbol.upper(),
-        "price": result["price"],
-        "change": result["change"],
-        "source": result["source"],
-    }
-
-
-@app.get("/api/forex/{symbol}")
-async def get_forex(symbol: str):
-    try:
-        result = await forex_service.get_quote(symbol)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Error obteniendo FX {symbol}: {exc}")
-
-    if not result:
-        raise HTTPException(status_code=404, detail=f"No se encontró información para {symbol}")
-
-    return result
-
 
 @app.get("/api/market/chart/{symbol}")
 async def get_market_chart(symbol: str, interval: str = "1d", range: str = "1mo"):
@@ -230,22 +194,6 @@ async def get_market_sentiment(symbol: str):
         return await sentiment_service.get_sentiment(symbol)
     except Exception as exc:  # pragma: no cover - defensivo
         raise HTTPException(status_code=500, detail=f"Error obteniendo sentimiento: {exc}") from exc
-
-
-@app.get("/crypto/{symbol}")
-async def get_crypto(symbol: str):
-    try:
-        price = await crypto_service.get_price(symbol)
-    except Exception as exc:
-        raise HTTPException(status_code=502, detail=f"Error obteniendo precio de {symbol}: {exc}") from exc
-
-    if price is None:
-        raise HTTPException(status_code=404, detail=f"No se encontró información para {symbol}")
-
-    return {
-        "symbol": symbol.upper(),
-        "price": price,
-    }
 
 @app.websocket("/ws/market-data")
 async def websocket_market_data(websocket: WebSocket):
@@ -500,33 +448,6 @@ async def get_available_symbols():
         return {"success": True, "data": symbols}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/market/news")
-async def get_market_news():
-    """
-    Obtener noticias del mercado (placeholder)
-    """
-    try:
-        news = [
-            {
-                "title": "Mercado alcista continúa con ganancias sólidas",
-                "source": "Financial Times",
-                "date": "2024-01-15",
-                "url": "#",
-                "summary": "Los principales índices registran ganancias por tercer día consecutivo."
-            },
-            {
-                "title": "Bitcoin supera los $45,000 impulsado por adopción institucional",
-                "source": "CoinDesk",
-                "date": "2024-01-15", 
-                "url": "#",
-                "summary": "La criptomoneda líder alcanza su máximo en 3 meses."
-            }
-        ]
-        return {"success": True, "data": news}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.get("/api/debug/websockets")
 async def debug_websockets():
     """Endpoint de debug para ver conexiones activas"""
