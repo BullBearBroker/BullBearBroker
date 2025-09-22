@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime
 from typing import Any, Literal, Optional, List
+from uuid import UUID
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -61,7 +62,7 @@ class AlertCreate(BaseModel):
 
 
 class AlertResponse(BaseModel):
-    id: int
+    id: str
     asset: str
     condition: str
     value: float
@@ -71,7 +72,7 @@ class AlertResponse(BaseModel):
     @classmethod
     def from_model(cls, alert: Alert) -> "AlertResponse":
         return cls(
-            id=alert.id,
+            id=str(alert.id),
             asset=alert.asset,
             condition=alert.condition,
             value=alert.value,
@@ -103,12 +104,17 @@ async def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido") from exc
 
     email = payload.get("sub")
-    user_id = payload.get("user_id")
-    if not email or not user_id:
+    raw_user_id = payload.get("user_id")
+    if not email or raw_user_id is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
 
+    try:
+        token_user_id = UUID(str(raw_user_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido") from exc
+
     user = await asyncio.to_thread(user_service.get_user_by_email, email)
-    if not user or user.id != user_id:
+    if not user or user.id != token_user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario no encontrado")
 
     return user

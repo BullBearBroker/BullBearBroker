@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import uuid
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
@@ -62,7 +63,7 @@ class DummyAsyncSessionContext:
 class DummyUser:
     """Lightweight user entity mimicking the SQLAlchemy model."""
 
-    id: int
+    id: uuid.UUID
     email: str
     password: str
     created_at: datetime = field(default_factory=datetime.utcnow)
@@ -76,8 +77,8 @@ class DummyUser:
 class DummyAlert:
     """In-memory alert representation used by the API tests."""
 
-    id: int
-    user_id: int
+    id: uuid.UUID
+    user_id: uuid.UUID
     asset: str
     value: float
     condition: str
@@ -98,18 +99,15 @@ class DummyUserService:
         pass
 
     def __init__(self) -> None:
-        self._next_user_id = 1
-        self._next_alert_id = 1
         self._users: Dict[str, DummyUser] = {}
         self._sessions: List[SimpleNamespace] = []
-        self._alerts: Dict[int, List[DummyAlert]] = {}
+        self._alerts: Dict[uuid.UUID, List[DummyAlert]] = {}
 
     def create_user(self, email: str, password: str) -> DummyUser:
         if email in self._users:
             raise self.UserAlreadyExistsError("Email ya está registrado")
 
-        user = DummyUser(id=self._next_user_id, email=email, password=password)
-        self._next_user_id += 1
+        user = DummyUser(id=uuid.uuid4(), email=email, password=password)
         self._users[email] = user
         self._alerts[user.id] = []
         return user
@@ -124,7 +122,7 @@ class DummyUserService:
         return user
 
     def create_session(
-        self, user_id: int, token: str, expires_in: Optional[timedelta] = None
+        self, user_id: uuid.UUID, token: str, expires_in: Optional[timedelta] = None
     ) -> SimpleNamespace:
         expires_at = (
             datetime.utcnow() + expires_in if expires_in is not None else None
@@ -139,7 +137,7 @@ class DummyUserService:
 
     def create_alert(
         self,
-        user_id: int,
+        user_id: uuid.UUID,
         *,
         asset: str,
         value: float,
@@ -149,17 +147,16 @@ class DummyUserService:
             raise self.UserNotFoundError("Usuario no encontrado")
 
         alert = DummyAlert(
-            id=self._next_alert_id,
+            id=uuid.uuid4(),
             user_id=user_id,
             asset=asset,
             value=value,
             condition=condition,
         )
-        self._next_alert_id += 1
         self._alerts[user_id].append(alert)
         return alert
 
-    def get_alerts_for_user(self, user_id: int) -> List[DummyAlert]:
+    def get_alerts_for_user(self, user_id: uuid.UUID) -> List[DummyAlert]:
         return list(self._alerts.get(user_id, []))
 
 
@@ -478,7 +475,8 @@ def test_alert_workflow_triggers_notification(
     )
     assert response.status_code == 201
 
-    created_alert = dummy_user_service.get_alerts_for_user(1)[0]
+    user_id = uuid.UUID(register.json()["user"]["id"])
+    created_alert = dummy_user_service.get_alerts_for_user(user_id)[0]
     notifications: List[Dict[str, Any]] = []
 
     def fake_fetch_alerts() -> List[DummyAlert]:  # noqa: D401
