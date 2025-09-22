@@ -209,17 +209,17 @@ def _reset_crypto_service(monkeypatch: pytest.MonkeyPatch) -> None:
 def _prepare_stock_service(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any]:
     stock_service = market_service.stock_service
     stock_service.cache = DummyAsyncCache()
-    stock_service.apis[0]["api_key"] = "dummy-twelvedata"
-    stock_service.apis[2]["api_key"] = "dummy-alpha"
+    stock_service.apis[0]["api_key"] = "dummy-alpha"
+    stock_service.apis[1]["api_key"] = "dummy-twelvedata"
     monkeypatch.setattr(stock_service, "_session_factory", lambda timeout=None: DummyAsyncSessionContext())
     call_order: List[str] = []
 
     async def fake_call_with_retries(handler, session, symbol, source_name):  # noqa: ANN001
         call_order.append(source_name)
         responses = {
+            "Alpha Vantage": None,
             "Twelve Data": None,
             "Yahoo Finance": {"price": 123.45, "change": 1.2},
-            "Alpha Vantage": {"price": 0.0, "change": 0.0},
         }
         return responses.get(source_name)
 
@@ -417,7 +417,7 @@ def test_stock_endpoint_uses_fallback_provider(
     payload = response.json()
     assert payload["price"] == pytest.approx(123.45)
     assert payload["source"] == "Yahoo Finance"
-    assert info["calls"] == ["Twelve Data", "Yahoo Finance"]
+    assert info["calls"] == ["Alpha Vantage", "Twelve Data", "Yahoo Finance"]
 
 
 def test_forex_endpoint_falls_back_to_yahoo(
