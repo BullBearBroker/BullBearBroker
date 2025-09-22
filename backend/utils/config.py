@@ -23,6 +23,19 @@ class Config:
     CRYPTOPANIC_API_KEY = os.getenv('CRYPTOPANIC_API_KEY')
     MEDIASTACK_API_KEY = os.getenv('MEDIASTACK_API_KEY')
 
+    # AI providers
+    HUGGINGFACE_API_TOKEN = os.getenv('HUGGINGFACE_API_TOKEN')
+    HUGGINGFACE_MODEL = os.getenv(
+        'HUGGINGFACE_MODEL',
+        'meta-llama/Meta-Llama-3-8B-Instruct'
+    )
+    HUGGINGFACE_API_URL = os.getenv(
+        'HUGGINGFACE_API_URL',
+        'https://api-inference.huggingface.co/models'
+    )
+    OLLAMA_HOST = os.getenv('OLLAMA_HOST', 'http://localhost:11434')
+    OLLAMA_MODEL = os.getenv('OLLAMA_MODEL', 'llama3')
+
     # Authentication / security
     JWT_SECRET_KEY = os.getenv(
         'BULLBEARBROKER_SECRET_KEY',

@@ -1,52 +1,219 @@
-from typing import Dict, Any
+from typing import Dict, Any, Callable, Awaitable, List, Tuple, Optional
 import asyncio
+import logging
 import re
+
+import aiohttp
+
+from backend.utils.config import Config
 from .mistral_service import mistral_service
+
+
+logger = logging.getLogger(__name__)
 
 class AIService:
     def __init__(self):
         self.market_service = None
-        self.use_real_ai = True  # Cambiar a False si falla Mistral
+        self.use_real_ai = True  # Mantener compatibilidad con otros servicios
         
     def set_market_service(self, market_service):
         self.market_service = market_service
 
     async def process_message(self, message: str, context: Dict[str, Any] = None) -> str:
         """Procesar mensaje del usuario y generar respuesta"""
+        context = dict(context or {})
+
         try:
-            if self.use_real_ai:
-                # 🚀 USAR MISTRAL AI REAL
-                return await self.process_with_mistral(message, context)
-            else:
-                # 🆘 FALLBACK a respuestas locales
-                return await self.generate_response(message)
-                
-        except Exception as e:
-            print(f"Error processing message: {e}")
-            return await self.get_fallback_response(message)
+            market_context = await self.get_market_context(message)
+            context.update(market_context)
+        except Exception:
+            logger.exception("Error collecting market context")
+
+        providers: List[Tuple[str, Callable[[], Awaitable[str]]]] = [
+            ("mistral", lambda: self.process_with_mistral(message, context))
+        ]
+
+        if Config.HUGGINGFACE_API_TOKEN:
+            providers.append(
+                ("huggingface", lambda: self._call_huggingface(message, context))
+            )
+        else:
+            logger.info("HuggingFace token not configured. Skipping provider.")
+
+        providers.append(("ollama", lambda: self._call_ollama(message, context)))
+
+        try:
+            response, provider = await self._call_with_backoff(providers)
+            logger.info("AI response generated using provider %s", provider)
+            return response
+        except Exception as exc:
+            logger.error("Falling back to local response after provider failures: %s", exc)
+            local_response = await self.generate_response(message)
+            logger.info("AI response generated using local fallback")
+            return local_response
 
     async def process_with_mistral(self, message: str, context: Dict[str, Any] = None) -> str:
         """Procesar mensaje con Mistral AI"""
         try:
-            # Obtener contexto de mercado si está disponible
-            market_context = await self.get_market_context(message)
-            if context is None:
-                context = {}
-            context.update(market_context)
-
             # Generar respuesta con Mistral AI
             response = await mistral_service.generate_financial_response(message, context)
-            
+
             # Verificar que la respuesta sea válida
             if response and len(response.strip()) > 10:
+                if "dificultades" in response.lower():
+                    raise ValueError("Respuesta de error de Mistral AI")
                 return response
             else:
                 raise ValueError("Respuesta vacía de Mistral AI")
-                
+
         except Exception as e:
-            print(f"Mistral AI failed, using fallback: {e}")
-            self.use_real_ai = False  # Temporalmente desactivar IA real
-            return await self.generate_response(message)
+            logger.warning("Mistral provider failed: %s", e)
+            raise
+        
+    async def _call_with_backoff(
+        self,
+        providers: List[Tuple[str, Callable[[], Awaitable[str]]]]
+    ) -> Tuple[str, str]:
+        last_error: Optional[Exception] = None
+        for provider_name, provider in providers:
+            backoff = 1
+            for attempt in range(1, 4):
+                try:
+                    response = await provider()
+                    if response and response.strip():
+                        return response, provider_name
+                    raise ValueError(f"Respuesta vacía de {provider_name}")
+                except Exception as exc:
+                    last_error = exc
+                    logger.warning(
+                        "Provider %s attempt %d failed: %s",
+                        provider_name,
+                        attempt,
+                        exc
+                    )
+                    if attempt < 3:
+                        await asyncio.sleep(backoff)
+                        backoff *= 2
+                    else:
+                        logger.error(
+                            "Provider %s exhausted retries after %d attempts",
+                            provider_name,
+                            attempt
+                        )
+                        break
+
+        if last_error:
+            raise last_error
+        raise RuntimeError("No providers available")
+
+    async def _call_huggingface(self, message: str, context: Dict[str, Any]) -> str:
+        if not Config.HUGGINGFACE_API_TOKEN:
+            raise RuntimeError("HuggingFace token not configured")
+
+        model = Config.HUGGINGFACE_MODEL
+        base_url = Config.HUGGINGFACE_API_URL.rstrip('/')
+        url = f"{base_url}/{model}"
+        prompt = self._build_prompt(message, context)
+
+        headers = {
+            "Authorization": f"Bearer {Config.HUGGINGFACE_API_TOKEN}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "inputs": prompt,
+            "parameters": {
+                "max_new_tokens": 400,
+                "temperature": 0.4
+            }
+        }
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=payload, timeout=30) as response:
+                if response.status != 200:
+                    error_body = await response.text()
+                    raise RuntimeError(
+                        f"HuggingFace API error {response.status}: {error_body}"
+                    )
+
+                data = await response.json()
+
+        generated_text: str | None = None
+        if isinstance(data, list):
+            for item in data:
+                if isinstance(item, dict) and isinstance(item.get("generated_text"), str):
+                    generated_text = item["generated_text"]
+                    break
+                if isinstance(item, str):
+                    generated_text = item
+                    break
+        elif isinstance(data, dict):
+            text_candidate = data.get("generated_text") or data.get("data")
+            if isinstance(text_candidate, str):
+                generated_text = text_candidate
+
+        if generated_text and generated_text.strip():
+            return generated_text.strip()
+
+        raise ValueError("Respuesta vacía de HuggingFace")
+
+    async def _call_ollama(self, message: str, context: Dict[str, Any]) -> str:
+        host = Config.OLLAMA_HOST.rstrip('/') if Config.OLLAMA_HOST else "http://localhost:11434"
+        model = Config.OLLAMA_MODEL or "llama3"
+        prompt = self._build_prompt(message, context)
+
+        async with aiohttp.ClientSession() as session:
+            # Verificar que el servidor de Ollama esté disponible y que el modelo exista
+            async with session.get(f"{host}/api/tags", timeout=5) as response:
+                if response.status != 200:
+                    body = await response.text()
+                    raise RuntimeError(f"Ollama disponibilidad fallida: {body}")
+
+                tags = await response.json()
+                models = tags.get("models") if isinstance(tags, dict) else None
+                if isinstance(models, list):
+                    if not any(isinstance(item, dict) and item.get("name") == model for item in models):
+                        raise RuntimeError(f"Modelo {model} no disponible en Ollama")
+
+            payload = {
+                "model": model,
+                "prompt": prompt,
+                "stream": False
+            }
+
+            async with session.post(f"{host}/api/generate", json=payload, timeout=30) as response:
+                if response.status != 200:
+                    body = await response.text()
+                    raise RuntimeError(f"Error generando respuesta de Ollama: {body}")
+
+                data = await response.json()
+
+        generated_text = data.get("response") if isinstance(data, dict) else None
+        if isinstance(generated_text, str) and generated_text.strip():
+            return generated_text.strip()
+
+        raise ValueError("Respuesta vacía de Ollama")
+
+    def _build_prompt(self, message: str, context: Dict[str, Any]) -> str:
+        prompt_lines = [
+            "Eres BullBearBroker, un analista financiero profesional.",
+            f"Consulta del usuario: {message}"
+        ]
+
+        if context:
+            market_data = context.get("market_data")
+            if market_data:
+                prompt_lines.append(f"Datos de mercado: {market_data}")
+
+            other_context = {
+                key: value for key, value in context.items()
+                if key not in {"market_data"}
+            }
+            if other_context:
+                prompt_lines.append(f"Contexto adicional: {other_context}")
+
+        prompt_lines.append("Responde en español con recomendaciones concretas y breves.")
+        return "\n".join(prompt_lines)
 
     async def get_market_context(self, message: str) -> Dict[str, Any]:
         """Obtener contexto de mercado relevante"""
