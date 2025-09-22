@@ -1,5 +1,6 @@
 import aiohttp
 import asyncio
+import logging
 from typing import List, Dict, Optional
 from utils.config import Config
 
@@ -7,9 +8,10 @@ class StockService:
     def __init__(self):
         self.apis = {
             'primary': self.alpha_vantage,
-            'secondary': self.twelvedata, 
+            'secondary': self.twelvedata,
             'fallback': self.yahoo_finance
         }
+        self.logger = logging.getLogger(__name__)
     
     async def get_price(self, symbol: str) -> Optional[float]:
         """Obtener precio de stock de 3 fuentes en paralelo"""
@@ -25,7 +27,7 @@ class StockService:
             return self._calculate_final_price(valid_prices)
             
         except Exception as e:
-            print(f"Error getting stock price: {e}")
+            self.logger.exception("Error getting stock price: %s", e)
             return None
     
     async def alpha_vantage(self, symbol: str) -> float:

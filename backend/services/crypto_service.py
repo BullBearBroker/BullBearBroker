@@ -1,5 +1,6 @@
 import aiohttp
 import asyncio
+import logging
 from typing import List, Optional
 from utils.config import Config
 
@@ -10,6 +11,7 @@ class CryptoService:
             'secondary': self.binance,
             'fallback': self.coinmarketcap
         }
+        self.logger = logging.getLogger(__name__)
     
     async def get_price(self, symbol: str) -> Optional[float]:
         """Obtener precio crypto de 3 fuentes en paralelo"""
@@ -25,7 +27,7 @@ class CryptoService:
             return self._calculate_final_price(valid_prices)
             
         except Exception as e:
-            print(f"Error getting crypto price: {e}")
+            self.logger.exception("Error getting crypto price: %s", e)
             return None
     
     async def coingecko(self, symbol: str) -> float:
