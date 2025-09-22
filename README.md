@@ -5,6 +5,10 @@
 - [Docker](https://docs.docker.com/get-docker/)
 - [Docker Compose](https://docs.docker.com/compose/) (Docker Desktop ya lo incluye)
 - Opcional: `make` si prefieres ejecutar comandos abreviados
+- Python 3.11 si deseas ejecutar el backend sin contenedores. Instala las
+  dependencias con `pip install -r backend/requirements.txt` (incluye Plotly,
+  APScheduler, Celery y python-telegram-bot para gráficos, programación y
+  notificaciones).
 
 ### Variables de entorno
 
@@ -23,11 +27,15 @@ BULLBEARBROKER_SECRET_KEY="coloca_aquí_una_clave_aleatoria_segura"
 # Claves para servicios externos (todas opcionales)
 # ALPHA_VANTAGE_API_KEY=
 # TWELVEDATA_API_KEY=
+# HUGGINGFACE_API_TOKEN=
+# HUGGINGFACE_SENTIMENT_MODEL=distilbert-base-uncased-finetuned-sst-2-english
 # COINGECKO_API_KEY=
 # COINMARKETCAP_API_KEY=
 # NEWSAPI_API_KEY=
 # CRYPTOPANIC_API_KEY=
 # MEDIASTACK_API_KEY=
+# TELEGRAM_BOT_TOKEN=
+# TELEGRAM_DEFAULT_CHAT_ID=
 ```
 
 > 💡 Genera una clave segura ejecutando `python -c "import secrets; print(secrets.token_urlsafe(64))"`.
@@ -43,6 +51,8 @@ Si la variable `BULLBEARBROKER_SECRET_KEY` no está definida, el backend creará
    ```
 
    El backend quedará disponible en [http://localhost:8000](http://localhost:8000).
+   El servicio `alert-worker` se levanta en paralelo para evaluar alertas con APScheduler
+   y enviar notificaciones en segundo plano.
 
 2. Cuando termines, detén los servicios con:
 
@@ -81,6 +91,17 @@ Los scripts de `npm` siguen disponibles para desarrollo local sin contenedores:
 3. Inicia el backend con `npm run backend` (lanza Uvicorn en [http://localhost:8000](http://localhost:8000)).
 
 Detén cada proceso con `Ctrl+C` cuando termines.
+
+### Nuevas capacidades del mercado
+
+- **Pares FX y materias primas**: `forex_service` reutiliza Twelve Data y Yahoo Finance
+  con caché en memoria para entregar cotizaciones rápidas a través de `/api/forex/{symbol}`.
+- **Sentimiento de mercado**: `sentiment_service` fusiona el índice Fear & Greed de Alternative.me
+  con análisis de sentimiento de HuggingFace disponible en `/api/market/sentiment/{symbol}`.
+- **Gráficos dinámicos**: la ruta `/api/market/chart/{symbol}` genera imágenes PNG en base64
+  mediante Plotly y soporta parámetros de intervalo y rango.
+- **Alertas automatizadas**: `alert_service` usa APScheduler para evaluar condiciones de precio y
+  notificar vía WebSocket y Telegram. El worker dedicado corre con Docker Compose (`alert-worker`).
 
 ### Añadir nuevas fuentes de datos
 

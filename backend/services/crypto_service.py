@@ -4,8 +4,12 @@ from typing import Dict, List, Optional
 
 import aiohttp
 
-from utils.cache import CacheClient
-from utils.config import Config
+try:  # pragma: no cover
+    from utils.cache import CacheClient
+    from utils.config import Config
+except ImportError:  # pragma: no cover
+    from backend.utils.cache import CacheClient  # type: ignore[no-redef]
+    from backend.utils.config import Config  # type: ignore[no-redef]
 
 LOGGER = logging.getLogger(__name__)
 CLIENT_TIMEOUT = aiohttp.ClientTimeout(total=10)

@@ -3,7 +3,10 @@ import json
 import time
 from typing import Any, Dict, Optional, Tuple
 
-from utils.config import Config
+try:  # pragma: no cover
+    from utils.config import Config
+except ImportError:  # pragma: no cover
+    from backend.utils.config import Config  # type: ignore[no-redef]
 
 try:
     import redis.asyncio as redis  # type: ignore

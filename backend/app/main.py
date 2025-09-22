@@ -13,19 +13,24 @@ import os
 # Añadir el directorio backend al path para importaciones
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
+from aiohttp import ClientError
+
+from services.alert_service import alert_service
+from services.forex_service import forex_service
 from services.market_service import market_service
 from services.ai_service import ai_service
 from services.stock_service import stock_service
 from services.crypto_service import CryptoService
+from services.sentiment_service import sentiment_service
 from utils.config import Config
 
 # Importar routers de autenticación
 try:
     from routers import auth
-except ImportError:
+except (ImportError, RuntimeError):
     try:
         from backend.routers import auth
-    except ImportError:
+    except (ImportError, RuntimeError):
         from fastapi import APIRouter
         auth = APIRouter()
         @auth.get("/test")
@@ -114,7 +119,29 @@ class ConnectionManager:
         if websocket in self.connection_data:
             self.connection_data[websocket]["last_activity"] = datetime.now()
 
+    async def broadcast(self, payload: Dict[str, Any]):
+        message = json.dumps(payload)
+        stale: List[WebSocket] = []
+        for connection in self.active_connections:
+            try:
+                await connection.send_text(message)
+            except Exception:
+                stale.append(connection)
+        for connection in stale:
+            self.disconnect(connection)
+
 manager = ConnectionManager()
+
+
+@app.on_event("startup")
+async def startup_services():
+    alert_service.register_websocket_manager(manager)
+    await alert_service.start()
+
+
+@app.on_event("shutdown")
+async def shutdown_services():
+    await alert_service.stop()
 
 # Función para verificar tokens JWT
 async def get_current_user(token: HTTPAuthorizationCredentials = Depends(security)):
@@ -137,6 +164,7 @@ async def health_check():
         "services": {
             "market_service": "active",
             "ai_service": "active",
+            "alert_service": "active" if alert_service.is_running else "idle",
             "websocket": "active"
         },
         "websocket_connections": len(manager.active_connections),
@@ -160,6 +188,48 @@ async def get_stock(symbol: str):
         "change": result["change"],
         "source": result["source"],
     }
+
+
+@app.get("/api/forex/{symbol}")
+async def get_forex(symbol: str):
+    try:
+        result = await forex_service.get_quote(symbol)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Error obteniendo FX {symbol}: {exc}")
+
+    if not result:
+        raise HTTPException(status_code=404, detail=f"No se encontró información para {symbol}")
+
+    return result
+
+
+@app.get("/api/market/chart/{symbol}")
+async def get_market_chart(symbol: str, interval: str = "1d", range: str = "1mo"):
+    try:
+        image_b64 = await market_service.get_chart_image(
+            symbol, interval=interval, range_=range
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ClientError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - defensivo
+        raise HTTPException(status_code=500, detail=f"Error generando gráfico: {exc}") from exc
+
+    return {
+        "symbol": symbol.upper(),
+        "interval": interval,
+        "range": range,
+        "image": image_b64,
+    }
+
+
+@app.get("/api/market/sentiment/{symbol}")
+async def get_market_sentiment(symbol: str):
+    try:
+        return await sentiment_service.get_sentiment(symbol)
+    except Exception as exc:  # pragma: no cover - defensivo
+        raise HTTPException(status_code=500, detail=f"Error obteniendo sentimiento: {exc}") from exc
 
 
 @app.get("/crypto/{symbol}")

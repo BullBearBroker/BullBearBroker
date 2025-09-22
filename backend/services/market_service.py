@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import html
 import logging
 import re
@@ -11,11 +12,22 @@ from urllib.parse import urlparse
 
 import aiohttp
 from aiohttp import ClientError
+# Plotly puede no estar disponible en entornos de prueba sin dependencias opcionales.
+try:  # pragma: no cover - depende del entorno
+    import plotly.graph_objects as go
+except Exception:  # pragma: no cover
+    go = None  # type: ignore[assignment]
 
-from services.crypto_service import CryptoService
-from services.stock_service import StockService
-from utils.cache import CacheClient
-from utils.config import Config
+try:  # pragma: no cover - compatibilidad con distintos puntos de entrada
+    from services.crypto_service import CryptoService
+    from services.stock_service import StockService
+    from utils.cache import CacheClient
+    from utils.config import Config
+except ImportError:  # pragma: no cover
+    from backend.services.crypto_service import CryptoService  # type: ignore[no-redef]
+    from backend.services.stock_service import StockService  # type: ignore[no-redef]
+    from backend.utils.cache import CacheClient  # type: ignore[no-redef]
+    from backend.utils.config import Config  # type: ignore[no-redef]
 
 LOGGER = logging.getLogger(__name__)
 CLIENT_TIMEOUT = aiohttp.ClientTimeout(total=10)
@@ -32,6 +44,7 @@ class MarketService:
         self.crypto_service = crypto_service or CryptoService()
         self.stock_service = stock_service or StockService()
         self.news_cache = news_cache or CacheClient("market-news", ttl=180)
+        self.chart_cache = CacheClient("market-chart", ttl=300)
         self.binance_cache: Dict[str, Dict[str, Any]] = {}
         self.cache_timeout = 2  # segundos (más rápido para datos en tiempo real)
         self.base_urls = {
@@ -48,6 +61,106 @@ class MarketService:
             "TSLA",
             "NFLX",
         )
+
+    async def get_price_history(
+        self,
+        symbol: str,
+        *,
+        interval: str = "1d",
+        range_: str = "1mo",
+    ) -> Dict[str, Any]:
+        """Obtiene histórico de precios desde Yahoo Finance."""
+
+        cache_key = f"{symbol}:{interval}:{range_}".lower()
+        cached = await self.chart_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        yahoo_symbol = self._format_symbol_for_yahoo(symbol)
+        params = {"interval": interval, "range": range_}
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol}"
+
+        async with aiohttp.ClientSession(timeout=CLIENT_TIMEOUT) as session:
+            async with session.get(url, params=params) as response:
+                if response.status != 200:
+                    raise ClientError(
+                        f"Yahoo Finance devolvió estado {response.status} para {symbol}"
+                    )
+                payload = await response.json()
+
+        try:
+            result = payload["chart"]["result"][0]
+            timestamps = result.get("timestamp") or []
+            quote = result["indicators"]["quote"][0]
+            closes = quote.get("close") or []
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ValueError(f"Datos históricos no disponibles para {symbol}") from exc
+
+        values: List[Dict[str, Any]] = []
+        for ts, close in zip(timestamps, closes):
+            if close is None:
+                continue
+            dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+            values.append({"timestamp": dt.isoformat(), "close": float(close)})
+
+        if not values:
+            raise ValueError(f"Sin datos históricos para {symbol}")
+
+        history = {
+            "symbol": symbol.upper(),
+            "values": values,
+            "source": "Yahoo Finance",
+        }
+        await self.chart_cache.set(cache_key, history)
+        return history
+
+    async def get_chart_image(
+        self,
+        symbol: str,
+        *,
+        interval: str = "1d",
+        range_: str = "1mo",
+    ) -> str:
+        """Genera un gráfico de precios y devuelve la imagen codificada en base64."""
+
+        history = await self.get_price_history(symbol, interval=interval, range_=range_)
+        if go is None:
+            raise RuntimeError("Plotly no está disponible para generar gráficos")
+        x_values = [item["timestamp"] for item in history["values"]]
+        y_values = [item["close"] for item in history["values"]]
+
+        fig = go.Figure(
+            data=[
+                go.Scatter(
+                    x=x_values,
+                    y=y_values,
+                    mode="lines",
+                    name=history["symbol"],
+                    line=dict(color="#00b894", width=2),
+                )
+            ]
+        )
+        fig.update_layout(
+            title=f"{history['symbol']} ({interval}, {range_})",
+            xaxis_title="Fecha",
+            yaxis_title="Precio",
+            template="plotly_dark",
+            margin=dict(l=40, r=20, t=60, b=40),
+        )
+
+        image_bytes = fig.to_image(format="png", width=900, height=500, scale=2)
+        return base64.b64encode(image_bytes).decode("ascii")
+
+    @staticmethod
+    def _format_symbol_for_yahoo(symbol: str) -> str:
+        upper = symbol.upper()
+        if "/" in upper:
+            base, quote = upper.split("/", maxsplit=1)
+            return f"{base}{quote}=X"
+        if "-" in upper:
+            base, quote = upper.split("-", maxsplit=1)
+            return f"{base}{quote}=X"
+        return upper
 
     async def get_top_performers(self) -> Dict[str, Any]:
         """Obtener los mejores performers del mercado priorizando datos reales."""
