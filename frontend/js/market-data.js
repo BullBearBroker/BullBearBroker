@@ -37,6 +37,18 @@ class MarketDataService {
             worst: []
         };
         this.ready = false;
+        this.watchlistConfig = [
+            { symbol: 'BTC', type: 'crypto' },
+            { symbol: 'ETH', type: 'crypto' },
+            { symbol: 'AAPL', type: 'stock' }
+        ];
+        this.watchlistData = new Map();
+        this.cryptoSymbols = new Set([
+            'BTC', 'ETH', 'BNB', 'XRP', 'ADA', 'DOGE', 'SOL', 'DOT', 'AVAX',
+            'MATIC', 'LTC', 'LINK', 'UNI', 'ATOM', 'ETC', 'XLM', 'BCH', 'VET',
+            'TRX', 'FIL'
+        ]);
+        this.watchlistRefreshTimer = null;
     }
 
     on(event, callback) {
@@ -103,6 +115,183 @@ class MarketDataService {
         };
     }
 
+    getAuthHeaders() {
+        if (typeof window === 'undefined') {
+            return {};
+        }
+
+        try {
+            const token = localStorage.getItem('bb_token');
+            return token ? { 'Authorization': `Bearer ${token}` } : {};
+        } catch (error) {
+            console.warn('Unable to access auth token from storage:', error);
+            return {};
+        }
+    }
+
+    parseNumber(value) {
+        if (typeof value === 'number') {
+            return Number.isFinite(value) ? value : null;
+        }
+
+        if (typeof value === 'string') {
+            const cleaned = value.replace(/[^0-9+\-.,]/g, '');
+            const normalised = cleaned.replace(/,/g, '');
+            const parsed = Number.parseFloat(normalised);
+            return Number.isNaN(parsed) ? null : parsed;
+        }
+
+        return null;
+    }
+
+    formatCurrency(value) {
+        const numeric = this.parseNumber(value);
+
+        if (numeric === null) {
+            if (typeof value === 'string' && value.trim()) {
+                return value;
+            }
+            return '--';
+        }
+
+        return `$${numeric.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+
+    formatPercent(value) {
+        const numeric = this.parseNumber(value);
+
+        if (numeric === null) {
+            if (typeof value === 'string' && value.trim()) {
+                return value;
+            }
+            return '0%';
+        }
+
+        const sign = numeric > 0 ? '+' : '';
+        return `${sign}${numeric.toFixed(2)}%`;
+    }
+
+    normalizeWatchlistEntry(symbol, data) {
+        const upperSymbol = String(symbol || '').toUpperCase();
+
+        if (!data) {
+            const fallback = this.getSimulatedPrice(upperSymbol);
+            return {
+                symbol: upperSymbol,
+                price: fallback.price,
+                change: fallback.change,
+                changeValue: this.parseNumber(fallback.change) || 0
+            };
+        }
+
+        const priceCandidate = data.raw_price ?? data.price ?? data.lastPrice ?? data.value;
+        const changeCandidate = data.raw_change ?? data.changeValue ?? data.change_percent ?? data.change;
+
+        const price = this.formatCurrency(priceCandidate);
+        const change = this.formatPercent(changeCandidate);
+        const changeValue = this.parseNumber(changeCandidate ?? change) || 0;
+
+        return {
+            symbol: upperSymbol,
+            price,
+            change,
+            changeValue
+        };
+    }
+
+    storeWatchlistEntries(entries = [], source = 'unknown') {
+        if (!Array.isArray(entries)) {
+            return;
+        }
+
+        entries.forEach(entry => {
+            if (!entry || !entry.symbol) {
+                return;
+            }
+
+            const normalized = this.normalizeWatchlistEntry(entry.symbol, entry);
+            this.watchlistData.set(normalized.symbol, normalized);
+        });
+
+        this.emitWatchlist(source);
+    }
+
+    emitWatchlist(source = 'unknown') {
+        const snapshot = this.watchlistConfig.map(item => {
+            const cached = this.watchlistData.get(item.symbol);
+            if (cached) {
+                return cached;
+            }
+            const fallback = this.normalizeWatchlistEntry(item.symbol, this.getSimulatedPrice(item.symbol));
+            this.watchlistData.set(item.symbol, fallback);
+            return fallback;
+        });
+
+        this.emit('watchlist', {
+            items: snapshot,
+            source,
+            timestamp: Date.now()
+        });
+    }
+
+    async refreshWatchlistFromApi(source = 'api') {
+        const tasks = this.watchlistConfig.map(async (item) => {
+            try {
+                const price = await this.getPrice(item.symbol);
+                return this.normalizeWatchlistEntry(item.symbol, price);
+            } catch (error) {
+                console.warn(`Error refreshing watchlist symbol ${item.symbol}:`, error);
+                return this.normalizeWatchlistEntry(item.symbol, this.getSimulatedPrice(item.symbol));
+            }
+        });
+
+        const results = await Promise.all(tasks);
+        this.storeWatchlistEntries(results, source);
+    }
+
+    updateWatchlistFromRealtime(marketData) {
+        if (!marketData) {
+            return;
+        }
+
+        const combined = [
+            ...(Array.isArray(marketData.top_performers) ? marketData.top_performers : []),
+            ...(Array.isArray(marketData.worst_performers) ? marketData.worst_performers : [])
+        ];
+
+        if (!combined.length) {
+            return;
+        }
+
+        const watchSymbols = new Set(this.watchlistConfig.map(item => item.symbol.toUpperCase()));
+        const relevant = combined
+            .filter(item => item && item.symbol && watchSymbols.has(String(item.symbol).toUpperCase()))
+            .map(item => this.normalizeWatchlistEntry(item.symbol, item));
+
+        if (relevant.length) {
+            this.storeWatchlistEntries(relevant, 'realtime');
+        }
+    }
+
+    scheduleWatchlistRefresh() {
+        if (this.watchlistRefreshTimer) {
+            return;
+        }
+
+        this.watchlistRefreshTimer = setInterval(() => {
+            this.refreshWatchlistFromApi('interval').catch(error => {
+                console.error('Watchlist interval refresh failed:', error);
+            });
+        }, 60000);
+
+        registerMarketDataTimer(this.watchlistRefreshTimer);
+        this.pollingIntervals.push(this.watchlistRefreshTimer);
+    }
+
+    isCryptoSymbol(symbol) {
+        return this.cryptoSymbols.has(String(symbol || '').toUpperCase());
+    }
+
     async init() {
         console.log('🚀 Inicializando MarketDataService...');
 
@@ -126,6 +315,8 @@ class MarketDataService {
     async start() {
         // Cargar datos iniciales
         await this.loadInitialMarketData();
+        await this.refreshWatchlistFromApi('initial');
+        this.scheduleWatchlistRefresh();
 
         // Intentar WebSockets solo si está habilitado
         if (this.useWebSockets) {
@@ -209,6 +400,14 @@ class MarketDataService {
             console.log('💓 Heartbeat recibido');
         });
 
+        this.wsManager.on('alert', (alertPayload) => {
+            this.emit('alert', {
+                ...alertPayload,
+                timestamp: Date.now(),
+                source: 'realtime'
+            });
+        });
+
         // Conectar WebSocket después de un delay
         const connectTimeout = setTimeout(() => {
             if (this.useWebSockets) {
@@ -235,18 +434,33 @@ class MarketDataService {
     }
 
     async getPrice(symbol) {
+        const upperSymbol = String(symbol || '').toUpperCase();
+        const isCrypto = this.isCryptoSymbol(upperSymbol);
+        const url = isCrypto
+            ? `${this.API_BASE_URL}/crypto/${upperSymbol}`
+            : `${this.API_BASE_URL}/market/price/${upperSymbol}`;
+
         try {
-            const response = await fetch(`${this.API_BASE_URL}/market/price/${symbol}`);
-            
-            if (response.ok) {
-                const data = await response.json();
-                if (data.success) {
-                    return data.data;
-                }
+            const response = await fetch(url, { headers: this.getAuthHeaders() });
+
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}`);
             }
-            return this.getSimulatedPrice(symbol);
+
+            const data = await response.json();
+
+            if (isCrypto) {
+                return data;
+            }
+
+            if (data && data.success) {
+                return data.data;
+            }
+
+            return data || this.getSimulatedPrice(upperSymbol);
         } catch (error) {
-            return this.getSimulatedPrice(symbol);
+            console.warn(`Falling back to simulated price for ${upperSymbol}:`, error);
+            return this.getSimulatedPrice(upperSymbol);
         }
     }
 
@@ -292,6 +506,10 @@ class MarketDataService {
             reason,
             timestamp: Date.now()
         });
+        this.storeWatchlistEntries(
+            this.watchlistConfig.map(item => this.normalizeWatchlistEntry(item.symbol, this.getSimulatedPrice(item.symbol))),
+            'simulated'
+        );
         if (this.connectionStatus !== 'static') {
             this.updateConnectionStatus('static', { reason });
         }
@@ -303,6 +521,7 @@ class MarketDataService {
             this.tickers.top = marketData.top_performers.slice(0, 5);
             this.tickers.worst = marketData.worst_performers.slice(0, 5);
             this.emitTickers('realtime');
+            this.updateWatchlistFromRealtime(marketData);
         }
     }
 
@@ -323,7 +542,12 @@ class MarketDataService {
             unregisterMarketDataTimer(intervalId);
         });
         this.pollingIntervals = [];
-        
+        this.watchlistRefreshTimer = null;
+
+        if (this.watchlistData) {
+            this.watchlistData.clear();
+        }
+
         if (this.wsManager) {
             this.wsManager.disconnect();
         }
@@ -376,6 +600,8 @@ class WebSocketManager {
                     const data = JSON.parse(event.data);
                     if (data.type === 'market_data') {
                         this.emit('market_data', data.data);
+                    } else if (data.type === 'alert') {
+                        this.emit('alert', data);
                     } else if (data.type === 'pong') {
                         console.log('🏓 Pong recibido');
                     } else if (data.type === 'connection_established') {
