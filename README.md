@@ -64,13 +64,13 @@ Si cuentas con `make`, el proyecto incluye un `Makefile` con los siguientes ataj
 
 ### Migraciones de base de datos
 
-Actualmente, los modelos de SQLAlchemy se sincronizan automáticamente al iniciar el backend (`Base.metadata.create_all`). No existe todavía un flujo formal de migraciones, por lo que no es necesario ejecutar un comando adicional.
-
-Si en el futuro se añade Alembic (u otra herramienta), podrás ejecutar las migraciones sobre los contenedores con un comando similar a:
+El backend utiliza [Alembic](https://alembic.sqlalchemy.org/) para gestionar los cambios de esquema. Cada vez que actualices el código asegúrate de aplicar las migraciones más recientes con:
 
 ```bash
 docker compose run --rm backend alembic upgrade head
 ```
+
+> Si ejecutas el backend fuera de Docker, asegúrate de tener la variable `DATABASE_URL` apuntando a tu instancia de PostgreSQL antes de lanzar `alembic upgrade head`.
 
 ### Desarrollo sin Docker
 

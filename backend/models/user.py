@@ -2,12 +2,11 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Column, DateTime, Integer, String
-from sqlalchemy.orm import declarative_base
+from sqlalchemy import DateTime, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from models.base import Base
 from utils.config import password_context
-
-Base = declarative_base()
 
 
 class User(Base):
@@ -15,14 +14,21 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=False)
-    username = Column(String, nullable=False)
-    hashed_password = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    subscription_level = Column(String, default="free", nullable=False)
-    api_calls_today = Column(Integer, default=0, nullable=False)
-    last_reset = Column(DateTime, default=datetime.utcnow, nullable=False)
+    id: Mapped[int] = mapped_column(primary_key=True, index=True)
+    email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
+    username: Mapped[str] = mapped_column(String, nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    subscription_level: Mapped[str] = mapped_column(String, default="free", nullable=False)
+    api_calls_today: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_reset: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+
+    alerts: Mapped[list["Alert"]] = relationship(
+        "Alert", back_populates="user", cascade="all, delete-orphan"
+    )
+    sessions: Mapped[list["Session"]] = relationship(
+        "Session", back_populates="user", cascade="all, delete-orphan"
+    )
 
     def verify_password(self, password: str) -> bool:
         """Verificar si la contraseña coincide."""

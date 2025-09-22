@@ -2,21 +2,23 @@ from __future__ import annotations
 
 import os
 from contextlib import contextmanager
-from typing import Optional
+from datetime import datetime, timedelta
+from typing import Iterable, Optional
 
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session as OrmSession, sessionmaker, selectinload
 
-from models import Base, User
+from models import Alert, Session as SessionModel, User
 from utils.config import password_context
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./bullbearbroker.db")
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL debe estar configurada")
+if not DATABASE_URL.startswith("postgresql"):
+    raise RuntimeError("DATABASE_URL debe apuntar a una base de datos PostgreSQL")
 
-connect_args = {"check_same_thread": False} if DATABASE_URL.startswith("sqlite") else {}
-engine = create_engine(DATABASE_URL, echo=False, future=True, connect_args=connect_args)
+engine = create_engine(DATABASE_URL, echo=False, future=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
-
-Base.metadata.create_all(bind=engine)
 
 
 class UserAlreadyExistsError(Exception):
@@ -36,7 +38,7 @@ class UserService:
         self._session_factory = session_factory
 
     @contextmanager
-    def _session_scope(self) -> Session:
+    def _session_scope(self) -> Iterable[OrmSession]:
         session = self._session_factory()
         try:
             yield session
@@ -47,11 +49,22 @@ class UserService:
         finally:
             session.close()
 
-    def _detach_user(self, session: Session, user: User) -> User:
+    @staticmethod
+    def _detach_entity(session: OrmSession, entity):
         session.flush()
-        session.refresh(user)
-        session.expunge(user)
-        return user
+        session.refresh(entity)
+        session.expunge(entity)
+        return entity
+
+    def _user_with_relationships(self, session: OrmSession, user: User) -> User:
+        session.refresh(
+            user,
+            attribute_names=["alerts", "sessions"],
+        )
+        for collection in (user.alerts, user.sessions):
+            for item in collection:
+                session.expunge(item)
+        return self._detach_entity(session, user)
 
     def create_user(self, email: str, username: str, password: str) -> User:
         hashed_password = password_context.hash(password)
@@ -65,14 +78,23 @@ class UserService:
                 hashed_password=hashed_password,
             )
             session.add(user)
-            return self._detach_user(session, user)
+            return self._user_with_relationships(session, user)
 
     def get_user_by_email(self, email: str) -> Optional[User]:
         with self._session_scope() as session:
-            user = session.query(User).filter(User.email == email).first()
+            user = (
+                session.query(User)
+                .options(selectinload(User.alerts), selectinload(User.sessions))
+                .filter(User.email == email)
+                .first()
+            )
             if not user:
                 return None
-            return self._detach_user(session, user)
+            session.expunge(user)
+            for collection in (user.alerts, user.sessions):
+                for item in collection:
+                    session.expunge(item)
+            return user
 
     def authenticate_user(self, email: str, password: str) -> User:
         user = self.get_user_by_email(email)
@@ -82,13 +104,84 @@ class UserService:
 
     def increment_api_usage(self, email: str) -> User:
         with self._session_scope() as session:
-            user = session.query(User).filter(User.email == email).first()
+            user = (
+                session.query(User)
+                .options(selectinload(User.alerts), selectinload(User.sessions))
+                .filter(User.email == email)
+                .first()
+            )
             if not user:
                 raise UserNotFoundError("Usuario no encontrado")
 
             user.reset_api_counter()
             user.api_calls_today += 1
-            return self._detach_user(session, user)
+            session.flush()
+            session.refresh(user)
+            session.expunge(user)
+            for collection in (user.alerts, user.sessions):
+                for item in collection:
+                    session.expunge(item)
+            return user
+
+    def create_session(
+        self, user_id: int, token: str, expires_in: timedelta | None = None
+    ) -> SessionModel:
+        expires_at: datetime | None = None
+        if expires_in is not None:
+            expires_at = datetime.utcnow() + expires_in
+
+        with self._session_scope() as session:
+            user = session.get(User, user_id)
+            if not user:
+                raise UserNotFoundError("Usuario no encontrado")
+
+            session_obj = SessionModel(
+                user_id=user.id,
+                token=token,
+                expires_at=expires_at,
+            )
+            session.add(session_obj)
+            return self._detach_entity(session, session_obj)
+
+    def get_active_sessions(self, user_id: int) -> list[SessionModel]:
+        with self._session_scope() as session:
+            sessions = (
+                session.query(SessionModel)
+                .filter(
+                    SessionModel.user_id == user_id,
+                    SessionModel.revoked_at.is_(None),
+                )
+                .all()
+            )
+            for sess in sessions:
+                session.expunge(sess)
+            return sessions
+
+    def register_session_activity(self, token: str) -> None:
+        with self._session_scope() as session:
+            session_obj = (
+                session.query(SessionModel)
+                .filter(SessionModel.token == token, SessionModel.revoked_at.is_(None))
+                .first()
+            )
+            if session_obj:
+                session_obj.last_seen_at = datetime.utcnow()
+
+    def create_alert(self, user_id: int, channel: str, message: str) -> Alert:
+        with self._session_scope() as session:
+            if not session.get(User, user_id):
+                raise UserNotFoundError("Usuario no encontrado")
+
+            alert = Alert(user_id=user_id, channel=channel, message=message)
+            session.add(alert)
+            return self._detach_entity(session, alert)
+
+    def get_alerts_for_user(self, user_id: int) -> list[Alert]:
+        with self._session_scope() as session:
+            alerts = session.query(Alert).filter(Alert.user_id == user_id).all()
+            for alert in alerts:
+                session.expunge(alert)
+            return alerts
 
 
 user_service = UserService()

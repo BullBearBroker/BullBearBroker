@@ -84,6 +84,7 @@ async def login(credentials: dict):
             raise HTTPException(status_code=401, detail=str(exc)) from exc
 
         token = create_jwt_token(user)
+        user_service.create_session(user_id=user.id, token=token, expires_in=timedelta(hours=24))
 
         return {
             "message": "Login exitoso",
@@ -95,7 +96,7 @@ async def login(credentials: dict):
         raise HTTPException(status_code=400, detail="Email y password requeridos")
 
 
-@router.get("/users/me")
+@router.get("/me")
 async def get_current_user(token: HTTPAuthorizationCredentials = Depends(security)):
     """Obtener información del usuario actual"""
     try:
@@ -105,6 +106,8 @@ async def get_current_user(token: HTTPAuthorizationCredentials = Depends(securit
         user = user_service.get_user_by_email(email)
         if not user:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+        user_service.register_session_activity(token.credentials)
 
         return serialize_user(user)
 
