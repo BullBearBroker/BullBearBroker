@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Dict, List, Optional
+from typing import Awaitable, Callable, Dict, Optional
 
 import aiohttp
 
@@ -16,36 +16,37 @@ CLIENT_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 
 class CryptoService:
+    RETRY_ATTEMPTS = 3
+    RETRY_BACKOFF = 0.75
+
     def __init__(self, cache_client: Optional[CacheClient] = None):
-        self.apis = {
-            'primary': self.coingecko,
-            'secondary': self.binance,
-            'fallback': self.coinmarketcap
-        }
         self.cache = cache_client or CacheClient('crypto-prices', ttl=45)
         self._coingecko_id_cache: Dict[str, Optional[str]] = {}
 
     async def get_price(self, symbol: str) -> Optional[float]:
-        """Obtener precio crypto de 3 fuentes en paralelo"""
+        """Obtener precio de un activo crypto con reintentos y fallback."""
         try:
-            cached_value = await self.cache.get(symbol.upper())
+            cache_key = symbol.upper()
+            cached_value = await self.cache.get(cache_key)
             if cached_value is not None:
                 return cached_value
 
-            results = await asyncio.gather(
-                self.apis['primary'](symbol),
-                self.apis['secondary'](symbol),
-                self.apis['fallback'](symbol),
-                return_exceptions=True
+            providers = (
+                ("CoinGecko", self.coingecko),
+                ("Binance", self.binance),
+                ("CoinMarketCap", self.coinmarketcap),
             )
 
-            valid_prices = self._process_results(results)
-            final_price = self._calculate_final_price(valid_prices)
-            await self.cache.set(symbol.upper(), final_price)
-            return final_price
+            for provider_name, provider in providers:
+                price = await self._call_with_retries(provider, symbol, provider_name)
+                if price is not None:
+                    await self.cache.set(cache_key, price)
+                    return price
 
-        except Exception as e:
-            print(f"Error getting crypto price: {e}")
+            return None
+
+        except Exception as exc:  # pragma: no cover - errores inesperados
+            LOGGER.exception("Error getting crypto price for %s: %s", symbol, exc)
             return None
     
     async def coingecko(self, symbol: str) -> Optional[float]:
@@ -160,20 +161,45 @@ class CryptoService:
 
         self._coingecko_id_cache[normalized] = None
         return None
-    
-    def _process_results(self, results: List) -> List[float]:
-        """Filtrar resultados válidos"""
-        valid_prices = []
-        for result in results:
-            if not isinstance(result, Exception):
-                if isinstance(result, (int, float)) and result > 0:
-                    valid_prices.append(result)
-        return valid_prices
-    
-    def _calculate_final_price(self, prices: List[float]) -> float:
-        """Calcular precio final"""
-        if not prices:
-            raise ValueError("No valid prices received")
-        
-        sorted_prices = sorted(prices)
-        return sorted_prices[len(sorted_prices) // 2]
+
+    async def _call_with_retries(
+        self,
+        handler: Callable[[str], Awaitable[Optional[float]]],
+        symbol: str,
+        source_name: str,
+    ) -> Optional[float]:
+        backoff = self.RETRY_BACKOFF
+        for attempt in range(1, self.RETRY_ATTEMPTS + 1):
+            try:
+                result = await handler(symbol)
+            except Exception as exc:  # pragma: no cover - logging e interrupción controlada
+                LOGGER.warning(
+                    "CryptoService: intento %s fallido con %s para %s: %s",
+                    attempt,
+                    source_name,
+                    symbol,
+                    exc,
+                )
+            else:
+                if result is not None:
+                    if attempt > 1:
+                        LOGGER.info(
+                            "CryptoService: %s tuvo éxito para %s tras %s intentos",
+                            source_name,
+                            symbol,
+                            attempt,
+                        )
+                    return result
+
+                LOGGER.warning(
+                    "CryptoService: intento %s no devolvió precio en %s para %s",
+                    attempt,
+                    source_name,
+                    symbol,
+                )
+
+            if attempt < self.RETRY_ATTEMPTS:
+                await asyncio.sleep(backoff)
+                backoff *= 2
+
+        return None
