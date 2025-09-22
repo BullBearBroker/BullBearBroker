@@ -27,6 +27,7 @@ BULLBEARBROKER_SECRET_KEY="coloca_aquí_una_clave_aleatoria_segura"
 # COINMARKETCAP_API_KEY=
 # NEWSAPI_API_KEY=
 # CRYPTOPANIC_API_KEY=
+# MEDIASTACK_API_KEY=
 ```
 
 > 💡 Genera una clave segura ejecutando `python -c "import secrets; print(secrets.token_urlsafe(64))"`.
@@ -80,3 +81,21 @@ Los scripts de `npm` siguen disponibles para desarrollo local sin contenedores:
 3. Inicia el backend con `npm run backend` (lanza Uvicorn en [http://localhost:8000](http://localhost:8000)).
 
 Detén cada proceso con `Ctrl+C` cuando termines.
+
+### Añadir nuevas fuentes de datos
+
+Las integraciones de precios y noticias están desacopladas mediante servicios especializados.
+Para conectar una nueva fuente:
+
+1. **Crea o actualiza un servicio** con un método `get_price` (o equivalente) que devuelva los
+   datos normalizados. Puedes inspirarte en `backend/services/crypto_service.py` y
+   `backend/services/stock_service.py`.
+2. **Inyecta la dependencia** en `MarketService` pasando el servicio en el constructor o
+   registrándolo dentro de la clase si debe ser la fuente por defecto.
+3. **Gestiona la caché** reutilizando `utils.cache.CacheClient` para evitar llamadas repetidas.
+4. **Actualiza los helpers del mercado** (`get_crypto_price`, `get_stock_price`, `get_news`) para que
+   deleguen en la nueva fuente y añade la clave necesaria en `.env`.
+
+De forma similar, las nuevas APIs de noticias pueden integrarse creando un método auxiliar que
+devuelva la estructura `{title, url, source, published_at, summary}` y registrándolo como fallback
+antes de la lectura RSS.
