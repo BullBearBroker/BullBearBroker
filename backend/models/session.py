@@ -21,7 +21,5 @@ class Session(Base):
     token: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    last_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    revoked_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
     user: Mapped["User"] = relationship("User", back_populates="sessions")
