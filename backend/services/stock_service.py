@@ -27,6 +27,12 @@ class StockService:
         self._timeout = ClientTimeout(total=10)
         self.apis = [
             {
+                "name": "Alpha Vantage",
+                "callable": self._fetch_alpha_vantage,
+                "requires_key": True,
+                "api_key": Config.ALPHA_VANTAGE_API_KEY,
+            },
+            {
                 "name": "Twelve Data",
                 "callable": self._fetch_twelvedata,
                 "requires_key": True,
@@ -37,12 +43,6 @@ class StockService:
                 "callable": self._fetch_yahoo_finance,
                 "requires_key": False,
                 "api_key": None,
-            },
-            {
-                "name": "Alpha Vantage",
-                "callable": self._fetch_alpha_vantage,
-                "requires_key": True,
-                "api_key": Config.ALPHA_VANTAGE_API_KEY,
             },
         ]
 
