@@ -1,29 +1,38 @@
 import aiohttp
 import asyncio
 from typing import List, Optional
+
+from utils.cache import CacheClient
 from utils.config import Config
 
 class CryptoService:
-    def __init__(self):
+    def __init__(self, cache_client: Optional[CacheClient] = None):
         self.apis = {
             'primary': self.coingecko,
             'secondary': self.binance,
             'fallback': self.coinmarketcap
         }
-    
+        self.cache = cache_client or CacheClient('crypto-prices', ttl=45)
+
     async def get_price(self, symbol: str) -> Optional[float]:
         """Obtener precio crypto de 3 fuentes en paralelo"""
         try:
+            cached_value = await self.cache.get(symbol.upper())
+            if cached_value is not None:
+                return cached_value
+
             results = await asyncio.gather(
                 self.apis['primary'](symbol),
                 self.apis['secondary'](symbol),
                 self.apis['fallback'](symbol),
                 return_exceptions=True
             )
-            
+
             valid_prices = self._process_results(results)
-            return self._calculate_final_price(valid_prices)
-            
+            final_price = self._calculate_final_price(valid_prices)
+            await self.cache.set(symbol.upper(), final_price)
+            return final_price
+
         except Exception as e:
             print(f"Error getting crypto price: {e}")
             return None

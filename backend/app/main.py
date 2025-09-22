@@ -15,6 +15,7 @@ sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from services.market_service import market_service
 from services.ai_service import ai_service
+from services.stock_service import stock_service
 from utils.config import Config
 
 # Importar routers de autenticación
@@ -138,6 +139,24 @@ async def health_check():
         },
         "websocket_connections": len(manager.active_connections),
         "timestamp": datetime.now().isoformat()
+    }
+
+
+@app.get("/stock/{symbol}")
+async def get_stock(symbol: str):
+    try:
+        result = await stock_service.get_price(symbol)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Error obteniendo precio de {symbol}: {exc}")
+
+    if not result:
+        raise HTTPException(status_code=404, detail=f"No se encontró información para {symbol}")
+
+    return {
+        "symbol": symbol.upper(),
+        "price": result["price"],
+        "change": result["change"],
+        "source": result["source"],
     }
 
 @app.websocket("/ws/market-data")
