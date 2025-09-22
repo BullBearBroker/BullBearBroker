@@ -11,9 +11,14 @@ class Config:
     ALPHA_VANTAGE_API_KEY = os.getenv('ALPHA_VANTAGE_API_KEY')
     TWELVEDATA_API_KEY = os.getenv('TWELVEDATA_API_KEY')
     
-    # Crypto APIs  
+    # Crypto APIs
     COINGECKO_API_KEY = os.getenv('COINGECKO_API_KEY')
     COINMARKETCAP_API_KEY = os.getenv('COINMARKETCAP_API_KEY')
+    REDIS_URL = os.getenv('BULLBEARBROKER_REDIS_URL')
+    CRYPTO_PRICE_CACHE_TTL = int(os.getenv('CRYPTO_PRICE_CACHE_TTL', '60'))
+    CRYPTO_HTTP_TIMEOUT = float(os.getenv('CRYPTO_HTTP_TIMEOUT', '10'))
+    CRYPTO_HTTP_RETRIES = int(os.getenv('CRYPTO_HTTP_RETRIES', '2'))
+    CRYPTO_HTTP_BACKOFF_BASE = float(os.getenv('CRYPTO_HTTP_BACKOFF_BASE', '0.5'))
     
     # News APIs
     NEWSAPI_API_KEY = os.getenv('NEWSAPI_API_KEY')

@@ -14,6 +14,7 @@ import os
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from services.market_service import market_service
+from services.crypto_service import CryptoService
 from services.ai_service import ai_service
 from utils.config import Config
 
@@ -81,6 +82,8 @@ try:
 except Exception as e:
     print(f"Warning: Could not set market service: {e}")
 
+crypto_service = CryptoService()
+
 # ✅ ALMACEN DE CONEXIONES WEB SOCKET MEJORADO
 class ConnectionManager:
     def __init__(self):
@@ -126,6 +129,20 @@ async def get_current_user(token: HTTPAuthorizationCredentials = Depends(securit
 @app.get("/")
 async def root():
     return {"message": "BullBearBroker API está funcionando!", "version": "1.0.0"}
+
+@app.get("/crypto/{symbol}")
+async def get_crypto_price(symbol: str):
+    try:
+        price_data = await crypto_service.get_price(symbol)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail="Error obteniendo el precio de la criptomoneda") from exc
+
+    if not price_data:
+        raise HTTPException(status_code=404, detail="No se pudo obtener el precio para el símbolo solicitado")
+
+    return price_data
 
 @app.get("/api/health")
 async def health_check():
