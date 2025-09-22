@@ -12,18 +12,54 @@ class APIService {
         return `${this.baseURL}${normalisedEndpoint}`;
     }
 
+    getAuthToken() {
+        if (typeof window === 'undefined') {
+            return null;
+        }
+
+        try {
+            return localStorage.getItem('bb_token');
+        } catch (error) {
+            console.warn('Unable to access auth token from storage:', error);
+            return null;
+        }
+    }
+
     async request(endpoint, options = {}) {
+        const headers = {
+            'Content-Type': 'application/json',
+            ...options.headers
+        };
+
+        const token = this.getAuthToken();
+        if (token) {
+            headers['Authorization'] = `Bearer ${token}`;
+        }
+
         try {
             const response = await fetch(this.buildUrl(endpoint), {
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...options.headers
-                },
-                ...options
+                ...options,
+                headers
             });
 
             if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+                let errorPayload = null;
+                try {
+                    errorPayload = await response.json();
+                } catch (jsonError) {
+                    errorPayload = null;
+                }
+
+                const message = errorPayload?.detail
+                    || (Array.isArray(errorPayload?.errors)
+                        ? errorPayload.errors.map(err => err.msg || err.detail).join(' ')
+                        : null)
+                    || `HTTP error! status: ${response.status}`;
+
+                const error = new Error(message);
+                error.status = response.status;
+                error.payload = errorPayload;
+                throw error;
             }
 
             return await response.json();
@@ -51,6 +87,17 @@ class APIService {
             console.log(`Price not available for ${symbol}`);
             return null;
         }
+    }
+
+    async listAlerts() {
+        return await this.request('alerts');
+    }
+
+    async createAlert(payload) {
+        return await this.request('alerts', {
+            method: 'POST',
+            body: JSON.stringify(payload)
+        });
     }
 
     async sendChatMessage(message) {
