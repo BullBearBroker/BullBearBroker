@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
+import uuid
 
-from sqlalchemy import DateTime, Integer, String
+from sqlalchemy import DateTime, String
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 try:  # pragma: no cover
@@ -21,7 +23,9 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4
+    )
     email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
@@ -43,7 +47,7 @@ class User(Base):
     def to_dict(self) -> dict:
         """Representación serializable del usuario."""
         return {
-            "id": self.id,
+            "id": str(self.id) if self.id else None,
             "email": self.email,
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,

@@ -4,6 +4,7 @@ import os
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Iterable, Optional
+from uuid import UUID
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session as OrmSession, sessionmaker, selectinload
@@ -102,7 +103,7 @@ class UserService:
         return user
 
     def create_session(
-        self, user_id: int, token: str, expires_in: timedelta | None = None
+        self, user_id: UUID, token: str, expires_in: timedelta | None = None
     ) -> SessionModel:
         expires_at: datetime | None = None
         if expires_in is not None:
@@ -121,7 +122,7 @@ class UserService:
             session.add(session_obj)
             return self._detach_entity(session, session_obj)
 
-    def get_active_sessions(self, user_id: int) -> list[SessionModel]:
+    def get_active_sessions(self, user_id: UUID) -> list[SessionModel]:
         with self._session_scope() as session:
             now = datetime.utcnow()
             sessions = (
@@ -143,7 +144,7 @@ class UserService:
 
     def create_alert(
         self,
-        user_id: int,
+        user_id: UUID,
         *,
         asset: str,
         value: float,
@@ -162,7 +163,7 @@ class UserService:
             session.add(alert)
             return self._detach_entity(session, alert)
 
-    def get_alerts_for_user(self, user_id: int) -> list[Alert]:
+    def get_alerts_for_user(self, user_id: UUID) -> list[Alert]:
         with self._session_scope() as session:
             alerts = session.query(Alert).filter(Alert.user_id == user_id).all()
             for alert in alerts:

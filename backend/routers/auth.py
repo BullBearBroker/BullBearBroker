@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 from typing import Dict
+from uuid import UUID
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException
@@ -27,7 +28,7 @@ def create_jwt_token(user: User) -> str:
     """Crear token JWT para el usuario"""
     payload = {
         "sub": user.email,
-        "user_id": user.id,
+        "user_id": str(user.id),
         "exp": datetime.utcnow() + timedelta(hours=24),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
@@ -36,7 +37,7 @@ def create_jwt_token(user: User) -> str:
 def serialize_user(user: User) -> Dict[str, object]:
     """Serializar la información básica del usuario."""
     return {
-        "id": user.id,
+        "id": str(user.id),
         "email": user.email,
         "created_at": user.created_at.isoformat() if user.created_at else None,
         "updated_at": user.updated_at.isoformat() if user.updated_at else None,
@@ -100,10 +101,19 @@ async def get_current_user(token: HTTPAuthorizationCredentials = Depends(securit
     """Obtener información del usuario actual"""
     try:
         payload = jwt.decode(token.credentials, SECRET_KEY, algorithms=[ALGORITHM])
-        email = payload["sub"]
+        email = payload.get("sub")
+        raw_user_id = payload.get("user_id")
+
+        if not email or raw_user_id is None:
+            raise HTTPException(status_code=401, detail="Token inválido")
+
+        try:
+            token_user_id = UUID(str(raw_user_id))
+        except ValueError as exc:
+            raise HTTPException(status_code=401, detail="Token inválido") from exc
 
         user = user_service.get_user_by_email(email)
-        if not user:
+        if not user or user.id != token_user_id:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
         user_service.register_session_activity(token.credentials)
