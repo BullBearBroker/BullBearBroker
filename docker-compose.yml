@@ -8,17 +8,19 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+psycopg2://bullbear:bullbear@postgres:5432/bullbear
       REDIS_URL: redis://redis:6379/0
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:8000/api/health\")' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     networks:
       - backend
 
@@ -28,31 +30,12 @@ services:
     env_file:
       - .env
     environment:
-      DATABASE_URL: postgresql+psycopg2://bullbear:bullbear@postgres:5432/bullbear
       REDIS_URL: redis://redis:6379/0
     depends_on:
-      postgres:
-        condition: service_healthy
       redis:
         condition: service_healthy
     volumes:
       - ./backend:/app
-    networks:
-      - backend
-
-  postgres:
-    image: postgres:15
-    environment:
-      POSTGRES_DB: bullbear
-      POSTGRES_USER: bullbear
-      POSTGRES_PASSWORD: bullbear
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
     networks:
       - backend
 
@@ -68,10 +51,26 @@ services:
     networks:
       - backend
 
+  frontend:
+    image: nginx:alpine
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+    ports:
+      - "3000:80"
+    healthcheck:
+      test: ["CMD-SHELL", "wget --spider -q http://localhost || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - backend
+
 networks:
   backend:
     driver: bridge
 
 volumes:
-  postgres_data:
   redis_data:
