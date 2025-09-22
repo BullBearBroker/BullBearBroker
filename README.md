@@ -20,3 +20,19 @@ Si la clave no está definida, el backend generará automáticamente una de un s
 3. En otra terminal, inicia el backend con `npm run backend`, lo que lanza el servidor FastAPI en [http://localhost:8000](http://localhost:8000).
 
 Detén cada proceso con `Ctrl+C` cuando termines.
+
+### Base de datos y migraciones
+
+Configura la variable de entorno `DATABASE_URL` apuntando a tu instancia de PostgreSQL usando el driver asíncrono de SQLAlchemy, por ejemplo:
+
+```env
+DATABASE_URL=postgresql+asyncpg://usuario:password@localhost:5432/bullbearbroker
+```
+
+Una vez definidas las variables, aplica las migraciones con Alembic antes de iniciar el backend:
+
+```bash
+alembic upgrade head
+```
+
+El archivo de configuración `backend/alembic.ini` ya apunta al directorio de migraciones localizado en `backend/alembic`.

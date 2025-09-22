@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import TYPE_CHECKING, List
 
-from sqlalchemy import Column, DateTime, Integer, String
-from sqlalchemy.orm import declarative_base
+from sqlalchemy import DateTime, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from .base import Base
 from utils.config import password_context
 
-Base = declarative_base()
+if TYPE_CHECKING:
+    from .alert import Alert
+    from .session import UserSession
 
 
 class User(Base):
@@ -15,14 +19,25 @@ class User(Base):
 
     __tablename__ = "users"
 
-    id = Column(Integer, primary_key=True, index=True)
-    email = Column(String, unique=True, index=True, nullable=False)
-    username = Column(String, nullable=False)
-    hashed_password = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    subscription_level = Column(String, default="free", nullable=False)
-    api_calls_today = Column(Integer, default=0, nullable=False)
-    last_reset = Column(DateTime, default=datetime.utcnow, nullable=False)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
+    username: Mapped[str] = mapped_column(String(255), nullable=False)
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+    subscription_level: Mapped[str] = mapped_column(String(50), default="free", nullable=False)
+    api_calls_today: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    last_reset: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
+
+    alerts: Mapped[List["Alert"]] = relationship(
+        "Alert",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    sessions: Mapped[List["UserSession"]] = relationship(
+        "UserSession",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
 
     def verify_password(self, password: str) -> bool:
         """Verificar si la contraseña coincide."""
@@ -46,3 +61,4 @@ class User(Base):
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "last_reset": self.last_reset.isoformat() if self.last_reset else None,
         }
+

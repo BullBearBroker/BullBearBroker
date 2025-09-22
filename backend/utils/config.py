@@ -25,7 +25,12 @@ class Config:
         token_urlsafe(64)
     )
     JWT_ALGORITHM = os.getenv('BULLBEARBROKER_JWT_ALGORITHM', 'HS256')
-    
+
+    DATABASE_URL = os.getenv(
+        'DATABASE_URL',
+        'postgresql+asyncpg://postgres:postgres@localhost:5432/bullbearbroker'
+    )
+
     # Binance no necesita key
     # Yahoo Finance no necesita key
     # Twitter API necesita app registration

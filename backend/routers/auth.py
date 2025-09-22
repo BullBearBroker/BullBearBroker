@@ -6,6 +6,7 @@ from typing import Dict
 import jwt
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, EmailStr, Field
 
 from models import User
 from services.user_service import (
@@ -21,6 +22,17 @@ security = HTTPBearer()
 # Secret key para JWT - obtenido desde configuración centralizada
 SECRET_KEY = Config.JWT_SECRET_KEY
 ALGORITHM = Config.JWT_ALGORITHM
+
+
+class RegisterRequest(BaseModel):
+    email: EmailStr
+    username: str = Field(..., min_length=1)
+    password: str = Field(..., min_length=6)
+
+
+class LoginRequest(BaseModel):
+    email: EmailStr
+    password: str = Field(..., min_length=1)
 
 
 def create_jwt_token(user: User) -> str:
@@ -44,55 +56,41 @@ def serialize_user(user: User) -> Dict[str, object]:
 
 
 @router.post("/register")
-async def register(user_data: dict):
+async def register(request: RegisterRequest):
     """Endpoint para registrar nuevo usuario"""
     try:
-        if len(user_data["password"]) < 6:
-            raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 6 caracteres")
+        new_user = await user_service.create_user(
+            email=request.email,
+            username=request.username,
+            password=request.password,
+        )
+    except UserAlreadyExistsError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        try:
-            new_user = user_service.create_user(
-                email=user_data["email"],
-                username=user_data["username"],
-                password=user_data["password"],
-            )
-        except UserAlreadyExistsError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    token = create_jwt_token(new_user)
 
-        token = create_jwt_token(new_user)
-
-        return {
-            "message": "Usuario registrado exitosamente",
-            "token": token,
-            "user": serialize_user(new_user),
-        }
-
-    except KeyError as e:
-        raise HTTPException(status_code=400, detail=f"Campo faltante: {str(e)}")
+    return {
+        "message": "Usuario registrado exitosamente",
+        "token": token,
+        "user": serialize_user(new_user),
+    }
 
 
 @router.post("/login")
-async def login(credentials: dict):
+async def login(request: LoginRequest):
     """Endpoint para login de usuario"""
     try:
-        email = credentials["email"]
-        password = credentials["password"]
+        user = await user_service.authenticate_user(email=request.email, password=request.password)
+    except InvalidCredentialsError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
 
-        try:
-            user = user_service.authenticate_user(email=email, password=password)
-        except InvalidCredentialsError as exc:
-            raise HTTPException(status_code=401, detail=str(exc)) from exc
+    token = create_jwt_token(user)
 
-        token = create_jwt_token(user)
-
-        return {
-            "message": "Login exitoso",
-            "token": token,
-            "user": serialize_user(user),
-        }
-
-    except KeyError:
-        raise HTTPException(status_code=400, detail="Email y password requeridos")
+    return {
+        "message": "Login exitoso",
+        "token": token,
+        "user": serialize_user(user),
+    }
 
 
 @router.get("/users/me")
@@ -102,13 +100,13 @@ async def get_current_user(token: HTTPAuthorizationCredentials = Depends(securit
         payload = jwt.decode(token.credentials, SECRET_KEY, algorithms=[ALGORITHM])
         email = payload["sub"]
 
-        user = user_service.get_user_by_email(email)
+        user = await user_service.get_user_by_email(email)
         if not user:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
 
         return serialize_user(user)
 
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expirado")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Token inválido")
+    except jwt.ExpiredSignatureError as exc:
+        raise HTTPException(status_code=401, detail="Token expirado") from exc
+    except jwt.InvalidTokenError as exc:
+        raise HTTPException(status_code=401, detail="Token inválido") from exc
