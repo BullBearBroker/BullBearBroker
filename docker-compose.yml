@@ -22,6 +22,24 @@ services:
     networks:
       - backend
 
+  alert-worker:
+    image: bullbearbroker-backend:latest
+    command: python -m services.alert_service
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://bullbear:bullbear@postgres:5432/bullbear
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+    networks:
+      - backend
+
   postgres:
     image: postgres:15
     environment:

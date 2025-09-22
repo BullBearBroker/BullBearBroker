@@ -29,6 +29,10 @@ class Config:
         'HUGGINGFACE_MODEL',
         'meta-llama/Meta-Llama-3-8B-Instruct'
     )
+    HUGGINGFACE_SENTIMENT_MODEL = os.getenv(
+        'HUGGINGFACE_SENTIMENT_MODEL',
+        'distilbert-base-uncased-finetuned-sst-2-english'
+    )
     HUGGINGFACE_API_URL = os.getenv(
         'HUGGINGFACE_API_URL',
         'https://api-inference.huggingface.co/models'
@@ -42,6 +46,10 @@ class Config:
         token_urlsafe(64)
     )
     JWT_ALGORITHM = os.getenv('BULLBEARBROKER_JWT_ALGORITHM', 'HS256')
+
+    # Notifications
+    TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+    TELEGRAM_DEFAULT_CHAT_ID = os.getenv('TELEGRAM_DEFAULT_CHAT_ID')
     
     # Binance no necesita key
     # Yahoo Finance no necesita key

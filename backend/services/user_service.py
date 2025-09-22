@@ -167,12 +167,30 @@ class UserService:
             if session_obj:
                 session_obj.last_seen_at = datetime.utcnow()
 
-    def create_alert(self, user_id: int, channel: str, message: str) -> Alert:
+    def create_alert(
+        self,
+        user_id: int,
+        *,
+        symbol: str,
+        target_price: float,
+        comparison: str = "above",
+        channel: str = "websocket",
+        message: str | None = None,
+        telegram_chat_id: str | None = None,
+    ) -> Alert:
         with self._session_scope() as session:
             if not session.get(User, user_id):
                 raise UserNotFoundError("Usuario no encontrado")
 
-            alert = Alert(user_id=user_id, channel=channel, message=message)
+            alert = Alert(
+                user_id=user_id,
+                symbol=symbol.upper(),
+                target_price=target_price,
+                comparison=comparison,
+                channel=channel,
+                message=message,
+                telegram_chat_id=telegram_chat_id,
+            )
             session.add(alert)
             return self._detach_entity(session, alert)
 

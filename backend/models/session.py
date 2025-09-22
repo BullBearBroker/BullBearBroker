@@ -5,7 +5,10 @@ from datetime import datetime
 from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from models.base import Base
+try:  # pragma: no cover
+    from .base import Base
+except ImportError:  # pragma: no cover
+    from backend.models.base import Base  # type: ignore[no-redef]
 
 
 class Session(Base):

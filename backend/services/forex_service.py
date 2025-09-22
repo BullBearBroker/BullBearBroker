@@ -1,11 +1,14 @@
+"""Servicio para obtener cotizaciones de divisas y materias primas."""
+
+from __future__ import annotations
+
 import asyncio
-from json import JSONDecodeError
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, Optional, Sequence
 
 import aiohttp
 from aiohttp import ClientError, ClientTimeout, ContentTypeError
 
-try:  # pragma: no cover
+try:  # pragma: no cover - compatibilidad con distintos puntos de entrada
     from utils.cache import CacheClient
     from utils.config import Config
 except ImportError:  # pragma: no cover
@@ -13,19 +16,22 @@ except ImportError:  # pragma: no cover
     from backend.utils.config import Config  # type: ignore[no-redef]
 
 
-class StockService:
+class ForexService:
+    """Permite consultar precios de pares FX y materias primas."""
+
     RETRY_ATTEMPTS = 3
     RETRY_BACKOFF = 0.75
 
     def __init__(
         self,
+        *,
         cache_client: Optional[CacheClient] = None,
         session_factory=aiohttp.ClientSession,
     ) -> None:
-        self.cache = cache_client or CacheClient("stock-prices", ttl=45)
+        self.cache = cache_client or CacheClient("forex-quotes", ttl=60)
         self._session_factory = session_factory
         self._timeout = ClientTimeout(total=10)
-        self.apis = [
+        self.apis = (
             {
                 "name": "Twelve Data",
                 "callable": self._fetch_twelvedata,
@@ -38,18 +44,13 @@ class StockService:
                 "requires_key": False,
                 "api_key": None,
             },
-            {
-                "name": "Alpha Vantage",
-                "callable": self._fetch_alpha_vantage,
-                "requires_key": True,
-                "api_key": Config.ALPHA_VANTAGE_API_KEY,
-            },
-        ]
+        )
 
-    async def get_price(self, symbol: str) -> Optional[Dict[str, Any]]:
-        """Obtiene precio, variación y fuente de un símbolo bursátil."""
+    async def get_quote(self, symbol: str) -> Optional[Dict[str, Any]]:
+        """Devuelve información de precio para ``symbol``."""
 
-        cache_key = symbol.upper()
+        normalized = self._normalize_symbol(symbol)
+        cache_key = normalized.replace("/", "-")
         cached_value = await self.cache.get(cache_key)
         if cached_value is not None:
             return cached_value
@@ -60,15 +61,27 @@ class StockService:
                     continue
 
                 result = await self._call_with_retries(
-                    api["callable"], session, symbol, api["name"]
+                    api["callable"], session, normalized, api["name"]
                 )
                 if result:
-                    payload = {"price": result["price"], "change": result["change"], "source": api["name"]}
+                    payload = {
+                        "symbol": normalized,
+                        "price": result["price"],
+                        "change": result.get("change"),
+                        "source": api["name"],
+                    }
                     await self.cache.set(cache_key, payload)
-                    print(f"StockService: usando {api['name']} para {symbol}")
                     return payload
 
         return None
+
+    async def get_quotes(self, symbols: Sequence[str]) -> Dict[str, Optional[Dict[str, Any]]]:
+        """Obtiene cotizaciones para múltiples símbolos."""
+
+        results: Dict[str, Optional[Dict[str, Any]]] = {}
+        for symbol in symbols:
+            results[symbol] = await self.get_quote(symbol)
+        return results
 
     async def _call_with_retries(
         self,
@@ -83,19 +96,18 @@ class StockService:
                 return await handler(session, symbol)
             except (
                 asyncio.TimeoutError,
-                JSONDecodeError,
                 KeyError,
+                ValueError,
                 ClientError,
                 ContentTypeError,
                 TypeError,
-                ValueError,
             ) as exc:
                 print(
-                    f"StockService: intento {attempt} fallido con {source_name} para {symbol}: {exc}"
+                    f"ForexService: intento {attempt} fallido con {source_name} para {symbol}: {exc}"
                 )
             except Exception as exc:  # pragma: no cover - errores inesperados
                 print(
-                    f"StockService: error inesperado con {source_name} para {symbol}: {exc}"
+                    f"ForexService: error inesperado con {source_name} para {symbol}: {exc}"
                 )
                 break
             await asyncio.sleep(backoff)
@@ -114,11 +126,7 @@ class StockService:
         async with session.get(url, params=params, headers=headers) as response:
             if response.status >= 400:
                 raise ClientError(f"{source_name} devolvió estado {response.status}")
-            try:
-                return await response.json()
-            except ContentTypeError as exc:
-                text = await response.text()
-                raise JSONDecodeError("Respuesta no JSON", text, 0) from exc
+            return await response.json()
 
     async def _fetch_twelvedata(
         self, session: aiohttp.ClientSession, symbol: str
@@ -127,41 +135,42 @@ class StockService:
             raise KeyError("TWELVEDATA_API_KEY no configurada")
         url = "https://api.twelvedata.com/quote"
         params = {"symbol": symbol, "apikey": Config.TWELVEDATA_API_KEY}
-        data = await self._fetch_json(session, url, params=params, source_name="Twelve Data")
+        data = await self._fetch_json(
+            session, url, params=params, source_name="Twelve Data"
+        )
         price = float(data["close"])
-        percent_change = data.get("percent_change") or data.get("change_percent", 0)
-        change = float(percent_change) if percent_change is not None else 0.0
+        percent_change = data.get("percent_change") or data.get("change_percent")
+        change = float(percent_change) if percent_change is not None else None
         return {"price": price, "change": change}
 
     async def _fetch_yahoo_finance(
         self, session: aiohttp.ClientSession, symbol: str
     ) -> Dict[str, Any]:
-        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-        data = await self._fetch_json(session, url, source_name="Yahoo Finance")
+        yahoo_symbol = self._to_yahoo_symbol(symbol)
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol}"
+        data = await self._fetch_json(
+            session, url, source_name="Yahoo Finance"
+        )
         meta = data["chart"]["result"][0]["meta"]
         price = float(meta["regularMarketPrice"])
-        change = float(meta.get("regularMarketChangePercent", 0.0) or 0.0)
-        return {"price": price, "change": change}
+        change = meta.get("regularMarketChangePercent")
+        change_value = float(change) if change is not None else None
+        return {"price": price, "change": change_value}
 
-    async def _fetch_alpha_vantage(
-        self, session: aiohttp.ClientSession, symbol: str
-    ) -> Dict[str, Any]:
-        if not Config.ALPHA_VANTAGE_API_KEY:
-            raise KeyError("ALPHA_VANTAGE_API_KEY no configurada")
-        url = "https://www.alphavantage.co/query"
-        params = {
-            "function": "GLOBAL_QUOTE",
-            "symbol": symbol,
-            "apikey": Config.ALPHA_VANTAGE_API_KEY,
-        }
-        data = await self._fetch_json(session, url, params=params, source_name="Alpha Vantage")
-        quote = data["Global Quote"]
-        price = float(quote["05. price"])
-        change_percent = quote.get("10. change percent")
-        if isinstance(change_percent, str):
-            change_percent = change_percent.replace("%", "").strip()
-        change = float(change_percent) if change_percent else 0.0
-        return {"price": price, "change": change}
+    @staticmethod
+    def _normalize_symbol(symbol: str) -> str:
+        symbol = symbol.strip().upper().replace("-", "/")
+        if symbol.count("/") == 0 and len(symbol) == 6:
+            return f"{symbol[:3]}/{symbol[3:]}"
+        return symbol
+
+    @staticmethod
+    def _to_yahoo_symbol(symbol: str) -> str:
+        if "/" in symbol:
+            base, quote = symbol.split("/")
+            return f"{base}{quote}=X"
+        # Símbolos de materias primas suelen coincidir con Yahoo
+        return symbol
 
 
-stock_service = StockService()
+forex_service = ForexService()

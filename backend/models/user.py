@@ -5,8 +5,15 @@ from datetime import datetime
 from sqlalchemy import DateTime, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from models.base import Base
-from utils.config import password_context
+try:  # pragma: no cover
+    from .base import Base
+except ImportError:  # pragma: no cover
+    from backend.models.base import Base  # type: ignore[no-redef]
+
+try:  # pragma: no cover
+    from utils.config import password_context
+except ImportError:  # pragma: no cover
+    from backend.utils.config import password_context  # type: ignore[no-redef]
 
 
 class User(Base):
