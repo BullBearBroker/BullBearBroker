@@ -21,6 +21,7 @@ class Config:
     # News APIs
     NEWSAPI_API_KEY = os.getenv('NEWSAPI_API_KEY')
     CRYPTOPANIC_API_KEY = os.getenv('CRYPTOPANIC_API_KEY')
+    MEDIASTACK_API_KEY = os.getenv('MEDIASTACK_API_KEY')
 
     # Authentication / security
     JWT_SECRET_KEY = os.getenv(
