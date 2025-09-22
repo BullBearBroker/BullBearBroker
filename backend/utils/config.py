@@ -22,6 +22,7 @@ class Config:
     NEWSAPI_API_KEY = os.getenv('NEWSAPI_API_KEY')
     CRYPTOPANIC_API_KEY = os.getenv('CRYPTOPANIC_API_KEY')
     MEDIASTACK_API_KEY = os.getenv('MEDIASTACK_API_KEY')
+    FINFEED_API_KEY = os.getenv('FINFEED_API_KEY')
 
     # AI providers
     HUGGINGFACE_API_TOKEN = os.getenv('HUGGINGFACE_API_TOKEN')
