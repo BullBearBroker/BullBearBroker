@@ -1,8 +1,8 @@
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from pydantic import BaseModel
-from typing import Optional, Dict, Any, List
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any, List, Literal
 import asyncio
 import json
 import jwt
@@ -13,8 +13,14 @@ import os
 # Añadir el directorio backend al path para importaciones
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from services.market_service import market_service
+from models import User
 from services.ai_service import ai_service
+from services.alert_service import alert_notification_manager, alert_service
+from services.chart_service import chart_service
+from services.forex_service import forex_service
+from services.market_service import market_service
+from services.sentiment_service import sentiment_service
+from services.user_service import AlertNotFoundError, user_service
 from utils.config import Config
 
 # Importar routers de autenticación
@@ -36,6 +42,15 @@ app = FastAPI(title="BullBearBroker API", version="1.0.0")
 security = HTTPBearer()
 SECRET_KEY = Config.JWT_SECRET_KEY
 ALGORITHM = Config.JWT_ALGORITHM
+
+@app.on_event("startup")
+async def startup_event():
+    alert_service.start_scheduler()
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    await alert_service.shutdown()
 
 # ✅ CONFIGURACIÓN CORS MEJORADA - ORIGENS COMPLETOS PARA DESARROLLO
 app.add_middleware(
@@ -74,6 +89,19 @@ else:
 class ChatRequest(BaseModel):
     message: str
     context: Optional[Dict[str, Any]] = None
+
+
+class AlertCreateRequest(BaseModel):
+    symbol: str = Field(..., min_length=1)
+    condition_type: Literal["above", "below", "percent_change"]
+    threshold_value: float = Field(..., gt=0)
+    asset_type: Optional[str] = Field(default=None, description="Tipo de activo: crypto, stock, forex")
+    note: Optional[str] = None
+    repeat: bool = False
+
+
+class SentimentAnalyzeRequest(BaseModel):
+    text: str
 
 # Configurar servicios
 try:
@@ -114,14 +142,21 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 # Función para verificar tokens JWT
-async def get_current_user(token: HTTPAuthorizationCredentials = Depends(security)):
+async def get_current_user(token: HTTPAuthorizationCredentials = Depends(security)) -> User:
     try:
         payload = jwt.decode(token.credentials, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expirado")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Token inválido")
+        email = payload.get("sub")
+        if not email:
+            raise HTTPException(status_code=401, detail="Token inválido")
+    except jwt.ExpiredSignatureError as exc:
+        raise HTTPException(status_code=401, detail="Token expirado") from exc
+    except jwt.InvalidTokenError as exc:
+        raise HTTPException(status_code=401, detail="Token inválido") from exc
+
+    user = user_service.get_user_by_email(email)
+    if not user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    return user
 
 @app.get("/")
 async def root():
@@ -278,6 +313,22 @@ async def websocket_market_data(websocket: WebSocket):
         manager.disconnect(websocket)
         print(f"🔌 Conexión WebSocket cerrada. Total: {len(manager.active_connections)}")
 
+
+@app.websocket("/ws/alerts")
+async def websocket_alerts(websocket: WebSocket):
+    try:
+        await alert_notification_manager.connect(websocket)
+        while True:
+            # Mantener la conexión activa escuchando mensajes entrantes
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:
+        print(f"❌ Error en WebSocket de alertas: {exc}")
+    finally:
+        await alert_notification_manager.disconnect(websocket)
+
+
 @app.get("/api/market/top-performers")
 async def get_top_performers():
     try:
@@ -338,6 +389,96 @@ async def get_klines(symbol: str, interval: str = "1h", limit: int = 24):
     except Exception as e:
         print(f"Error en klines endpoint: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/forex/rate/{pair}")
+async def get_forex_rate(pair: str):
+    try:
+        data = await forex_service.get_exchange_rate(pair)
+        return {"success": True, "data": data}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        print(f"Error en forex rate endpoint: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/forex/time-series/{pair}")
+async def get_forex_time_series(pair: str, interval: str = "1h", limit: int = 120):
+    try:
+        series = await forex_service.get_time_series(pair, interval=interval, outputsize=limit)
+        return {"success": True, "data": series}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        print(f"Error en forex series endpoint: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/charts/{symbol}")
+async def get_price_chart(symbol: str, asset_type: str = "crypto", interval: str = "1h", limit: int = 120):
+    try:
+        chart_payload = await chart_service.generate_price_chart(
+            symbol, asset_type=asset_type, interval=interval, limit=limit
+        )
+        return {"success": True, "data": chart_payload}
+    except Exception as exc:
+        print(f"Error generando gráfico para {symbol}: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.get("/api/sentiment/market")
+async def get_market_sentiment(context: Optional[str] = None):
+    try:
+        data = await sentiment_service.get_market_sentiment(context)
+        return {"success": True, "data": data}
+    except Exception as exc:
+        print(f"Error obteniendo sentimiento de mercado: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/sentiment/analyze")
+async def analyze_text_sentiment(request: SentimentAnalyzeRequest):
+    try:
+        result = await sentiment_service.analyze_text(request.text)
+        return {"success": True, "data": result}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        print(f"Error analizando sentimiento: {exc}")
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@app.post("/api/alerts")
+async def create_alert(alert: AlertCreateRequest, user: User = Depends(get_current_user)):
+    try:
+        new_alert = user_service.create_alert(
+            user_id=user.id,
+            symbol=alert.symbol,
+            condition_type=alert.condition_type,
+            threshold_value=alert.threshold_value,
+            asset_type=alert.asset_type,
+            note=alert.note,
+            is_repeating=alert.repeat,
+        )
+        return {"success": True, "alert": new_alert.to_dict()}
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/alerts")
+async def list_alerts(active_only: bool = False, user: User = Depends(get_current_user)):
+    alerts = user_service.get_alerts_for_user(user.id, active_only=active_only)
+    return {"success": True, "alerts": [alert.to_dict() for alert in alerts]}
+
+
+@app.delete("/api/alerts/{alert_id}")
+async def delete_alert(alert_id: int, user: User = Depends(get_current_user)):
+    try:
+        alert = user_service.deactivate_alert(alert_id, user_id=user.id)
+        return {"success": True, "alert": alert.to_dict()}
+    except AlertNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
 
 @app.post("/api/chat/message")
 async def chat_message(request: ChatRequest):

@@ -10,8 +10,8 @@ class Config:
     # Stocks APIs
     ALPHA_VANTAGE_API_KEY = os.getenv('ALPHA_VANTAGE_API_KEY')
     TWELVEDATA_API_KEY = os.getenv('TWELVEDATA_API_KEY')
-    
-    # Crypto APIs  
+
+    # Crypto APIs
     COINGECKO_API_KEY = os.getenv('COINGECKO_API_KEY')
     COINMARKETCAP_API_KEY = os.getenv('COINMARKETCAP_API_KEY')
     
@@ -25,7 +25,19 @@ class Config:
         token_urlsafe(64)
     )
     JWT_ALGORITHM = os.getenv('BULLBEARBROKER_JWT_ALGORITHM', 'HS256')
-    
+
+    # Background jobs / Redis
+    REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
+    ALERT_EVALUATION_INTERVAL = int(os.getenv('ALERT_EVALUATION_INTERVAL', '60'))
+
+    # External notifications
+    TELEGRAM_BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+    TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
+
+    # Sentiment analysis
+    HUGGINGFACE_API_TOKEN = os.getenv('HUGGINGFACE_API_TOKEN')
+    HUGGINGFACE_MODEL = os.getenv('HUGGINGFACE_MODEL', 'ProsusAI/finbert')
+
     # Binance no necesita key
     # Yahoo Finance no necesita key
     # Twitter API necesita app registration
