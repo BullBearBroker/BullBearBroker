@@ -102,6 +102,88 @@ def test_coinmarketcap_invalid_response(monkeypatch):
     assert result is None
 
 
+def test_get_price_uses_cache(monkeypatch):
+    service = CryptoService(cache_client=DummyCache())
+
+    async def coingecko_success(symbol):  # noqa: ANN001 - firma requerida para monkeypatch
+        return 101.5
+
+    async def fail_provider(symbol):  # noqa: ANN001 - firma requerida para monkeypatch
+        pytest.fail("No debería llamarse a este proveedor cuando existe caché")
+
+    monkeypatch.setattr(service, "coingecko", coingecko_success)
+    monkeypatch.setattr(service, "binance", fail_provider)
+    monkeypatch.setattr(service, "coinmarketcap", fail_provider)
+
+    price = asyncio.run(service.get_price("btc"))
+    assert price == pytest.approx(101.5)
+
+    async def coingecko_fail(symbol):  # noqa: ANN001 - firma requerida para monkeypatch
+        pytest.fail("No debería llamarse a CoinGecko tras cachear el resultado")
+
+    monkeypatch.setattr(service, "coingecko", coingecko_fail)
+
+    cached_price = asyncio.run(service.get_price("btc"))
+    assert cached_price == pytest.approx(101.5)
+
+
+def test_get_price_retries_and_fallback(monkeypatch):
+    service = CryptoService(cache_client=DummyCache())
+    service.RETRY_ATTEMPTS = 2
+    service.RETRY_BACKOFF = 0
+
+    attempts = {"coingecko": 0, "binance": 0}
+
+    async def failing_coingecko(symbol):  # noqa: ANN001 - firma requerida para monkeypatch
+        attempts["coingecko"] += 1
+        raise aiohttp.ClientError("network down")
+
+    async def binance_success(symbol):  # noqa: ANN001 - firma requerida para monkeypatch
+        attempts["binance"] += 1
+        return 123.45
+
+    async def coinmarketcap_fail(symbol):  # noqa: ANN001 - firma requerida para monkeypatch
+        pytest.fail("No debería llamarse a CoinMarketCap si Binance tiene éxito")
+
+    monkeypatch.setattr(service, "coingecko", failing_coingecko)
+    monkeypatch.setattr(service, "binance", binance_success)
+    monkeypatch.setattr(service, "coinmarketcap", coinmarketcap_fail)
+
+    price = asyncio.run(service.get_price("eth"))
+
+    assert price == pytest.approx(123.45)
+    assert attempts["coingecko"] == service.RETRY_ATTEMPTS
+    assert attempts["binance"] == 1
+
+
+def test_get_price_falls_back_to_coinmarketcap(monkeypatch):
+    service = CryptoService(cache_client=DummyCache())
+    service.RETRY_ATTEMPTS = 1
+    service.RETRY_BACKOFF = 0
+
+    async def coingecko_none(symbol):  # noqa: ANN001 - firma requerida para monkeypatch
+        return None
+
+    async def binance_none(symbol):  # noqa: ANN001 - firma requerida para monkeypatch
+        return None
+
+    coinmarketcap_calls = 0
+
+    async def coinmarketcap_success(symbol):  # noqa: ANN001 - firma requerida para monkeypatch
+        nonlocal coinmarketcap_calls
+        coinmarketcap_calls += 1
+        return 55.5
+
+    monkeypatch.setattr(service, "coingecko", coingecko_none)
+    monkeypatch.setattr(service, "binance", binance_none)
+    monkeypatch.setattr(service, "coinmarketcap", coinmarketcap_success)
+
+    price = asyncio.run(service.get_price("ltc"))
+
+    assert price == pytest.approx(55.5)
+    assert coinmarketcap_calls == 1
+
+
 def test_crypto_endpoint_success(monkeypatch):
     async def fake_get_price(symbol):  # noqa: ANN001 - firma requerida para monkeypatch
         return 123.45
