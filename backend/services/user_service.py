@@ -105,9 +105,10 @@ class UserService:
     def create_session(
         self, user_id: UUID, token: str, expires_in: timedelta | None = None
     ) -> SessionModel:
-        expires_at: datetime | None = None
-        if expires_in is not None:
-            expires_at = datetime.utcnow() + expires_in
+        if expires_in is None:
+            expires_in = timedelta(hours=24)
+
+        expires_at = datetime.utcnow() + expires_in
 
         with self._session_scope() as session:
             user = session.get(User, user_id)

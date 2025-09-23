@@ -84,12 +84,15 @@ async def login(credentials: dict):
             raise HTTPException(status_code=401, detail=str(exc)) from exc
 
         token = create_jwt_token(user)
-        user_service.create_session(user_id=user.id, token=token, expires_in=timedelta(hours=24))
+        session = user_service.create_session(
+            user_id=user.id, token=token, expires_in=timedelta(hours=24)
+        )
 
         return {
             "message": "Login exitoso",
             "token": token,
             "user": serialize_user(user),
+            "expires_at": session.expires_at.isoformat(),
         }
 
     except KeyError:
