@@ -7,6 +7,7 @@ from uuid import UUID
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, EmailStr
 
 from backend.models import User
 from backend.services.user_service import (
@@ -24,6 +25,22 @@ SECRET_KEY = Config.JWT_SECRET_KEY
 ALGORITHM = Config.JWT_ALGORITHM
 
 
+# -------------------------
+# Pydantic Schemas
+# -------------------------
+class UserCreate(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+
+# -------------------------
+# Utils
+# -------------------------
 def create_jwt_token(user: User) -> str:
     """Crear token JWT para el usuario"""
     payload = {
@@ -44,17 +61,20 @@ def serialize_user(user: User) -> Dict[str, object]:
     }
 
 
+# -------------------------
+# Endpoints
+# -------------------------
 @router.post("/register", status_code=status.HTTP_201_CREATED)
-async def register(user_data: dict):
+async def register(user_data: UserCreate):
     """Endpoint para registrar nuevo usuario"""
     try:
-        if len(user_data["password"]) < 6:
+        if len(user_data.password) < 6:
             raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 6 caracteres")
 
         try:
             new_user = user_service.create_user(
-                email=user_data["email"],
-                password=user_data["password"],
+                email=user_data.email,
+                password=user_data.password,
             )
         except UserAlreadyExistsError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -72,14 +92,14 @@ async def register(user_data: dict):
 
 
 @router.post("/login")
-async def login(credentials: dict):
+async def login(credentials: UserLogin):
     """Endpoint para login de usuario"""
     try:
-        email = credentials["email"]
-        password = credentials["password"]
-
         try:
-            user = user_service.authenticate_user(email=email, password=password)
+            user = user_service.authenticate_user(
+                email=credentials.email,
+                password=credentials.password,
+            )
         except InvalidCredentialsError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
 
