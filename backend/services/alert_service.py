@@ -6,34 +6,35 @@ import asyncio
 import logging
 from typing import List, Optional, Tuple
 
-# APScheduler es opcional en entornos de prueba donde no se pueda instalar.
-try:  # pragma: no cover - la importación depende del entorno
+# APScheduler es opcional
+try:
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from apscheduler.triggers.interval import IntervalTrigger
-except Exception:  # pragma: no cover - sin APScheduler disponible
+except Exception:
     AsyncIOScheduler = None  # type: ignore[assignment]
     IntervalTrigger = None  # type: ignore[assignment]
+
 from sqlalchemy import select
 from sqlalchemy.orm import sessionmaker
 
-try:  # pragma: no cover - compatibilidad con distintos puntos de entrada
-    from ..models import Alert
-    from ..utils.config import Config
-except ImportError:  # pragma: no cover - ejecución directa desde backend/
-    from models import Alert  # type: ignore[no-redef]
-    from utils.config import Config  # type: ignore[no-redef]
+try:
+    from backend.models import Alert
+    from backend.utils.config import Config
+except ImportError:
+    from backend.models import Alert  # type: ignore[no-redef]
+    from backend.utils.config import Config  # type: ignore[no-redef]
 
 from .forex_service import forex_service
 from .market_service import market_service
 
-try:  # pragma: no cover - telemetría opcional
+try:
     from telegram import Bot
-except Exception:  # pragma: no cover - PTB opcional
+except Exception:
     Bot = None
 
 try:
-    from services.user_service import SessionLocal as DefaultSessionLocal
-except Exception:  # pragma: no cover - puede no estar configurado en tests
+    from backend.services.user_service import SessionLocal as DefaultSessionLocal
+except Exception:
     DefaultSessionLocal = None
 
 
@@ -66,12 +67,10 @@ class AlertService:
 
     def register_websocket_manager(self, manager) -> None:
         """Permite enviar notificaciones en tiempo real mediante websockets."""
-
         self._websocket_manager = manager
 
     async def start(self) -> None:
         """Inicia el scheduler si hay base de datos disponible."""
-
         if self._session_factory is None:
             LOGGER.warning("AlertService: sin base de datos, se omite el scheduler")
             return
@@ -95,7 +94,6 @@ class AlertService:
 
     async def evaluate_alerts(self) -> None:
         """Consulta alertas activas y envía notificaciones cuando procede."""
-
         if self._session_factory is None:
             return
 
@@ -166,7 +164,7 @@ class AlertService:
         if self._websocket_manager is not None:
             try:
                 await self._websocket_manager.broadcast(payload)
-            except Exception as exc:  # pragma: no cover - logging defensivo
+            except Exception as exc:
                 LOGGER.warning("AlertService: error notificando por WebSocket: %s", exc)
 
         await self._notify_telegram(alert, message)
@@ -179,14 +177,14 @@ class AlertService:
             return
         try:
             await self._telegram_bot.send_message(chat_id=chat_id, text=message)
-        except Exception as exc:  # pragma: no cover - no queremos fallar por notificaciones
+        except Exception as exc:
             LOGGER.warning("AlertService: error enviando mensaje a Telegram: %s", exc)
 
 
 alert_service = AlertService()
 
 
-async def main() -> None:  # pragma: no cover - utilidad CLI
+async def main() -> None:
     await alert_service.start()
     try:
         while True:
@@ -195,5 +193,5 @@ async def main() -> None:  # pragma: no cover - utilidad CLI
         await alert_service.stop()
 
 
-if __name__ == "__main__":  # pragma: no cover
+if __name__ == "__main__":
     asyncio.run(main())
