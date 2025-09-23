@@ -46,9 +46,15 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("asset", sa.String(length=50), nullable=False),
-        sa.Column("condition", sa.String(length=20), nullable=False),
+        sa.Column(
+            "condition",
+            sa.String(length=20),
+            server_default=sa.text("'>'"),
+            nullable=False,
+        ),
         sa.Column("value", sa.Float(), nullable=False),
         sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
+        sa.Column("updated_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
     )
 
     op.create_table(
@@ -65,15 +71,13 @@ def upgrade() -> None:
             sa.ForeignKey("users.id", ondelete="CASCADE"),
             nullable=False,
         ),
-        sa.Column("token", sa.String(), nullable=False),
+        sa.Column("token", sa.String(), nullable=False, unique=True),
         sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
         sa.Column("expires_at", sa.DateTime(), nullable=False),
     )
-    op.create_index("ix_sessions_token", "sessions", ["token"], unique=True)
 
 
 def downgrade() -> None:
-    op.drop_index("ix_sessions_token", table_name="sessions")
     op.drop_table("sessions")
     op.drop_table("alerts")
     op.drop_index(op.f("ix_users_id"), table_name="users")
