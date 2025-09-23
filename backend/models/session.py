@@ -26,6 +26,6 @@ class Session(Base):
     )
     token: Mapped[str] = mapped_column(String, unique=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
 
     user: Mapped["User"] = relationship("User", back_populates="sessions")

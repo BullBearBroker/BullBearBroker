@@ -130,8 +130,7 @@ class UserService:
                 session.query(SessionModel)
                 .filter(
                     SessionModel.user_id == user_id,
-                    (SessionModel.expires_at.is_(None))
-                    | (SessionModel.expires_at > now),
+                    SessionModel.expires_at > now,
                 )
                 .all()
             )
