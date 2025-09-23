@@ -304,6 +304,12 @@ def test_login_returns_token_for_valid_credentials(
     payload = response.json()
     assert payload["user"]["email"] == "bob@example.com"
     assert isinstance(payload["token"], str)
+    assert "expires_at" in payload
+    assert isinstance(payload["expires_at"], str)
+    expires_at = datetime.fromisoformat(payload["expires_at"])
+    delta_seconds = (expires_at - datetime.utcnow()).total_seconds()
+    assert delta_seconds > 0
+    assert delta_seconds == pytest.approx(timedelta(hours=24).total_seconds(), rel=0.01)
 
 
 def test_login_rejects_invalid_credentials(
