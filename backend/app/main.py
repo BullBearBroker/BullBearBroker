@@ -1,89 +1,72 @@
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Depends
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 import asyncio
 import json
-import jwt
-from datetime import datetime, timedelta
+from datetime import datetime
 import sys
 import os
 
 # Añadir el directorio backend al path para importaciones
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
+from aiohttp import ClientError
+
+from services.alert_service import alert_service
 from services.market_service import market_service
 from services.ai_service import ai_service
+from services.sentiment_service import sentiment_service
 
 # Importar routers de autenticación
 try:
     from routers import auth
-except ImportError:
+except (ImportError, RuntimeError):
     try:
         from backend.routers import auth
-    except ImportError:
+    except (ImportError, RuntimeError):
         from fastapi import APIRouter
         auth = APIRouter()
         @auth.get("/test")
         def auth_test():
             return {"message": "Auth module placeholder"}
 
-app = FastAPI(title="BullBearBroker API", version="1.0.0")
+try:
+    from routers.markets import router as markets_router, get_crypto as get_crypto_handler
+    from routers.news import router as news_router
+    from routers.alerts import router as alerts_router
+except (ImportError, RuntimeError):
+    from backend.routers.markets import (  # type: ignore
+        router as markets_router,
+        get_crypto as get_crypto_handler,
+    )
+    from backend.routers.news import router as news_router  # type: ignore
+    from backend.routers.alerts import router as alerts_router  # type: ignore
 
-# Configuración de seguridad
-security = HTTPBearer()
-SECRET_KEY = "bullbearbroker_secret_key_2024"
-ALGORITHM = "HS256"
+app = FastAPI(title="BullBearBroker API", version="1.0.0")
+crypto_service = market_service.crypto_service
+get_crypto = get_crypto_handler
 
 # ✅ CONFIGURACIÓN CORS MEJORADA - ORIGENS COMPLETOS PARA DESARROLLO
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000", 
-        "http://127.0.0.1:3000", 
-        "http://localhost:5500", 
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5500",
         "http://127.0.0.1:5500",
-        "http://localhost:8000", 
+        "http://localhost:8000",
         "http://127.0.0.1:8000",
-        "http://localhost:8080", 
+        "http://localhost:8080",
         "http://127.0.0.1:8080",
         "http://[::1]:3000",       # ← ¡IPv6 LOCALHOST!
-        "http://[::]:3000",        # ← ¡IPv6 TODAS LAS INTERFACES!
-        "null", 
-        "file://",
-        "*"                        # ← TEMPORAL: Permitir todos para desarrollo
+        "http://[::]:3000"        # ← ¡IPv6 TODAS LAS INTERFACES!
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"]
 )
-
-# ✅ MIDDLEWARE MEJORADO PARA CORS
-@app.middleware("http")
-async def add_cors_headers(request, call_next):
-    response = await call_next(request)
-    response.headers["Access-Control-Allow-Origin"] = "*"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization, X-Requested-With, Accept, Origin"
-    response.headers["Access-Control-Allow-Credentials"] = "true"
-    response.headers["Access-Control-Expose-Headers"] = "*"
-    return response
-
-# ✅ MANEJAR OPTIONS PARA CORS - MEJORADO
-@app.options("/{rest_of_path:path}")
-async def preflight_handler(rest_of_path: str):
-    return {
-        "status": "ok",
-        "headers": {
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With, Accept, Origin",
-            "Access-Control-Allow-Credentials": "true",
-            "Access-Control-Max-Age": "3600"
-        }
-    }
 
 # Incluir routers de autenticación
 if hasattr(auth, 'router'):
@@ -92,10 +75,14 @@ else:
     @app.post("/api/auth/register")
     async def register(user_data: dict):
         return {"message": "Auth module not fully implemented", "status": "placeholder"}
-    
+
     @app.post("/api/auth/login")
     async def login(credentials: dict):
         return {"message": "Auth module not fully implemented", "status": "placeholder"}
+
+app.include_router(markets_router)
+app.include_router(news_router)
+app.include_router(alerts_router)
 
 # Modelo Pydantic para el request del chat
 class ChatRequest(BaseModel):
@@ -138,17 +125,29 @@ class ConnectionManager:
         if websocket in self.connection_data:
             self.connection_data[websocket]["last_activity"] = datetime.now()
 
+    async def broadcast(self, payload: Dict[str, Any]):
+        message = json.dumps(payload)
+        stale: List[WebSocket] = []
+        for connection in self.active_connections:
+            try:
+                await connection.send_text(message)
+            except Exception:
+                stale.append(connection)
+        for connection in stale:
+            self.disconnect(connection)
+
 manager = ConnectionManager()
 
-# Función para verificar tokens JWT
-async def get_current_user(token: HTTPAuthorizationCredentials = Depends(security)):
-    try:
-        payload = jwt.decode(token.credentials, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expirado")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Token inválido")
+
+@app.on_event("startup")
+async def startup_services():
+    alert_service.register_websocket_manager(manager)
+    await alert_service.start()
+
+
+@app.on_event("shutdown")
+async def shutdown_services():
+    await alert_service.stop()
 
 @app.get("/")
 async def root():
@@ -161,11 +160,40 @@ async def health_check():
         "services": {
             "market_service": "active",
             "ai_service": "active",
+            "alert_service": "active" if alert_service.is_running else "idle",
             "websocket": "active"
         },
         "websocket_connections": len(manager.active_connections),
         "timestamp": datetime.now().isoformat()
     }
+
+@app.get("/api/market/chart/{symbol}")
+async def get_market_chart(symbol: str, interval: str = "1d", range: str = "1mo"):
+    try:
+        image_b64 = await market_service.get_chart_image(
+            symbol, interval=interval, range_=range
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ClientError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - defensivo
+        raise HTTPException(status_code=500, detail=f"Error generando gráfico: {exc}") from exc
+
+    return {
+        "symbol": symbol.upper(),
+        "interval": interval,
+        "range": range,
+        "image": image_b64,
+    }
+
+
+@app.get("/api/market/sentiment/{symbol}")
+async def get_market_sentiment(symbol: str):
+    try:
+        return await sentiment_service.get_sentiment(symbol)
+    except Exception as exc:  # pragma: no cover - defensivo
+        raise HTTPException(status_code=500, detail=f"Error obteniendo sentimiento: {exc}") from exc
 
 @app.websocket("/ws/market-data")
 async def websocket_market_data(websocket: WebSocket):
@@ -420,33 +448,6 @@ async def get_available_symbols():
         return {"success": True, "data": symbols}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/api/market/news")
-async def get_market_news():
-    """
-    Obtener noticias del mercado (placeholder)
-    """
-    try:
-        news = [
-            {
-                "title": "Mercado alcista continúa con ganancias sólidas",
-                "source": "Financial Times",
-                "date": "2024-01-15",
-                "url": "#",
-                "summary": "Los principales índices registran ganancias por tercer día consecutivo."
-            },
-            {
-                "title": "Bitcoin supera los $45,000 impulsado por adopción institucional",
-                "source": "CoinDesk",
-                "date": "2024-01-15", 
-                "url": "#",
-                "summary": "La criptomoneda líder alcanza su máximo en 3 meses."
-            }
-        ]
-        return {"success": True, "data": news}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.get("/api/debug/websockets")
 async def debug_websockets():
     """Endpoint de debug para ver conexiones activas"""

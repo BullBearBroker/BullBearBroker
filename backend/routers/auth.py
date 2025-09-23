@@ -1,109 +1,75 @@
-from fastapi import APIRouter, HTTPException, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from typing import Optional
-import jwt
+from __future__ import annotations
+
 from datetime import datetime, timedelta
-import hashlib
+from typing import Dict
+from uuid import UUID
+
+import jwt
+from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
+from models import User
+from services.user_service import (
+    InvalidCredentialsError,
+    UserAlreadyExistsError,
+    user_service,
+)
+from utils.config import Config
 
 router = APIRouter()
 security = HTTPBearer()
 
-# Secret key para JWT - EN PRODUCCIÓN USAR VARIABLE DE ENTORNO
-SECRET_KEY = "bullbearbroker_secret_key_2024"
-ALGORITHM = "HS256"
+# Secret key para JWT - obtenido desde configuración centralizada
+SECRET_KEY = Config.JWT_SECRET_KEY
+ALGORITHM = Config.JWT_ALGORITHM
 
-# Función para hashear contraseñas
-def hash_password(password: str) -> str:
-    """Función simple para hashear contraseñas"""
-    return hashlib.sha256(password.encode()).hexdigest()
-
-# Modelo de usuario simplificado (sin Pydantic para evitar dependencias)
-class User:
-    def __init__(self, email: str, username: str, hashed_password: str):
-        self.id = None
-        self.email = email
-        self.username = username
-        self.hashed_password = hashed_password
-        self.created_at = datetime.now().isoformat()
-        self.subscription_level = "free"
-        self.api_calls_today = 0
-        self.last_reset = datetime.now().isoformat()
-    
-    def verify_password(self, password: str) -> bool:
-        """Verificar si la contraseña coincide"""
-        return self.hashed_password == hash_password(password)
-    
-    def reset_api_counter(self):
-        """Resetear el contador de API calls si es un nuevo día"""
-        now = datetime.now()
-        last_reset = datetime.fromisoformat(self.last_reset)
-        
-        if now.date() > last_reset.date():
-            self.api_calls_today = 0
-            self.last_reset = now.isoformat()
-
-# Base de datos temporal en memoria - luego reemplazaremos con PostgreSQL
-users_db = {}
-
-# Simulación de base de datos para desarrollo
-def init_sample_users():
-    """Crear algunos usuarios de ejemplo para testing"""
-    sample_users = [
-        {"email": "test@bullbear.com", "username": "testuser", "password": "password123"},
-        {"email": "trader@bullbear.com", "username": "traderpro", "password": "trading123"}
-    ]
-    
-    for user_data in sample_users:
-        user = User(
-            email=user_data["email"],
-            username=user_data["username"],
-            hashed_password=hash_password(user_data["password"])
-        )
-        users_db[user_data["email"]] = user
-
-# Inicializar usuarios de muestra
-init_sample_users()
 
 def create_jwt_token(user: User) -> str:
     """Crear token JWT para el usuario"""
     payload = {
         "sub": user.email,
-        "username": user.username,
-        "exp": datetime.utcnow() + timedelta(hours=24)
+        "user_id": str(user.id),
+        "exp": datetime.utcnow() + timedelta(hours=24),
     }
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
-@router.post("/register")
+
+def serialize_user(user: User) -> Dict[str, object]:
+    """Serializar la información básica del usuario."""
+    return {
+        "id": str(user.id),
+        "email": user.email,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "updated_at": user.updated_at.isoformat() if user.updated_at else None,
+    }
+
+
+@router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(user_data: dict):
     """Endpoint para registrar nuevo usuario"""
     try:
-        if user_data["email"] in users_db:
-            raise HTTPException(status_code=400, detail="Email ya está registrado")
-        
         if len(user_data["password"]) < 6:
             raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 6 caracteres")
-        
-        new_user = User(
-            email=user_data["email"],
-            username=user_data["username"],
-            hashed_password=hash_password(user_data["password"])
-        )
-        
-        users_db[user_data["email"]] = new_user
-        token = create_jwt_token(new_user)
-        
+
+        try:
+            new_user = user_service.create_user(
+                email=user_data["email"],
+                password=user_data["password"],
+            )
+        except UserAlreadyExistsError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        created_at = new_user.created_at.isoformat() if new_user.created_at else None
+
         return {
-            "message": "Usuario registrado exitosamente",
-            "token": token,
-            "user": {
-                "email": new_user.email,
-                "username": new_user.username,
-                "subscription_level": new_user.subscription_level
-            }
+            "id": str(new_user.id),
+            "email": new_user.email,
+            "created_at": created_at,
         }
-        
+
     except KeyError as e:
         raise HTTPException(status_code=400, detail=f"Campo faltante: {str(e)}")
+
 
 @router.post("/login")
 async def login(credentials: dict):
@@ -111,48 +77,52 @@ async def login(credentials: dict):
     try:
         email = credentials["email"]
         password = credentials["password"]
-        
-        if email not in users_db:
-            raise HTTPException(status_code=401, detail="Credenciales inválidas")
-        
-        user = users_db[email]
-        
-        if not user.verify_password(password):
-            raise HTTPException(status_code=401, detail="Credenciales inválidas")
-        
+
+        try:
+            user = user_service.authenticate_user(email=email, password=password)
+        except InvalidCredentialsError as exc:
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+
         token = create_jwt_token(user)
-        
+        session = user_service.create_session(
+            user_id=user.id, token=token, expires_in=timedelta(hours=24)
+        )
+
         return {
             "message": "Login exitoso",
             "token": token,
-            "user": {
-                "email": user.email,
-                "username": user.username,
-                "subscription_level": user.subscription_level
-            }
+            "user": serialize_user(user),
+            "expires_at": session.expires_at.isoformat(),
         }
-        
+
     except KeyError:
         raise HTTPException(status_code=400, detail="Email y password requeridos")
 
-@router.get("/users/me")
+
+@router.get("/me")
 async def get_current_user(token: HTTPAuthorizationCredentials = Depends(security)):
     """Obtener información del usuario actual"""
     try:
         payload = jwt.decode(token.credentials, SECRET_KEY, algorithms=[ALGORITHM])
-        email = payload["sub"]
-        
-        if email not in users_db:
+        email = payload.get("sub")
+        raw_user_id = payload.get("user_id")
+
+        if not email or raw_user_id is None:
+            raise HTTPException(status_code=401, detail="Token inválido")
+
+        try:
+            token_user_id = UUID(str(raw_user_id))
+        except ValueError as exc:
+            raise HTTPException(status_code=401, detail="Token inválido") from exc
+
+        user = user_service.get_user_by_email(email)
+        if not user or user.id != token_user_id:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
-        
-        user = users_db[email]
-        return {
-            "email": user.email,
-            "username": user.username,
-            "subscription_level": user.subscription_level,
-            "api_calls_today": user.api_calls_today
-        }
-        
+
+        user_service.register_session_activity(token.credentials)
+
+        return serialize_user(user)
+
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expirado")
     except jwt.InvalidTokenError:

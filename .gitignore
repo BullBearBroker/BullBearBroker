@@ -1,21 +1,57 @@
-# macOS
+# ========================
+# 🖥️ macOS
+# ========================
 .DS_Store
 .AppleDouble
 .LSOverride
 
-# Python
+# ========================
+# 🐍 Python
+# ========================
 __pycache__/
+*.py[cod]
+*.pyo
+*.pyd
 *.pyc
-venv/
 
-# Node.js
+# Virtual envs
+.venv/
+venv/
+ENV/
+env/
+
+# ========================
+# 📦 Node.js
+# ========================
 node_modules/
 npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
 
-# Environments
+# ========================
+# 🔐 Environments
+# ========================
 .env
 .env.local
+*.secret
 
-# IDE
+# ========================
+# 🧪 Tests
+# ========================
+.coverage
+htmlcov/
+.tox/
+pytest_cache/
+
+# ========================
+# ⚙️ Logs
+# ========================
+*.log
+logs/
+
+# ========================
+# 🛠️ IDE / Editors
+# ========================
 .vscode/
 .idea/

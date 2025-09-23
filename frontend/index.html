@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BullBearBroker - Asistente Financiero Inteligente</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     
@@ -15,7 +18,9 @@
     <script src="js/auth.js"></script>
     <script>
     document.addEventListener('DOMContentLoaded', function() {
-        const authManager = new AuthManager();
+        const authManager = (window.authManager instanceof AuthManager)
+            ? window.authManager
+            : (window.authManager = new AuthManager());
         
         if (!authManager.isAuthenticated()) {
             window.location.href = 'login.html';
@@ -28,9 +33,13 @@
             // Actualizar UI con info del usuario
             const userInfoElement = document.getElementById('userInfo');
             if (userInfoElement) {
+                const createdLabel = user.created_at
+                    ? new Date(user.created_at).toLocaleDateString()
+                    : '';
+                const meta = createdLabel ? `Cuenta creada: ${createdLabel}` : `ID: ${user.id ?? '—'}`;
                 userInfoElement.innerHTML = `
-                    <span>${user.username}</span>
-                    <small>${user.email} • ${user.subscription_level}</small>
+                    <span>${user.email}</span>
+                    <small>${meta}</small>
                 `;
             }
         }
@@ -49,13 +58,17 @@
         <div class="market-ticker" id="liveMarketTicker">
             <!-- Los datos se cargarán dinámicamente via WebSocket -->
             <div class="ticker-item">
-                <span class="ticker-name">Cargando...</span>
-                <span class="ticker-price">--</span>
-                <span class="ticker-change">--</span>
+                <div class="ticker-content">
+                    <span class="ticker-name">Cargando datos...</span>
+                    <div class="ticker-values">
+                        <span class="ticker-price">--</span>
+                        <span class="ticker-change">--</span>
+                    </div>
+                </div>
             </div>
         </div>
         <div class="market-status">
-            <span class="status-indicator" id="marketStatusIndicator"></span>
+            <div class="status-indicator" id="marketStatusIndicator"></div>
             <span class="status-text" id="marketStatusText">Conectando...</span>
         </div>
     </div>
@@ -64,7 +77,10 @@
         <!-- Sidebar -->
         <div class="sidebar">
             <div class="sidebar-header">
-                <h2><i class="fas fa-chart-line"></i> BullBearBroker</h2>
+                <h2>
+                    <i class="fas fa-chart-line"></i>
+                    BullBearBroker
+                </h2>
                 <div class="user-info" id="userInfo">
                     <div class="user-welcome">Bienvenido</div>
                     <div class="user-email">Iniciando sesión...</div>
@@ -75,24 +91,46 @@
                 <h3><i class="fas fa-star"></i> Watchlist</h3>
                 <div class="watchlist-items" id="watchlistItems">
                     <div class="watchlist-item">
-                        <span class="item-symbol">BTC</span>
-                        <span class="item-price" id="btcPrice">Cargando...</span>
-                        <span class="item-change" id="btcChange">--</span>
+                        <div class="item-info">
+                            <span class="item-symbol">BTC</span>
+                            <span class="item-name">Bitcoin</span>
+                        </div>
+                        <div class="item-values">
+                            <span class="item-price" id="btcPrice">Cargando...</span>
+                            <span class="item-change" id="btcChange">--</span>
+                        </div>
                     </div>
                     <div class="watchlist-item">
-                        <span class="item-symbol">ETH</span>
-                        <span class="item-price" id="ethPrice">Cargando...</span>
-                        <span class="item-change" id="ethChange">--</span>
+                        <div class="item-info">
+                            <span class="item-symbol">ETH</span>
+                            <span class="item-name">Ethereum</span>
+                        </div>
+                        <div class="item-values">
+                            <span class="item-price" id="ethPrice">Cargando...</span>
+                            <span class="item-change" id="ethChange">--</span>
+                        </div>
                     </div>
                     <div class="watchlist-item">
-                        <span class="item-symbol">AAPL</span>
-                        <span class="item-price" id="aaplPrice">Cargando...</span>
-                        <span class="item-change" id="aaplChange">--</span>
+                        <div class="item-info">
+                            <span class="item-symbol">AAPL</span>
+                            <span class="item-name">Apple Inc.</span>
+                        </div>
+                        <div class="item-values">
+                            <span class="item-price" id="aaplPrice">Cargando...</span>
+                            <span class="item-change" id="aaplChange">--</span>
+                        </div>
                     </div>
                 </div>
                 <button class="sidebar-btn" onclick="showAddToWatchlist()">
                     <i class="fas fa-plus"></i> Añadir a Watchlist
                 </button>
+            </div>
+
+            <div class="sidebar-section">
+                <h3><i class="fas fa-bell"></i> Alertas Activas</h3>
+                <div class="alerts-list" id="alertsList">
+                    <div class="empty-state">Cargando alertas...</div>
+                </div>
             </div>
 
             <div class="sidebar-section">
@@ -110,7 +148,7 @@
             </div>
 
             <div class="sidebar-section">
-                <h3><i class="fas fa-bolt"></i> Acciones Rápidas</h3>
+                <h3><i class="fas fa-zap"></i> Acciones Rápidas</h3>
                 <button class="quick-btn" onclick="askQuestion('Analiza el mercado de Bitcoin')">
                     <i class="fab fa-bitcoin"></i> Análisis BTC
                 </button>
@@ -136,7 +174,10 @@
         <div class="main-content">
             <div class="chat-header">
                 <div class="header-info">
-                    <h1><i class="fas fa-robot"></i> Asistente Financiero</h1>
+                    <h1>
+                        <i class="fas fa-robot"></i>
+                        Asistente Financiero
+                    </h1>
                     <p>Conectado a mercados en tiempo real • <span id="connectionStatusText">Conectando...</span></p>
                 </div>
                 <div class="header-actions">
@@ -154,13 +195,18 @@
 
             <div class="chat-messages" id="chatMessages">
                 <div class="message ai-message">
-                    <div class="message-icon">🤖</div>
+                    <div class="message-icon">
+                        <i class="fas fa-robot"></i>
+                    </div>
                     <div class="message-content">
                         <div class="message-sender">BullBearBroker AI</div>
                         <div class="message-text">
                             ¡Hola! Soy tu asistente especializado en mercados financieros. 
                             Conectado a <strong>datos en tiempo real</strong> de Binance y mercados globales.
-                            ¿En qué te puedo ayudar hoy?
+                            <br><br>
+                            <strong>¿En qué te puedo ayudar hoy?</strong>
+                            <br><br>
+                            💡 <em>Puedes preguntarme sobre precios, análisis técnico, estrategias de inversión y más.</em>
                         </div>
                         <div class="message-time" id="currentTime">Justo ahora</div>
                     </div>
@@ -188,12 +234,12 @@
                 <div class="input-wrapper">
                     <textarea 
                         id="messageInput" 
-                        placeholder="Escribe tu pregunta sobre mercados financieros..."
+                        placeholder="Pregúntame sobre precios, análisis técnico, estrategias de inversión..."
                         rows="1"
                         onkeypress="if(event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(); }"
                     ></textarea>
                     <button class="send-button" onclick="sendMessage()">
-                        <i class="fas fa-paper-plane"></i>
+                        <i class="fas fa-paper-plane"></i> Enviar
                     </button>
                 </div>
             </div>
@@ -227,6 +273,7 @@
                     <label>Valor</label>
                     <input type="number" id="alertValue" placeholder="0.00" step="0.01" />
                 </div>
+                <div class="form-error" id="alertFormError" style="display: none;"></div>
             </div>
             <div class="modal-footer">
                 <button class="btn-secondary" onclick="closeModal('alertModal')">Cancelar</button>
@@ -237,7 +284,10 @@
 
     <!-- Connection Status Indicator -->
     <div id="connectionStatus" class="connection-status connecting">
-        <i class="fas fa-circle-notch fa-spin"></i> Conectando a datos en tiempo real...
+        <div class="status-icon">
+            <i class="fas fa-circle-notch fa-spin"></i>
+        </div>
+        <span>Conectando a datos en tiempo real...</span>
     </div>
 
     <!-- ✅ ORDEN CORRECTO DE SCRIPTS -->

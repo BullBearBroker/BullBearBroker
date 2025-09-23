@@ -1,31 +1,54 @@
-from pydantic import BaseModel
-from typing import Optional
+from __future__ import annotations
+
 from datetime import datetime
-import hashlib
+import uuid
 
-def hash_password(password: str) -> str:
-    """Función simple para hashear contraseñas"""
-    return hashlib.sha256(password.encode()).hexdigest()
+from sqlalchemy import DateTime, String
+from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-class User(BaseModel):
-    id: Optional[int] = None
-    email: str
-    username: str
-    hashed_password: str
-    created_at: str = datetime.now().isoformat()
-    subscription_level: str = "free"  # free, premium, institutional
-    api_calls_today: int = 0
-    last_reset: str = datetime.now().isoformat()
-    
+try:  # pragma: no cover
+    from .base import Base
+except ImportError:  # pragma: no cover
+    from backend.models.base import Base  # type: ignore[no-redef]
+
+try:  # pragma: no cover
+    from utils.config import password_context
+except ImportError:  # pragma: no cover
+    from backend.utils.config import password_context  # type: ignore[no-redef]
+
+
+class User(Base):
+    """Modelo persistente de usuario."""
+
+    __tablename__ = "users"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, index=True, default=uuid.uuid4
+    )
+    email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
+    )
+
+    alerts: Mapped[list["Alert"]] = relationship(
+        "Alert", back_populates="user", cascade="all, delete-orphan"
+    )
+    sessions: Mapped[list["Session"]] = relationship(
+        "Session", back_populates="user", cascade="all, delete-orphan"
+    )
+
     def verify_password(self, password: str) -> bool:
-        """Verificar si la contraseña coincide"""
-        return self.hashed_password == hash_password(password)
-    
-    def reset_api_counter(self):
-        """Resetear el contador de API calls si es un nuevo día"""
-        now = datetime.now()
-        last_reset = datetime.fromisoformat(self.last_reset)
-        
-        if now.date() > last_reset.date():
-            self.api_calls_today = 0
-            self.last_reset = now.isoformat()
+        """Verificar si la contraseña coincide."""
+        return password_context.verify(password, self.password_hash)
+
+    def to_dict(self) -> dict:
+        """Representación serializable del usuario."""
+        return {
+            "id": str(self.id) if self.id else None,
+            "email": self.email,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
