@@ -470,11 +470,12 @@ def test_alert_workflow_triggers_notification(
     headers = {"Authorization": f"Bearer {token}"}
     response = client.post(
         "/alerts",
-        json={"asset": "AAPL", "value": 100.0, "condition": "above"},
+        json={"asset": "AAPL", "value": 120.0, "condition": "=="},
         headers=headers,
     )
     assert response.status_code == 201
     created_payload = response.json()
+    assert created_payload["condition"] == "=="
     assert "updated_at" in created_payload
     assert created_payload["updated_at"]
 
@@ -515,7 +516,7 @@ def test_alerts_list_returns_created_alert(
 
     create = client.post(
         "/alerts",
-        json={"asset": "ETH", "value": 1500.0, "condition": "below"},
+        json={"asset": "ETH", "value": 1500.0, "condition": "<"},
         headers=headers,
     )
     assert create.status_code == 201
@@ -528,6 +529,6 @@ def test_alerts_list_returns_created_alert(
     alerts = listing.json()
     assert len(alerts) == 1
     assert alerts[0]["asset"] == "ETH"
-    assert alerts[0]["condition"] == "below"
+    assert alerts[0]["condition"] == "<"
     assert "updated_at" in alerts[0]
     assert alerts[0]["updated_at"]

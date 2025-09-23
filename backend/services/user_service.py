@@ -148,7 +148,7 @@ class UserService:
         *,
         asset: str,
         value: float,
-        condition: str = "above",
+        condition: str = ">",
     ) -> Alert:
         with self._session_scope() as session:
             if not session.get(User, user_id):

@@ -142,12 +142,12 @@ class AlertService:
 
     @staticmethod
     def _should_trigger(alert: Alert, price: float) -> bool:
-        condition = (alert.condition or "above").lower()
-        if condition == "above":
+        condition = alert.condition or ">"
+        if condition in (">", "above"):
             return price >= alert.value
-        if condition == "below":
+        if condition in ("<", "below"):
             return price <= alert.value
-        if condition == "equal":
+        if condition in ("==", "equal"):
             return abs(price - alert.value) <= 1e-6
         return False
 
