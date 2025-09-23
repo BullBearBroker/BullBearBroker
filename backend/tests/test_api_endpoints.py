@@ -12,6 +12,7 @@ from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock
 
+import jwt
 import pytest
 from fastapi.testclient import TestClient
 
@@ -98,10 +99,16 @@ class DummyUserService:
     class InvalidCredentialsError(Exception):
         pass
 
+    class InvalidTokenError(Exception):
+        pass
+
     def __init__(self) -> None:
         self._users: Dict[str, DummyUser] = {}
+        self._users_by_id: Dict[uuid.UUID, DummyUser] = {}
         self._sessions: List[SimpleNamespace] = []
         self._alerts: Dict[uuid.UUID, List[DummyAlert]] = {}
+        self._secret = "test-secret"
+        self._algorithm = "HS256"
 
     def create_user(self, email: str, password: str) -> DummyUser:
         if email in self._users:
@@ -109,6 +116,7 @@ class DummyUserService:
 
         user = DummyUser(id=uuid.uuid4(), email=email, password=password)
         self._users[email] = user
+        self._users_by_id[user.id] = user
         self._alerts[user.id] = []
         return user
 
@@ -121,20 +129,94 @@ class DummyUserService:
             raise self.InvalidCredentialsError("Credenciales inválidas")
         return user
 
-    def create_session(
-        self, user_id: uuid.UUID, token: str, expires_in: Optional[timedelta] = None
-    ) -> SimpleNamespace:
-        if expires_in is None:
-            expires_in = timedelta(hours=24)
+    def _build_payload(self, user: DummyUser, expires_at: datetime) -> Dict[str, Any]:
+        now = datetime.utcnow()
+        return {
+            "sub": str(user.id),
+            "user_id": str(user.id),
+            "email": user.email,
+            "iat": now,
+            "nbf": now,
+            "exp": expires_at,
+        }
 
-        expires_at = datetime.utcnow() + expires_in
+    def _decode_token(self, token: str) -> Dict[str, Any]:
+        try:
+            return jwt.decode(token, self._secret, algorithms=[self._algorithm])
+        except jwt.ExpiredSignatureError as exc:  # pragma: no cover - deterministic tests
+            raise self.InvalidTokenError("Token expirado") from exc
+        except jwt.InvalidTokenError as exc:
+            raise self.InvalidTokenError("Token inválido") from exc
+
+    @staticmethod
+    def _extract_exp(payload: Dict[str, Any]) -> datetime:
+        exp = payload.get("exp")
+        if isinstance(exp, datetime):
+            return exp
+        if isinstance(exp, (int, float)):
+            return datetime.utcfromtimestamp(exp)
+        raise DummyUserService.InvalidTokenError("Token inválido")
+
+    @staticmethod
+    def _extract_user_id(payload: Dict[str, Any]) -> uuid.UUID:
+        raw_user_id = payload.get("user_id") or payload.get("sub")
+        if not raw_user_id:
+            raise DummyUserService.InvalidTokenError("Token inválido")
+        try:
+            return uuid.UUID(str(raw_user_id))
+        except ValueError as exc:
+            raise DummyUserService.InvalidTokenError("Token inválido") from exc
+
+    def create_access_token(
+        self, user: DummyUser, expires_in: Optional[timedelta] = None
+    ) -> tuple[str, datetime]:
+        expires_at = datetime.utcnow() + (expires_in or timedelta(hours=24))
+        payload = self._build_payload(user, expires_at)
+        token = jwt.encode(payload, self._secret, algorithm=self._algorithm)
+        return token, expires_at
+
+    def create_session(
+        self,
+        user_id: uuid.UUID,
+        token: Optional[str] = None,
+        expires_in: Optional[timedelta] = None,
+    ) -> tuple[str, SimpleNamespace]:
+        user = self._users_by_id.get(user_id)
+        if not user:
+            raise self.UserNotFoundError("Usuario no encontrado")
+
+        if token is None:
+            token, expires_at = self.create_access_token(user, expires_in)
+        else:
+            payload = self._decode_token(token)
+            payload_user_id = self._extract_user_id(payload)
+            if payload_user_id != user_id:
+                raise self.InvalidTokenError("Token inválido")
+            expires_at = self._extract_exp(payload)
+
         session = SimpleNamespace(user_id=user_id, token=token, expires_at=expires_at)
         self._sessions.append(session)
-        return session
+        return token, session
 
     def register_session_activity(self, token: str) -> None:  # noqa: D401
         # The real service updates the session timestamp. Tests do not need it.
         return None
+
+    def get_current_user(self, token: str) -> DummyUser:
+        payload = self._decode_token(token)
+        user_id = self._extract_user_id(payload)
+
+        now = datetime.utcnow()
+        if not any(
+            sess.token == token and sess.user_id == user_id and sess.expires_at > now
+            for sess in self._sessions
+        ):
+            raise self.InvalidTokenError("Token inválido")
+
+        user = self._users_by_id.get(user_id)
+        if not user:
+            raise self.InvalidTokenError("Token inválido")
+        return user
 
     def create_alert(
         self,
@@ -172,11 +254,9 @@ def dummy_user_service(monkeypatch: pytest.MonkeyPatch) -> DummyUserService:
     monkeypatch.setattr(auth_router, "UserAlreadyExistsError", service.UserAlreadyExistsError)
     monkeypatch.setattr(alerts_router, "UserNotFoundError", service.UserNotFoundError)
     monkeypatch.setattr(auth_router, "InvalidCredentialsError", service.InvalidCredentialsError)
+    monkeypatch.setattr(auth_router, "InvalidTokenError", service.InvalidTokenError)
+    monkeypatch.setattr(alerts_router, "InvalidTokenError", service.InvalidTokenError)
     monkeypatch.setattr(alerts_router, "USER_SERVICE_ERROR", None)
-    monkeypatch.setattr(auth_router, "SECRET_KEY", "test-secret")
-    monkeypatch.setattr(alerts_router, "SECRET_KEY", "test-secret")
-    monkeypatch.setattr(auth_router, "ALGORITHM", "HS256")
-    monkeypatch.setattr(alerts_router, "ALGORITHM", "HS256")
 
     return service
 

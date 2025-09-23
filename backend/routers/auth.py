@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import Dict
-from uuid import UUID
 
-import jwt
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, EmailStr
@@ -12,17 +10,13 @@ from pydantic import BaseModel, EmailStr
 from backend.models import User
 from backend.services.user_service import (
     InvalidCredentialsError,
+    InvalidTokenError,
     UserAlreadyExistsError,
     user_service,
 )
-from backend.utils.config import Config
 
 router = APIRouter()
 security = HTTPBearer()
-
-# Secret key para JWT
-SECRET_KEY = Config.JWT_SECRET_KEY
-ALGORITHM = Config.JWT_ALGORITHM
 
 
 # -------------------------
@@ -36,19 +30,6 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
     email: EmailStr
     password: str
-
-
-# -------------------------
-# Utils
-# -------------------------
-def create_jwt_token(user: User) -> str:
-    """Crear token JWT para el usuario"""
-    payload = {
-        "sub": user.email,
-        "user_id": str(user.id),
-        "exp": datetime.utcnow() + timedelta(hours=24),
-    }
-    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
 def serialize_user(user: User) -> Dict[str, object]:
@@ -103,9 +84,9 @@ async def login(credentials: UserLogin):
         except InvalidCredentialsError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
 
-        token = create_jwt_token(user)
-        session = user_service.create_session(
-            user_id=user.id, token=token, expires_in=timedelta(hours=24)
+        token, session = user_service.create_session(
+            user_id=user.id,
+            expires_in=timedelta(hours=24),
         )
 
         return {
@@ -123,27 +104,8 @@ async def login(credentials: UserLogin):
 async def get_current_user(token: HTTPAuthorizationCredentials = Depends(security)):
     """Obtener información del usuario actual"""
     try:
-        payload = jwt.decode(token.credentials, SECRET_KEY, algorithms=[ALGORITHM])
-        email = payload.get("sub")
-        raw_user_id = payload.get("user_id")
-
-        if not email or raw_user_id is None:
-            raise HTTPException(status_code=401, detail="Token inválido")
-
-        try:
-            token_user_id = UUID(str(raw_user_id))
-        except ValueError as exc:
-            raise HTTPException(status_code=401, detail="Token inválido") from exc
-
-        user = user_service.get_user_by_email(email)
-        if not user or user.id != token_user_id:
-            raise HTTPException(status_code=404, detail="Usuario no encontrado")
-
+        user = user_service.get_current_user(token.credentials)
         user_service.register_session_activity(token.credentials)
-
         return serialize_user(user)
-
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expirado")
-    except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Token inválido")
+    except InvalidTokenError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc

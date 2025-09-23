@@ -1,4 +1,4 @@
-"""add updated_at column to alerts"""
+"""no-op: updated_at ya está en 0001_initial_schema"""
 
 from __future__ import annotations
 
@@ -13,17 +13,11 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column(
-        "alerts",
-        sa.Column(
-            "updated_at",
-            sa.DateTime(),
-            server_default=sa.func.now(),
-            server_onupdate=sa.func.now(),
-            nullable=False,
-        ),
-    )
+    # Esta migración se marca como aplicada pero no hace nada,
+    # porque la columna updated_at ya existe en 0001_initial_schema.
+    pass
 
 
 def downgrade() -> None:
-    op.drop_column("alerts", "updated_at")
+    # No hay cambios que revertir.
+    pass
