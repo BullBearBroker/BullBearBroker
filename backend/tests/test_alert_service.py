@@ -14,7 +14,7 @@ def test_alert_service_triggers_notification():
     alert = SimpleNamespace(
         id=1,
         asset="AAPL",
-        condition="above",
+        condition=">",
         value=100.0,
     )
 
@@ -41,9 +41,9 @@ def test_alert_service_triggers_notification():
 def test_alert_service_should_trigger_conditions():
     service = AlertService(session_factory=None)
 
-    alert_above = SimpleNamespace(condition="above", value=10.0)
-    alert_below = SimpleNamespace(condition="below", value=10.0)
-    alert_equal = SimpleNamespace(condition="equal", value=10.0)
+    alert_above = SimpleNamespace(condition=">", value=10.0)
+    alert_below = SimpleNamespace(condition="<", value=10.0)
+    alert_equal = SimpleNamespace(condition="==", value=10.0)
 
     assert service._should_trigger(alert_above, 10.0) is True
     assert service._should_trigger(alert_below, 9.5) is True

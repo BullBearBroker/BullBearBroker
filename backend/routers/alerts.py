@@ -49,8 +49,8 @@ ALGORITHM = Config.JWT_ALGORITHM
 class AlertCreate(BaseModel):
     asset: str = Field(..., min_length=1, max_length=50)
     value: float = Field(..., description="Precio objetivo de la alerta")
-    condition: Literal["above", "below", "equal"] = Field(
-        "above", description="Condición de activación"
+    condition: Literal["<", ">", "=="] = Field(
+        ">", description="Condición de activación"
     )
 
     @validator("asset")

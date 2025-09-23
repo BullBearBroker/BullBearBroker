@@ -25,7 +25,7 @@ class Alert(Base):
         PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     asset: Mapped[str] = mapped_column(String(50), nullable=False)
-    condition: Mapped[str] = mapped_column(String(20), default="above", nullable=False)
+    condition: Mapped[str] = mapped_column(String(20), default=">", nullable=False)
     value: Mapped[float] = mapped_column(Float, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
