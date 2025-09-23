@@ -8,18 +8,18 @@ import jwt
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from models import User
-from services.user_service import (
+from backend.models import User
+from backend.services.user_service import (
     InvalidCredentialsError,
     UserAlreadyExistsError,
     user_service,
 )
-from utils.config import Config
+from backend.utils.config import Config
 
 router = APIRouter()
 security = HTTPBearer()
 
-# Secret key para JWT - obtenido desde configuración centralizada
+# Secret key para JWT
 SECRET_KEY = Config.JWT_SECRET_KEY
 ALGORITHM = Config.JWT_ALGORITHM
 

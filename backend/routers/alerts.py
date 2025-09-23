@@ -15,12 +15,12 @@ from pydantic import BaseModel, Field, validator
 USER_SERVICE_ERROR: Optional[Exception] = None
 
 try:  # pragma: no cover - allow running from different entrypoints
-    from models import Alert, User
-    from services.user_service import UserNotFoundError, user_service
-    from utils.config import Config
+    from backend.models import Alert, User
+    from backend.services.user_service import UserNotFoundError, user_service
+    from backend.utils.config import Config
 except RuntimeError as exc:  # pragma: no cover - missing configuration
-    from models import Alert, User  # type: ignore
-    from utils.config import Config  # type: ignore
+    from backend.models import Alert, User  # type: ignore
+    from backend.utils.config import Config  # type: ignore
 
     user_service = None  # type: ignore[assignment]
     UserNotFoundError = RuntimeError  # type: ignore[assignment]

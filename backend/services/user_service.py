@@ -9,8 +9,8 @@ from uuid import UUID
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session as OrmSession, sessionmaker, selectinload
 
-from models import Alert, Session as SessionModel, User
-from utils.config import password_context
+from backend.models import Alert, Session as SessionModel, User
+from backend.utils.config import password_context
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
