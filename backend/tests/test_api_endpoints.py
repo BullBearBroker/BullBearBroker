@@ -474,6 +474,9 @@ def test_alert_workflow_triggers_notification(
         headers=headers,
     )
     assert response.status_code == 201
+    created_payload = response.json()
+    assert "updated_at" in created_payload
+    assert created_payload["updated_at"]
 
     user_id = uuid.UUID(register.json()["user"]["id"])
     created_alert = dummy_user_service.get_alerts_for_user(user_id)[0]
@@ -516,6 +519,9 @@ def test_alerts_list_returns_created_alert(
         headers=headers,
     )
     assert create.status_code == 201
+    created_alert = create.json()
+    assert "updated_at" in created_alert
+    assert created_alert["updated_at"]
 
     listing = client.get("/alerts", headers=headers)
     assert listing.status_code == 200
@@ -523,3 +529,5 @@ def test_alerts_list_returns_created_alert(
     assert len(alerts) == 1
     assert alerts[0]["asset"] == "ETH"
     assert alerts[0]["condition"] == "below"
+    assert "updated_at" in alerts[0]
+    assert alerts[0]["updated_at"]
