@@ -5,7 +5,7 @@ from typing import Dict
 from uuid import UUID
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from models import User
@@ -44,7 +44,7 @@ def serialize_user(user: User) -> Dict[str, object]:
     }
 
 
-@router.post("/register")
+@router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(user_data: dict):
     """Endpoint para registrar nuevo usuario"""
     try:
@@ -59,12 +59,12 @@ async def register(user_data: dict):
         except UserAlreadyExistsError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        token = create_jwt_token(new_user)
+        created_at = new_user.created_at.isoformat() if new_user.created_at else None
 
         return {
-            "message": "Usuario registrado exitosamente",
-            "token": token,
-            "user": serialize_user(new_user),
+            "id": str(new_user.id),
+            "email": new_user.email,
+            "created_at": created_at,
         }
 
     except KeyError as e:
