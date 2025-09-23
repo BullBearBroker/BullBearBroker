@@ -279,15 +279,16 @@ def _prepare_news_service(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any]:
     return {"calls": call_order}
 
 
-def test_register_creates_user_and_returns_token(client: TestClient) -> None:
+def test_register_creates_user_and_returns_profile(client: TestClient) -> None:
     response = client.post(
         "/api/auth/register",
         json={"email": "alice@example.com", "password": "secret1"},
     )
-    assert response.status_code == 200
+    assert response.status_code == 201
     payload = response.json()
-    assert payload["user"]["email"] == "alice@example.com"
-    assert isinstance(payload["token"], str) and payload["token"]
+    assert payload["email"] == "alice@example.com"
+    assert set(payload.keys()) == {"id", "email", "created_at"}
+    assert payload["created_at"]
 
 
 def test_login_returns_token_for_valid_credentials(
@@ -464,8 +465,14 @@ def test_alert_workflow_triggers_notification(
         "/api/auth/register",
         json={"email": "alert@example.com", "password": "alerts1"},
     )
-    assert register.status_code == 200
-    token = register.json()["token"]
+    assert register.status_code == 201
+
+    login = client.post(
+        "/api/auth/login",
+        json={"email": "alert@example.com", "password": "alerts1"},
+    )
+    assert login.status_code == 200
+    token = login.json()["token"]
 
     headers = {"Authorization": f"Bearer {token}"}
     response = client.post(
@@ -479,7 +486,7 @@ def test_alert_workflow_triggers_notification(
     assert "updated_at" in created_payload
     assert created_payload["updated_at"]
 
-    user_id = uuid.UUID(register.json()["user"]["id"])
+    user_id = uuid.UUID(register.json()["id"])
     created_alert = dummy_user_service.get_alerts_for_user(user_id)[0]
     notifications: List[Dict[str, Any]] = []
 
@@ -511,7 +518,14 @@ def test_alerts_list_returns_created_alert(
         "/api/auth/register",
         json={"email": "list@example.com", "password": "alerts1"},
     )
-    token = register.json()["token"]
+    assert register.status_code == 201
+
+    login = client.post(
+        "/api/auth/login",
+        json={"email": "list@example.com", "password": "alerts1"},
+    )
+    assert login.status_code == 200
+    token = login.json()["token"]
     headers = {"Authorization": f"Bearer {token}"}
 
     create = client.post(
