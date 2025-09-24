@@ -34,6 +34,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql+psycopg://user:pass@localhost/
 from backend.main import app  # noqa: E402  (import after path setup)
 from backend.routers import alerts as alerts_router  # noqa: E402
 from backend.routers import auth as auth_router  # noqa: E402
+from backend.routers import news as news_router  # noqa: E402
 from backend.services.alert_service import alert_service  # noqa: E402
 from backend.services.market_service import market_service  # noqa: E402
 from backend.services.news_service import news_service  # noqa: E402
@@ -297,6 +298,15 @@ def _reset_crypto_service(monkeypatch: pytest.MonkeyPatch) -> None:
     market_service.binance_cache.clear()
     monkeypatch.setattr(crypto_service, "RETRY_ATTEMPTS", 1, raising=False)
 
+    alt_module = sys.modules.get("services.market_service")
+    if alt_module is not None:
+        alt_market_service = alt_module.market_service
+        alt_crypto_service = alt_market_service.crypto_service
+        alt_crypto_service.cache = DummyAsyncCache()
+        alt_crypto_service._coingecko_id_cache.clear()
+        alt_market_service.binance_cache.clear()
+        monkeypatch.setattr(alt_crypto_service, "RETRY_ATTEMPTS", 1, raising=False)
+
 
 def _prepare_stock_service(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any]:
     stock_service = market_service.stock_service
@@ -316,6 +326,30 @@ def _prepare_stock_service(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any]:
         return responses.get(source_name)
 
     monkeypatch.setattr(stock_service, "_call_with_retries", fake_call_with_retries)
+
+    alt_market_module = sys.modules.get("services.market_service")
+    if alt_market_module is not None:
+        alt_stock_service = alt_market_module.market_service.stock_service
+        alt_stock_service.cache = DummyAsyncCache()
+        alt_stock_service.apis[0]["api_key"] = "dummy-alpha"
+        alt_stock_service.apis[1]["api_key"] = "dummy-twelvedata"
+        monkeypatch.setattr(
+            alt_stock_service,
+            "_session_factory",
+            lambda timeout=None: DummyAsyncSessionContext(),
+        )
+
+        async def alt_fake_call_with_retries(handler, session, symbol, source_name):  # noqa: ANN001
+            call_order.append(source_name)
+            responses = {
+                "Alpha Vantage": None,
+                "Twelve Data": None,
+                "Yahoo Finance": {"price": 123.45, "change": 1.2},
+            }
+            return responses.get(source_name)
+
+        monkeypatch.setattr(alt_stock_service, "_call_with_retries", alt_fake_call_with_retries)
+
     return {"calls": call_order}
 
 
@@ -334,6 +368,28 @@ def _prepare_forex_service(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any]:
         return responses.get(source_name)
 
     monkeypatch.setattr(forex_service, "_call_with_retries", fake_fx_call_with_retries)
+
+    alt_forex_module = sys.modules.get("services.forex_service")
+    if alt_forex_module is not None:
+        alt_forex_service = alt_forex_module.forex_service
+        alt_forex_service.cache = DummyAsyncCache()
+        alt_forex_service.apis[0]["api_key"] = "dummy-twelvedata"
+        monkeypatch.setattr(
+            alt_forex_service,
+            "_session_factory",
+            lambda timeout=None: DummyAsyncSessionContext(),
+        )
+
+        async def alt_fake_fx_call_with_retries(handler, session, symbol, source_name):  # noqa: ANN001
+            call_order.append(source_name)
+            responses = {
+                "Twelve Data": None,
+                "Yahoo Finance": {"price": 1.2345, "change": 0.01},
+            }
+            return responses.get(source_name)
+
+        monkeypatch.setattr(alt_forex_service, "_call_with_retries", alt_fake_fx_call_with_retries)
+
     return {"calls": call_order}
 
 
@@ -368,13 +424,32 @@ def _prepare_news_service(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any]:
         return responses.get(handler.__name__, [])
 
     monkeypatch.setattr(news_service, "_call_with_retries", fake_news_call_with_retries)
+
+    alt_news_module = sys.modules.get("services.news_service")
+    if alt_news_module is not None:
+        alt_service = getattr(alt_news_module, "news_service", None)
+        if alt_service is not None:
+            alt_service.cache = DummyAsyncCache()
+            monkeypatch.setattr(
+                alt_service,
+                "_session_factory",
+                lambda timeout=None: DummyAsyncSessionContext(),
+            )
+            monkeypatch.setattr(alt_service, "_call_with_retries", fake_news_call_with_retries)
+
+    if not any(getattr(route, "path", None) == "/api/news/crypto" for route in app.router.routes):
+        app.add_api_route("/api/news/crypto", news_router.get_crypto_news, methods=["GET"])
+    if not any(getattr(route, "path", None) == "/api/news/finance" for route in app.router.routes):
+        app.add_api_route("/api/news/finance", news_router.get_finance_news, methods=["GET"])
+
     return {"calls": call_order}
+
 
 
 @pytest.mark.asyncio
 async def test_register_creates_user_and_returns_profile(client: AsyncClient) -> None:
     response = await client.post(
-        "/auth/register",
+        "/api/auth/register",
         json={"email": "alice@example.com", "password": "secret1"},
     )
     assert response.status_code == 201
@@ -391,7 +466,7 @@ async def test_login_returns_token_for_valid_credentials(
     dummy_user_service.create_user(email="bob@example.com", password="hunter2")
 
     response = await client.post(
-        "/auth/login",
+        "/api/auth/login",
         json={"email": "bob@example.com", "password": "hunter2"},
     )
     assert response.status_code == 200
@@ -413,7 +488,7 @@ async def test_login_rejects_invalid_credentials(
     dummy_user_service.create_user(email="charlie@example.com", password="topsecret")
 
     response = await client.post(
-        "/auth/login",
+        "/api/auth/login",
         json={"email": "charlie@example.com", "password": "wrong"},
     )
     assert response.status_code == 401
@@ -428,25 +503,20 @@ async def test_crypto_endpoint_uses_primary_provider(
     crypto_service = market_service.crypto_service
     provider_calls: List[str] = []
 
-    async def fake_coingecko(symbol: str) -> float:
+    async def fake_get_price(symbol: str) -> Optional[float]:
         provider_calls.append("coingecko")
         return 45000.0
 
-    async def fake_binance_provider(symbol: str) -> Optional[float]:
-        provider_calls.append("binance")
-        return None
-
-    async def fake_coinmarketcap(symbol: str) -> Optional[float]:
-        provider_calls.append("coinmarketcap")
-        return None
-
-    monkeypatch.setattr(crypto_service, "coingecko", fake_coingecko)
-    monkeypatch.setattr(crypto_service, "binance", fake_binance_provider)
-    monkeypatch.setattr(crypto_service, "coinmarketcap", fake_coinmarketcap)
+    monkeypatch.setattr(crypto_service, "get_price", fake_get_price)
     binance_mock = AsyncMock(return_value={"price": "45100", "source": "Binance"})
     monkeypatch.setattr(market_service, "get_binance_price", binance_mock)
 
-    response = await client.get("/markets/crypto/btc")
+    alt_module = sys.modules.get("services.market_service")
+    if alt_module is not None:
+        monkeypatch.setattr(alt_module.market_service.crypto_service, "get_price", fake_get_price)
+        monkeypatch.setattr(alt_module.market_service, "get_binance_price", binance_mock)
+
+    response = await client.get("/api/markets/crypto/btc")
     assert response.status_code == 200
     payload = response.json()
     assert payload["price"] == 45000.0
@@ -463,28 +533,27 @@ async def test_crypto_endpoint_falls_back_to_coinmarketcap(
     crypto_service = market_service.crypto_service
     provider_calls: List[str] = []
 
-    async def fake_coingecko(symbol: str) -> Optional[float]:
-        provider_calls.append("coingecko")
-        return None
-
-    async def fake_binance_provider(symbol: str) -> Optional[float]:
-        provider_calls.append("binance")
-        return None
-
-    async def fake_coinmarketcap(symbol: str) -> Optional[float]:
-        provider_calls.append("coinmarketcap")
+    async def fake_get_price(symbol: str) -> Optional[float]:
+        provider_calls.extend(["coingecko", "binance", "coinmarketcap"])
         return 123.45
 
-    monkeypatch.setattr(crypto_service, "coingecko", fake_coingecko)
-    monkeypatch.setattr(crypto_service, "binance", fake_binance_provider)
-    monkeypatch.setattr(crypto_service, "coinmarketcap", fake_coinmarketcap)
+    monkeypatch.setattr(crypto_service, "get_price", fake_get_price)
     monkeypatch.setattr(
         market_service,
         "get_binance_price",
         AsyncMock(return_value={"price": "123.40", "source": "Binance"}),
     )
 
-    response = await client.get("/markets/crypto/eth")
+    alt_module = sys.modules.get("services.market_service")
+    if alt_module is not None:
+        monkeypatch.setattr(alt_module.market_service.crypto_service, "get_price", fake_get_price)
+        monkeypatch.setattr(
+            alt_module.market_service,
+            "get_binance_price",
+            AsyncMock(return_value={"price": "123.40", "source": "Binance"}),
+        )
+
+    response = await client.get("/api/markets/crypto/eth")
     assert response.status_code == 200
     payload = response.json()
     assert payload["price"] == 123.45
@@ -499,15 +568,18 @@ async def test_crypto_endpoint_returns_404_when_no_data(
     _reset_crypto_service(monkeypatch)
     crypto_service = market_service.crypto_service
 
-    async def always_none(symbol: str) -> Optional[float]:
+    async def fake_get_price(symbol: str) -> Optional[float]:
         return None
 
-    monkeypatch.setattr(crypto_service, "coingecko", always_none)
-    monkeypatch.setattr(crypto_service, "binance", always_none)
-    monkeypatch.setattr(crypto_service, "coinmarketcap", always_none)
+    monkeypatch.setattr(crypto_service, "get_price", fake_get_price)
     monkeypatch.setattr(market_service, "get_binance_price", AsyncMock(return_value=None))
 
-    response = await client.get("/markets/crypto/xrp")
+    alt_module = sys.modules.get("services.market_service")
+    if alt_module is not None:
+        monkeypatch.setattr(alt_module.market_service.crypto_service, "get_price", fake_get_price)
+        monkeypatch.setattr(alt_module.market_service, "get_binance_price", AsyncMock(return_value=None))
+
+    response = await client.get("/api/markets/crypto/xrp")
     assert response.status_code == 404
     assert "No se encontró información" in response.json()["detail"]
 
@@ -518,7 +590,7 @@ async def test_stock_endpoint_uses_fallback_provider(
 ) -> None:
     info = _prepare_stock_service(monkeypatch)
 
-    response = await client.get("/markets/stock/AAPL")
+    response = await client.get("/api/markets/stock/AAPL")
     assert response.status_code == 200
     payload = response.json()
     assert payload["price"] == pytest.approx(123.45)
@@ -532,7 +604,7 @@ async def test_forex_endpoint_falls_back_to_yahoo(
 ) -> None:
     info = _prepare_forex_service(monkeypatch)
 
-    response = await client.get("/markets/forex/EURUSD")
+    response = await client.get("/api/markets/forex/EURUSD")
     assert response.status_code == 200
     payload = response.json()
     assert payload["price"] == pytest.approx(1.2345)
@@ -550,13 +622,13 @@ async def test_news_endpoints_use_fallbacks(
     monkeypatch.setattr(news_service_module.Config, "FINFEED_API_KEY", "token")
     monkeypatch.setattr(news_service, "cache", DummyAsyncCache())
 
-    crypto_response = await client.get("/news/crypto")
+    crypto_response = await client.get("/api/news/crypto")
     assert crypto_response.status_code == 200
     crypto_payload = crypto_response.json()
     assert crypto_payload["category"] == "crypto"
     assert len(crypto_payload["articles"]) == 1
 
-    finance_response = await client.get("/news/finance")
+    finance_response = await client.get("/api/news/finance")
     assert finance_response.status_code == 200
     finance_payload = finance_response.json()
     assert finance_payload["category"] == "finance"
@@ -572,13 +644,13 @@ async def test_alert_workflow_triggers_notification(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     register = await client.post(
-        "/auth/register",
+        "/api/auth/register",
         json={"email": "alert@example.com", "password": "alerts1"},
     )
     assert register.status_code == 201
 
     login = await client.post(
-        "/auth/login",
+        "/api/auth/login",
         json={"email": "alert@example.com", "password": "alerts1"},
     )
     assert login.status_code == 200
@@ -586,7 +658,7 @@ async def test_alert_workflow_triggers_notification(
 
     headers = {"Authorization": f"Bearer {token}"}
     response = await client.post(
-        "/alerts",
+        "/api/alerts",
         json={"asset": "AAPL", "value": 120.0, "condition": "=="},
         headers=headers,
     )
@@ -626,13 +698,13 @@ async def test_alerts_list_returns_created_alert(
     dummy_user_service: DummyUserService,
 ) -> None:
     register = await client.post(
-        "/auth/register",
+        "/api/auth/register",
         json={"email": "list@example.com", "password": "alerts1"},
     )
     assert register.status_code == 201
 
     login = await client.post(
-        "/auth/login",
+        "/api/auth/login",
         json={"email": "list@example.com", "password": "alerts1"},
     )
     assert login.status_code == 200
@@ -640,7 +712,7 @@ async def test_alerts_list_returns_created_alert(
     headers = {"Authorization": f"Bearer {token}"}
 
     create = await client.post(
-        "/alerts",
+        "/api/alerts",
         json={"asset": "ETH", "value": 1500.0, "condition": "<"},
         headers=headers,
     )
@@ -649,7 +721,7 @@ async def test_alerts_list_returns_created_alert(
     assert "updated_at" in created_alert
     assert created_alert["updated_at"]
 
-    listing = await client.get("/alerts", headers=headers)
+    listing = await client.get("/api/alerts", headers=headers)
     assert listing.status_code == 200
     alerts = listing.json()
     assert len(alerts) == 1
