@@ -25,15 +25,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Endpoint raíz
+# Endpoint raíz (health básico de la API)
 @app.get("/")
 def read_root():
     return {"message": "🚀 BullBearBroker API corriendo correctamente!"}
 
-# Routers registrados
-app.include_router(health.router)
-app.include_router(alerts.router)
-app.include_router(markets.router)
-app.include_router(news.router)
-app.include_router(auth.router)
-app.include_router(ai.router)
+
+# ✅ Routers registrados con prefijo global /api
+app.include_router(health.router, prefix="/api/health", tags=["health"])
+app.include_router(alerts.router, prefix="/api/alerts", tags=["alerts"])
+app.include_router(markets.router, prefix="/api/markets", tags=["markets"])
+app.include_router(news.router, prefix="/api/news", tags=["news"])
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(ai.router, prefix="/api/ai", tags=["ai"])

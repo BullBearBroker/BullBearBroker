@@ -42,7 +42,8 @@ except ImportError:  # pragma: no cover - fallback for package-based imports
         InvalidTokenError = RuntimeError  # type: ignore[assignment]
         USER_SERVICE_ERROR = exc
 
-router = APIRouter(prefix="/alerts", tags=["Alerts"])
+# 👇 sin prefix aquí
+router = APIRouter(tags=["alerts"])
 security = HTTPBearer()
 
 

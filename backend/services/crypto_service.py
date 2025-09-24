@@ -14,13 +14,42 @@ except ImportError:  # pragma: no cover
 LOGGER = logging.getLogger(__name__)
 CLIENT_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
+# 🔹 Mapeo de símbolos comunes para CoinGecko
+COINGECKO_MAP = {
+    "BTC": "bitcoin",
+    "ETH": "ethereum",
+    "ADA": "cardano",
+    "XRP": "ripple",
+    "BNB": "binancecoin",
+    "SOL": "solana",
+    "DOT": "polkadot",
+    "DOGE": "dogecoin",
+}
+
+
+def normalize_symbol(symbol: str) -> dict:
+    """
+    Normaliza un símbolo tipo 'BTCUSDT' en sus variantes
+    para distintos proveedores.
+    """
+    symbol = symbol.upper()
+    base = symbol
+    if symbol.endswith("USDT"):
+        base = symbol[:-4]  # BTCUSDT -> BTC
+
+    return {
+        "binance": symbol,  # Binance usa BTCUSDT directamente
+        "coinmarketcap": base,  # CoinMarketCap espera BTC
+        "coingecko": COINGECKO_MAP.get(base, base.lower()),  # CoinGecko espera 'bitcoin'
+    }
+
 
 class CryptoService:
     RETRY_ATTEMPTS = 3
     RETRY_BACKOFF = 0.75
 
     def __init__(self, cache_client: Optional[CacheClient] = None):
-        self.cache = cache_client or CacheClient('crypto-prices', ttl=45)
+        self.cache = cache_client or CacheClient("crypto-prices", ttl=45)
         self._coingecko_id_cache: Dict[str, Optional[str]] = {}
 
     async def get_price(self, symbol: str) -> Optional[float]:
@@ -31,10 +60,13 @@ class CryptoService:
             if cached_value is not None:
                 return cached_value
 
+            # 🔹 Normalizamos una sola vez
+            normalized = normalize_symbol(symbol)
+
             providers = (
-                ("CoinGecko", self.coingecko),
-                ("Binance", self.binance),
-                ("CoinMarketCap", self.coinmarketcap),
+                ("CoinGecko", lambda _: self.coingecko(normalized["coingecko"])),
+                ("Binance", lambda _: self.binance(normalized["binance"])),
+                ("CoinMarketCap", lambda _: self.coinmarketcap(normalized["coinmarketcap"])),
             )
 
             for provider_name, provider in providers:
@@ -48,37 +80,29 @@ class CryptoService:
         except Exception as exc:  # pragma: no cover - errores inesperados
             LOGGER.exception("Error getting crypto price for %s: %s", symbol, exc)
             return None
-    
-    async def coingecko(self, symbol: str) -> Optional[float]:
-        """API Primaria: CoinGecko"""
-        try:
-            coin_id = await self._resolve_coingecko_id(symbol)
-        except Exception:
-            return None
 
+    async def coingecko(self, coin_id: str) -> Optional[float]:
+        """API Primaria: CoinGecko"""
         if not coin_id:
             return None
 
         url = "https://api.coingecko.com/api/v3/simple/price"
-        params = {
-            'ids': coin_id,
-            'vs_currencies': 'usd'
-        }
+        params = {"ids": coin_id, "vs_currencies": "usd"}
 
         try:
             data = await self._request_json(url, params=params)
         except Exception:
             return None
 
-        price = data.get(coin_id, {}).get('usd')
+        price = data.get(coin_id, {}).get("usd")
         if isinstance(price, (int, float)):
             return float(price)
         return None
-    
+
     async def binance(self, symbol: str) -> Optional[float]:
         """API Secundaria: Binance"""
-        url = f"https://api.binance.com/api/v3/ticker/price"
-        params = {'symbol': f"{symbol}USDT"}
+        url = "https://api.binance.com/api/v3/ticker/price"
+        params = {"symbol": symbol}  # 🔹 ahora no agregamos 'USDT' extra
 
         try:
             async with aiohttp.ClientSession(timeout=CLIENT_TIMEOUT) as session:
@@ -88,7 +112,7 @@ class CryptoService:
             return None
 
         try:
-            return float(data['price'])
+            return float(data["price"])
         except (KeyError, TypeError, ValueError) as exc:
             LOGGER.error("Respuesta inválida de Binance para %s: %s", symbol, exc)
             return None
@@ -96,16 +120,13 @@ class CryptoService:
     async def coinmarketcap(self, symbol: str) -> Optional[float]:
         """API Fallback: CoinMarketCap"""
         url = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest"
-        headers = {'X-CMC_PRO_API_KEY': Config.COINMARKETCAP_API_KEY}
-        params = {'symbol': symbol}
+        headers = {"X-CMC_PRO_API_KEY": Config.COINMARKETCAP_API_KEY}
+        params = {"symbol": symbol}
 
         try:
             async with aiohttp.ClientSession(timeout=CLIENT_TIMEOUT) as session:
                 data = await self._request_json(
-                    url,
-                    session=session,
-                    headers=headers,
-                    params=params,
+                    url, session=session, headers=headers, params=params
                 )
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
             LOGGER.error("Error obteniendo precio en CoinMarketCap para %s: %s", symbol, exc)
@@ -113,7 +134,7 @@ class CryptoService:
 
         try:
             symbol_key = symbol.upper()
-            return float(data['data'][symbol_key]['quote']['USD']['price'])
+            return float(data["data"][symbol_key]["quote"]["USD"]["price"])
         except (KeyError, TypeError, ValueError) as exc:
             LOGGER.error("Respuesta inválida de CoinMarketCap para %s: %s", symbol, exc)
             return None
@@ -144,7 +165,7 @@ class CryptoService:
             return self._coingecko_id_cache[normalized]
 
         url = "https://api.coingecko.com/api/v3/search"
-        params = {'query': symbol}
+        params = {"query": symbol}
 
         try:
             async with aiohttp.ClientSession(timeout=CLIENT_TIMEOUT) as session:
@@ -153,9 +174,9 @@ class CryptoService:
             self._coingecko_id_cache[normalized] = None
             return None
 
-        for coin in data.get('coins', []):
-            if coin.get('symbol', '').lower() == normalized:
-                coin_id = coin.get('id')
+        for coin in data.get("coins", []):
+            if coin.get("symbol", "").lower() == normalized:
+                coin_id = coin.get("id")
                 self._coingecko_id_cache[normalized] = coin_id
                 return coin_id
 
@@ -172,7 +193,7 @@ class CryptoService:
         for attempt in range(1, self.RETRY_ATTEMPTS + 1):
             try:
                 result = await handler(symbol)
-            except Exception as exc:  # pragma: no cover - logging e interrupción controlada
+            except Exception as exc:  # pragma: no cover
                 LOGGER.warning(
                     "CryptoService: intento %s fallido con %s para %s: %s",
                     attempt,
