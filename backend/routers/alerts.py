@@ -9,7 +9,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator  # 👈 actualizado
 
 USER_SERVICE_ERROR: Optional[Exception] = None
 
@@ -42,7 +42,8 @@ except ImportError:  # pragma: no cover - fallback for package-based imports
         InvalidTokenError = RuntimeError  # type: ignore[assignment]
         USER_SERVICE_ERROR = exc
 
-router = APIRouter(prefix="/alerts", tags=["Alerts"])
+# 👇 sin prefix aquí
+router = APIRouter(tags=["alerts"])
 security = HTTPBearer()
 
 
@@ -53,7 +54,8 @@ class AlertCreate(BaseModel):
         ">", description="Condición de activación"
     )
 
-    @validator("asset")
+    @field_validator("asset")  # 👈 actualizado
+    @classmethod
     def _strip_asset(cls, value: str) -> str:
         cleaned = value.strip()
         if not cleaned:
@@ -68,7 +70,8 @@ class AlertUpdate(BaseModel):
         None, description="Nueva condición de activación"
     )
 
-    @validator("asset")
+    @field_validator("asset")  # 👈 actualizado
+    @classmethod
     def _strip_asset(cls, value: Optional[str]) -> Optional[str]:
         if value is None:
             return value

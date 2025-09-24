@@ -10,7 +10,7 @@ if BACKEND_DIR not in sys.path:
 import pytest
 
 from services.forex_service import ForexService
-from utils.config import Config
+from backend.utils.config import Config
 
 
 class DummyCache:

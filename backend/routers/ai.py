@@ -5,7 +5,7 @@ import os
 
 from backend.utils.config import Config
 
-router = APIRouter(prefix="/ai", tags=["AI"])
+router = APIRouter(tags=["AI"])
 
 
 class MessageRequest(BaseModel):

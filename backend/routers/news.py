@@ -11,7 +11,7 @@ try:  # pragma: no cover - allow running from different entrypoints
 except ImportError:  # pragma: no cover - fallback for package-based imports
     from backend.services.news_service import news_service  # type: ignore
 
-router = APIRouter(prefix="/news", tags=["News"])
+router = APIRouter(tags=["News"])
 
 
 NewsFetcher = Callable[[int], Awaitable[List[Dict[str, Any]]]]

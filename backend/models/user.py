@@ -12,8 +12,9 @@ try:  # pragma: no cover
 except ImportError:  # pragma: no cover
     from backend.models.base import Base  # type: ignore[no-redef]
 
+# 🔧 Ajuste: import consistente para evitar error con `utils`
 try:  # pragma: no cover
-    from utils.config import password_context
+    from backend.utils.config import password_context
 except ImportError:  # pragma: no cover
     from backend.utils.config import password_context  # type: ignore[no-redef]
 

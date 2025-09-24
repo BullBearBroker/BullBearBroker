@@ -1,17 +1,50 @@
-# backend/requirements.txt
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-python-multipart==0.0.6
-aiohttp==3.9.1
-python-dotenv==1.0.0
-requests==2.31.0
-PyJWT==2.8.0
+# Core API
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.12
+aiohttp==3.10.5
+httpx==0.27.2
+python-dotenv==1.0.1
+requests==2.32.3
+
+# Seguridad / Autenticación
+PyJWT==2.9.0
+python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
-SQLAlchemy==2.0.23
-psycopg[binary]
-alembic==1.13.1
-plotly==5.18.0
-kaleido==0.2.1
+bcrypt==4.2.0
+
+# ORM y DB
+SQLAlchemy==2.0.35
+psycopg2-binary==2.9.9
+alembic==1.13.3
+
+# Cache / Cola de tareas
+aioredis==2.0.1
+celery==5.4.0
 APScheduler==3.10.4
-celery==5.3.6
-python-telegram-bot==20.6
+
+# Modelado y validación
+pydantic==2.9.2
+pydantic-settings==2.5.2
+
+# Datos / ML (fase futura de IA y análisis)
+numpy==1.26.4
+pandas==2.2.3
+scikit-learn==1.5.2
+joblib==1.4.2
+
+# Visualización
+plotly==5.24.1
+kaleido==0.2.1
+
+# Bots / Integraciones
+python-telegram-bot==21.6
+
+# Logging
+loguru==0.7.2
+
+# Testing
+pytest==8.3.5
+pytest-asyncio==0.25.3
+pytest-mock==3.14.0
+pytest-cov==6.0.0
