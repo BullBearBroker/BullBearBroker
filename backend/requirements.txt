@@ -6,6 +6,7 @@ aiohttp==3.10.5
 httpx==0.27.2
 python-dotenv==1.0.1
 requests==2.32.3
+fastapi-limiter==0.1.6
 
 # Seguridad / Autenticación
 PyJWT==2.9.0
@@ -22,6 +23,7 @@ alembic==1.13.3
 aioredis==2.0.1
 celery==5.4.0
 APScheduler==3.10.4
+redis==5.0.1
 
 # Modelado y validación
 pydantic==2.9.2
@@ -42,6 +44,7 @@ python-telegram-bot==21.6
 
 # Logging
 loguru==0.7.2
+structlog==24.1.0
 
 # Testing
 pytest==8.3.5

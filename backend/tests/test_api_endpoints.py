@@ -114,6 +114,7 @@ class DummyUserService:
         self._users_by_id: Dict[uuid.UUID, DummyUser] = {}
         self._sessions: List[SimpleNamespace] = []
         self._alerts: Dict[uuid.UUID, List[DummyAlert]] = {}
+        self._refresh_tokens: Dict[str, SimpleNamespace] = {}
         self._secret = "test-secret"
         self._algorithm = "HS256"
 
@@ -177,7 +178,7 @@ class DummyUserService:
     def create_access_token(
         self, user: DummyUser, expires_in: Optional[timedelta] = None
     ) -> tuple[str, datetime]:
-        expires_at = datetime.utcnow() + (expires_in or timedelta(hours=24))
+        expires_at = datetime.utcnow() + (expires_in or timedelta(minutes=15))
         payload = self._build_payload(user, expires_at)
         token = jwt.encode(payload, self._secret, algorithm=self._algorithm)
         return token, expires_at
@@ -224,6 +225,39 @@ class DummyUserService:
         if not user:
             raise self.InvalidTokenError("Token inválido")
         return user
+
+    def create_refresh_token(
+        self, user: DummyUser, expires_in: Optional[timedelta] = None
+    ) -> tuple[str, datetime]:
+        expires_at = datetime.utcnow() + (expires_in or timedelta(days=7))
+        token = jwt.encode(
+            {
+                "sub": str(user.id),
+                "type": "refresh",
+                "exp": expires_at,
+            },
+            self._secret,
+            algorithm=self._algorithm,
+        )
+        self._refresh_tokens[token] = SimpleNamespace(user_id=user.id, expires_at=expires_at)
+        return token, expires_at
+
+    def rotate_refresh_token(self, refresh_token: str) -> tuple[DummyUser, str, datetime]:
+        stored = self._refresh_tokens.pop(refresh_token, None)
+        if not stored or stored.expires_at <= datetime.utcnow():
+            raise self.InvalidTokenError("Refresh token inválido")
+        user = self._users_by_id.get(stored.user_id)
+        if not user:
+            raise self.InvalidTokenError("Usuario no encontrado")
+        new_refresh, expires_at = self.create_refresh_token(user)
+        return user, new_refresh, expires_at
+
+    def issue_token_pair(
+        self, user: DummyUser
+    ) -> tuple[str, datetime, str, datetime]:
+        access_token, session = self.create_session(user.id)
+        refresh_token, refresh_expires = self.create_refresh_token(user)
+        return access_token, session.expires_at, refresh_token, refresh_expires
 
     def create_alert(
         self,
@@ -466,13 +500,16 @@ async def test_login_returns_token_for_valid_credentials(
     assert response.status_code == 200
     payload = response.json()
     assert payload["user"]["email"] == "bob@example.com"
-    assert isinstance(payload["token"], str)
-    assert "expires_at" in payload
-    assert isinstance(payload["expires_at"], str)
-    expires_at = datetime.fromisoformat(payload["expires_at"])
-    delta_seconds = (expires_at - datetime.utcnow()).total_seconds()
-    assert delta_seconds > 0
-    assert delta_seconds == pytest.approx(timedelta(hours=24).total_seconds(), rel=0.01)
+    assert isinstance(payload["access_token"], str)
+    assert isinstance(payload["refresh_token"], str)
+    assert payload["token_type"] == "bearer"
+    access_expires = datetime.fromisoformat(payload["access_expires_at"])
+    refresh_expires = datetime.fromisoformat(payload["refresh_expires_at"])
+    access_delta = (access_expires - datetime.utcnow()).total_seconds()
+    refresh_delta = (refresh_expires - datetime.utcnow()).total_seconds()
+    assert access_delta > 0
+    assert refresh_delta > access_delta
+    assert access_delta == pytest.approx(timedelta(minutes=15).total_seconds(), rel=0.05)
 
 
 @pytest.mark.asyncio
@@ -648,7 +685,7 @@ async def test_alert_workflow_triggers_notification(
         json={"email": "alert@example.com", "password": "alerts1"},
     )
     assert login.status_code == 200
-    token = login.json()["token"]
+    token = login.json()["access_token"]
 
     headers = {"Authorization": f"Bearer {token}"}
     response = await client.post(
@@ -702,7 +739,7 @@ async def test_alerts_list_returns_created_alert(
         json={"email": "list@example.com", "password": "alerts1"},
     )
     assert login.status_code == 200
-    token = login.json()["token"]
+    token = login.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
 
     create = await client.post(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from typing import Any, Iterable, Optional, Tuple
@@ -10,7 +11,7 @@ import jwt
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session as OrmSession, sessionmaker, selectinload
 
-from backend.models import Alert, Session as SessionModel, User
+from backend.models import Alert, RefreshToken, Session as SessionModel, User
 from backend.utils.config import Config, password_context
 
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -35,7 +36,10 @@ class InvalidCredentialsError(Exception):
     """Se lanza cuando las credenciales proporcionadas no son válidas."""
 
 
-DEFAULT_SESSION_TTL = timedelta(hours=24)
+ACCESS_TOKEN_TTL = timedelta(minutes=15)
+REFRESH_TOKEN_TTL = timedelta(days=7)
+
+DEFAULT_SESSION_TTL = ACCESS_TOKEN_TTL
 
 
 class InvalidTokenError(Exception):
@@ -78,7 +82,7 @@ class UserService:
     def _user_with_relationships(self, session: OrmSession, user: User) -> User:
         session.refresh(
             user,
-            attribute_names=["alerts", "sessions"],
+            attribute_names=["alerts", "sessions", "refresh_tokens"],
         )
         return self._detach_entity(session, user)
 
@@ -197,6 +201,28 @@ class UserService:
             session.add(session_obj)
             return token, self._detach_entity(session, session_obj)
 
+    def create_refresh_token(
+        self,
+        user_id: UUID,
+        expires_in: Optional[timedelta] = None,
+    ) -> Tuple[str, datetime]:
+        token_value = secrets.token_urlsafe(48)
+        expires_at = datetime.utcnow() + (expires_in or REFRESH_TOKEN_TTL)
+
+        with self._session_scope() as session:
+            user = session.get(User, user_id)
+            if not user:
+                raise UserNotFoundError("Usuario no encontrado")
+
+            refresh = RefreshToken(
+                user_id=user_id,
+                token=token_value,
+                expires_at=expires_at,
+            )
+            session.add(refresh)
+            session.flush()
+            return token_value, expires_at
+
     def get_active_sessions(self, user_id: UUID) -> list[SessionModel]:
         with self._session_scope() as session:
             now = datetime.utcnow()
@@ -235,6 +261,58 @@ class UserService:
                 raise InvalidTokenError("Token inválido")
 
             return self._user_with_relationships(session, user)
+
+    def revoke_refresh_token(self, token: str) -> None:
+        with self._session_scope() as session:
+            refresh = (
+                session.query(RefreshToken).filter(RefreshToken.token == token).first()
+            )
+            if refresh:
+                session.delete(refresh)
+
+    def rotate_refresh_token(
+        self, refresh_token: str
+    ) -> tuple[User, str, datetime]:
+        with self._session_scope() as session:
+            stored = (
+                session.query(RefreshToken)
+                .filter(RefreshToken.token == refresh_token)
+                .first()
+            )
+            if not stored or stored.expires_at <= datetime.utcnow():
+                raise InvalidTokenError("Refresh token inválido")
+
+            user = session.get(User, stored.user_id)
+            if not user:
+                raise InvalidTokenError("Usuario no encontrado para el token")
+
+            session.delete(stored)
+            new_token = secrets.token_urlsafe(48)
+            new_expires_at = datetime.utcnow() + REFRESH_TOKEN_TTL
+            new_refresh = RefreshToken(
+                user_id=stored.user_id,
+                token=new_token,
+                expires_at=new_expires_at,
+            )
+            session.add(new_refresh)
+            session.flush()
+            session.refresh(user)
+            user = self._user_with_relationships(session, user)
+            session.expunge(new_refresh)
+            return user, new_token, new_expires_at
+
+    def issue_token_pair(
+        self, user: User
+    ) -> tuple[str, datetime, str, datetime]:
+        access_token, session = self.create_session(
+            user_id=user.id,
+            expires_in=ACCESS_TOKEN_TTL,
+        )
+        refresh_token, refresh_expires_at = self.create_refresh_token(
+            user_id=user.id,
+            expires_in=REFRESH_TOKEN_TTL,
+        )
+        return access_token, session.expires_at, refresh_token, refresh_expires_at
 
     def register_session_activity(self, token: str) -> None:
         # La tabla de sesiones ya no registra actividad adicional; se mantiene para compatibilidad.

@@ -69,6 +69,7 @@ class DummyUserService:
         self._users_by_id: Dict[uuid.UUID, DummyUser] = {}
         self._alerts: Dict[uuid.UUID, List[DummyAlert]] = {}
         self._sessions: List[SimpleNamespace] = []
+        self._refresh_tokens: Dict[str, SimpleNamespace] = {}
         self._secret = "test-secret"
         self._algorithm = "HS256"
 
@@ -135,7 +136,7 @@ class DummyUserService:
     def create_access_token(
         self, user: DummyUser, expires_in: Optional[timedelta] = None
     ) -> Tuple[str, datetime]:
-        expires_at = datetime.utcnow() + (expires_in or timedelta(hours=24))
+        expires_at = datetime.utcnow() + (expires_in or timedelta(minutes=15))
         payload = self._build_payload(user, expires_at)
         token = jwt.encode(payload, self._secret, algorithm=self._algorithm)
         return token, expires_at
@@ -162,6 +163,42 @@ class DummyUserService:
         session = SimpleNamespace(user_id=user_id, token=token, expires_at=expires_at)
         self._sessions.append(session)
         return token, session
+
+    def create_refresh_token(
+        self, user: DummyUser, expires_in: Optional[timedelta] = None
+    ) -> Tuple[str, datetime]:
+        refresh_token = jwt.encode(
+            {
+                "sub": str(user.id),
+                "type": "refresh",
+                "exp": datetime.utcnow() + (expires_in or timedelta(days=7)),
+            },
+            self._secret,
+            algorithm=self._algorithm,
+        )
+        expires_at = datetime.utcnow() + (expires_in or timedelta(days=7))
+        self._refresh_tokens[refresh_token] = SimpleNamespace(
+            user_id=user.id,
+            expires_at=expires_at,
+        )
+        return refresh_token, expires_at
+
+    def rotate_refresh_token(self, refresh_token: str) -> Tuple[DummyUser, str, datetime]:
+        stored = self._refresh_tokens.pop(refresh_token, None)
+        if not stored or stored.expires_at <= datetime.utcnow():
+            raise self.InvalidTokenError("Refresh token inválido")
+        user = self._users_by_id.get(stored.user_id)
+        if not user:
+            raise self.InvalidTokenError("Usuario no encontrado")
+        new_refresh, expires_at = self.create_refresh_token(user)
+        return user, new_refresh, expires_at
+
+    def issue_token_pair(
+        self, user: DummyUser
+    ) -> Tuple[str, datetime, str, datetime]:
+        access_token, session = self.create_session(user.id)
+        refresh_token, refresh_expires = self.create_refresh_token(user)
+        return access_token, session.expires_at, refresh_token, refresh_expires
 
     def register_session_activity(self, token: str) -> None:  # pragma: no cover - unused
         return None
@@ -277,12 +314,12 @@ async def client() -> AsyncClient:
 
 async def _register_and_login(client: AsyncClient, email: str, password: str) -> str:
     register_payload = {"email": email, "password": password}
-    response = await client.post("/register", json=register_payload)
+    response = await client.post("/api/auth/register", json=register_payload)
     assert response.status_code == 201
 
-    login_response = await client.post("/login", json=register_payload)
+    login_response = await client.post("/api/auth/login", json=register_payload)
     assert login_response.status_code == 200
-    token = login_response.json()["token"]
+    token = login_response.json()["access_token"]
     return token
 
 
@@ -296,7 +333,7 @@ async def test_create_alert(client: AsyncClient, dummy_user_service: DummyUserSe
     token = await _register_and_login(client, email, "secret123")
 
     payload = {"asset": "aapl", "value": 150.0, "condition": ">"}
-    response = await client.post("/alerts", json=payload, headers=_auth_header(token))
+    response = await client.post("/api/alerts", json=payload, headers=_auth_header(token))
 
     assert response.status_code == 201
     body = response.json()
@@ -311,9 +348,9 @@ async def test_list_alerts(client: AsyncClient, dummy_user_service: DummyUserSer
     token = await _register_and_login(client, email, "secret123")
 
     payload = {"asset": "btc", "value": 42000.0, "condition": ">"}
-    await client.post("/alerts", json=payload, headers=_auth_header(token))
+    await client.post("/api/alerts", json=payload, headers=_auth_header(token))
 
-    response = await client.get("/alerts", headers=_auth_header(token))
+    response = await client.get("/api/alerts", headers=_auth_header(token))
     assert response.status_code == 200
     body = response.json()
     assert isinstance(body, list)
@@ -328,13 +365,13 @@ async def test_update_alert(client: AsyncClient, dummy_user_service: DummyUserSe
 
     create_payload = {"asset": "eth", "value": 3000.0, "condition": ">"}
     create_response = await client.post(
-        "/alerts", json=create_payload, headers=_auth_header(token)
+        "/api/alerts", json=create_payload, headers=_auth_header(token)
     )
     alert_id = create_response.json()["id"]
 
     update_payload = {"asset": "eth", "value": 2950.0, "condition": "<"}
     response = await client.put(
-        f"/alerts/{alert_id}", json=update_payload, headers=_auth_header(token)
+        f"/api/alerts/{alert_id}", json=update_payload, headers=_auth_header(token)
     )
 
     assert response.status_code == 200
@@ -351,11 +388,11 @@ async def test_delete_alert(client: AsyncClient, dummy_user_service: DummyUserSe
 
     create_payload = {"asset": "tsla", "value": 250.0, "condition": ">"}
     create_response = await client.post(
-        "/alerts", json=create_payload, headers=_auth_header(token)
+        "/api/alerts", json=create_payload, headers=_auth_header(token)
     )
     alert_id = create_response.json()["id"]
 
-    response = await client.delete(f"/alerts/{alert_id}", headers=_auth_header(token))
+    response = await client.delete(f"/api/alerts/{alert_id}", headers=_auth_header(token))
 
     assert response.status_code == 200
     assert response.json() == {
@@ -363,7 +400,7 @@ async def test_delete_alert(client: AsyncClient, dummy_user_service: DummyUserSe
         "id": alert_id,
     }
 
-    list_response = await client.get("/alerts", headers=_auth_header(token))
+    list_response = await client.get("/api/alerts", headers=_auth_header(token))
     assert list_response.status_code == 200
     assert list_response.json() == []
 
@@ -374,15 +411,15 @@ async def test_delete_all_alerts(client: AsyncClient, dummy_user_service: DummyU
     token = await _register_and_login(client, email, "secret123")
 
     payload = {"asset": "msft", "value": 320.0, "condition": "<"}
-    await client.post("/alerts", json=payload, headers=_auth_header(token))
-    await client.post("/alerts", json=payload, headers=_auth_header(token))
+    await client.post("/api/alerts", json=payload, headers=_auth_header(token))
+    await client.post("/api/alerts", json=payload, headers=_auth_header(token))
 
-    response = await client.delete("/alerts", headers=_auth_header(token))
+    response = await client.delete("/api/alerts", headers=_auth_header(token))
     assert response.status_code == 200
     assert response.json() == {
         "message": "Todas las alertas fueron eliminadas exitosamente",
     }
 
-    list_response = await client.get("/alerts", headers=_auth_header(token))
+    list_response = await client.get("/api/alerts", headers=_auth_header(token))
     assert list_response.status_code == 200
     assert list_response.json() == []

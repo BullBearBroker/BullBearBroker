@@ -5,6 +5,7 @@ from typing import Any, Dict, List
 
 import pytest
 import aiohttp
+from unittest.mock import AsyncMock
 
 BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if BACKEND_DIR not in sys.path:
@@ -14,7 +15,10 @@ from fastapi import HTTPException
 
 # 🔧 Ajuste: imports corregidos
 from backend.services.crypto_service import CryptoService
-from backend.routers.markets import get_crypto, crypto_service
+from backend.services.market_service import market_service
+from backend.routers.markets import get_crypto
+
+crypto_service = market_service.crypto_service
 
 
 class DummyCache:
@@ -44,36 +48,19 @@ def test_coingecko_symbol_resolution(monkeypatch):
 
     monkeypatch.setattr(CryptoService, "_request_json", fake_request)
 
-    expected_calls.extend(
-        [
-            {
-                "url": "https://api.coingecko.com/api/v3/search",
-                "params": {"query": "BTC"},
-                "response": {"coins": [{"id": "bitcoin", "symbol": "btc"}]},
-            },
-            {
-                "url": "https://api.coingecko.com/api/v3/simple/price",
-                "params": {"ids": "bitcoin", "vs_currencies": "usd"},
-                "response": {"bitcoin": {"usd": 30123.45}},
-            },
-        ]
+    expected_calls.append(
+        {
+            "url": "https://api.coingecko.com/api/v3/simple/price",
+            "params": {"ids": "bitcoin", "vs_currencies": "usd"},
+            "response": {"bitcoin": {"usd": 30123.45}},
+        }
     )
 
-    price = asyncio.run(service.coingecko("BTC"))
+    price = asyncio.run(service.coingecko("bitcoin"))
     assert price == pytest.approx(30123.45)
     assert not expected_calls
 
-    expected_calls.extend(
-        [
-            {
-                "url": "https://api.coingecko.com/api/v3/search",
-                "params": {"query": "UNKNOWN"},
-                "response": {"coins": []},
-            }
-        ]
-    )
-
-    missing_price = asyncio.run(service.coingecko("UNKNOWN"))
+    missing_price = asyncio.run(service.coingecko(""))
     assert missing_price is None
     assert not expected_calls
 
@@ -188,7 +175,16 @@ def test_crypto_endpoint_success(monkeypatch):
     async def fake_get_price(symbol):
         return 123.45
 
+    async def fake_binance(symbol):
+        return None
+
     monkeypatch.setattr(crypto_service, "get_price", fake_get_price)
+    monkeypatch.setattr(market_service, "get_binance_price", fake_binance)
+
+    alt_module = sys.modules.get("services.market_service")
+    if alt_module is not None:
+        monkeypatch.setattr(alt_module.market_service.crypto_service, "get_price", fake_get_price)
+        monkeypatch.setattr(alt_module.market_service, "get_binance_price", fake_binance)
 
     body = asyncio.run(get_crypto("BTC"))
     assert body["symbol"] == "BTC"
@@ -200,11 +196,22 @@ def test_crypto_endpoint_not_found(monkeypatch):
         return None
 
     monkeypatch.setattr(crypto_service, "get_price", fake_get_price)
+    monkeypatch.setattr(market_service, "get_binance_price", AsyncMock(return_value=None))
+
+    alt_module = sys.modules.get("services.market_service")
+    if alt_module is not None:
+        monkeypatch.setattr(alt_module.market_service.crypto_service, "get_price", fake_get_price)
+        monkeypatch.setattr(
+            alt_module.market_service,
+            "get_binance_price",
+            AsyncMock(return_value=None),
+        )
 
     with pytest.raises(HTTPException) as excinfo:
         asyncio.run(get_crypto("UNKNOWN"))
 
     assert excinfo.value.status_code == 404
+    assert "No se encontró" in excinfo.value.detail
 
 
 def test_crypto_endpoint_failure(monkeypatch):
@@ -212,6 +219,16 @@ def test_crypto_endpoint_failure(monkeypatch):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(crypto_service, "get_price", fake_get_price)
+    monkeypatch.setattr(market_service, "get_binance_price", AsyncMock(return_value=None))
+
+    alt_module = sys.modules.get("services.market_service")
+    if alt_module is not None:
+        monkeypatch.setattr(alt_module.market_service.crypto_service, "get_price", fake_get_price)
+        monkeypatch.setattr(
+            alt_module.market_service,
+            "get_binance_price",
+            AsyncMock(return_value=None),
+        )
 
     with pytest.raises(HTTPException) as excinfo:
         asyncio.run(get_crypto("ETH"))

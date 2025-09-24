@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime
 import uuid
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, String
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+if TYPE_CHECKING:
+    from .refresh_token import RefreshToken
 
 try:  # pragma: no cover
     from .base import Base
@@ -39,6 +43,11 @@ class User(Base):
     )
     sessions: Mapped[list["Session"]] = relationship(
         "Session", back_populates="user", cascade="all, delete-orphan"
+    )
+    refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
+        "RefreshToken",
+        back_populates="user",
+        cascade="all, delete-orphan",
     )
 
     def verify_password(self, password: str) -> bool:

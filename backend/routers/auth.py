@@ -84,17 +84,18 @@ async def login(credentials: UserLogin):
         except InvalidCredentialsError as exc:
             raise HTTPException(status_code=401, detail=str(exc)) from exc
 
-        token, session = user_service.create_session(
-            user_id=user.id,
-            expires_in=timedelta(hours=24),
+        access_token, access_expires_at, refresh_token, refresh_expires_at = (
+            user_service.issue_token_pair(user)
         )
 
-        return {
-            "message": "Login exitoso",
-            "token": token,
-            "user": serialize_user(user),
-            "expires_at": session.expires_at.isoformat(),
-        }
+        return TokenResponse(
+            message="Login exitoso",
+            access_token=access_token,
+            refresh_token=refresh_token,
+            access_expires_at=access_expires_at.isoformat(),
+            refresh_expires_at=refresh_expires_at.isoformat(),
+            user=serialize_user(user),
+        )
 
     except KeyError:
         raise HTTPException(status_code=400, detail="Email y password requeridos")
@@ -109,3 +110,40 @@ async def get_current_user(token: HTTPAuthorizationCredentials = Depends(securit
         return serialize_user(user)
     except InvalidTokenError as exc:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+
+@router.post("/refresh")
+async def refresh_token(payload: RefreshRequest):
+    """Rotar refresh token y emitir un nuevo access token."""
+
+    try:
+        user, new_refresh_token, refresh_expires_at = user_service.rotate_refresh_token(
+            payload.refresh_token
+        )
+    except InvalidTokenError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+    new_access_token, session = user_service.create_session(
+        user_id=user.id,
+        expires_in=timedelta(minutes=15),
+    )
+
+    return TokenResponse(
+        access_token=new_access_token,
+        refresh_token=new_refresh_token,
+        access_expires_at=session.expires_at.isoformat(),
+        refresh_expires_at=refresh_expires_at.isoformat(),
+        user=serialize_user(user),
+    )
+class TokenResponse(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+    access_expires_at: str
+    refresh_expires_at: str
+    user: Dict[str, object]
+    message: str | None = None
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str

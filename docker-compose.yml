@@ -1,30 +1,14 @@
 version: "3.9"
-
 services:
-  db:
-    image: postgres:15
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: bullbearbroker
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    environment:
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@db:5432/bullbearbroker
-    volumes:
-      - .:/app
+    build: .
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     depends_on:
-      - db
-    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
-
-volumes:
-  postgres_data:
+      - redis
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"

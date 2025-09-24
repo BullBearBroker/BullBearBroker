@@ -1,5 +1,11 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi_limiter import FastAPILimiter
+import redis.asyncio as redis
+
+from backend.core.logging_config import get_logger
 
 # Routers de la app
 from backend.routers import alerts, markets, news, auth, ai
@@ -11,11 +17,11 @@ app = FastAPI(
     description="🚀 API conversacional para análisis financiero en tiempo real",
 )
 
+logger = get_logger()
+logger.info("Backend iniciado correctamente 🚀")
+
 # Configuración de CORS (para el frontend en localhost:3000)
-origins = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
+origins = ["http://localhost:3000"]
 
 app.add_middleware(
     CORSMiddleware,
@@ -29,6 +35,21 @@ app.add_middleware(
 @app.get("/")
 def read_root():
     return {"message": "🚀 BullBearBroker API corriendo correctamente!"}
+
+
+@app.on_event("startup")
+async def startup() -> None:
+    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+    try:
+        redis_client = await redis.from_url(
+            redis_url,
+            encoding="utf-8",
+            decode_responses=True,
+        )
+        await FastAPILimiter.init(redis_client)
+        logger.info("FastAPILimiter inicializado")
+    except Exception as exc:  # pragma: no cover - redis opcional en tests
+        logger.warning(f"FastAPILimiter no inicializado: {exc}")
 
 
 # ✅ Routers registrados con prefijo global /api
