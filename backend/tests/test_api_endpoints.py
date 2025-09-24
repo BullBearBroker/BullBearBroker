@@ -34,7 +34,6 @@ os.environ.setdefault("DATABASE_URL", "postgresql+psycopg://user:pass@localhost/
 from backend.main import app  # noqa: E402  (import after path setup)
 from backend.routers import alerts as alerts_router  # noqa: E402
 from backend.routers import auth as auth_router  # noqa: E402
-from backend.routers import news as news_router  # noqa: E402
 from backend.services.alert_service import alert_service  # noqa: E402
 from backend.services.market_service import market_service  # noqa: E402
 from backend.services.news_service import news_service  # noqa: E402
@@ -436,11 +435,6 @@ def _prepare_news_service(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any]:
                 lambda timeout=None: DummyAsyncSessionContext(),
             )
             monkeypatch.setattr(alt_service, "_call_with_retries", fake_news_call_with_retries)
-
-    if not any(getattr(route, "path", None) == "/api/news/crypto" for route in app.router.routes):
-        app.add_api_route("/api/news/crypto", news_router.get_crypto_news, methods=["GET"])
-    if not any(getattr(route, "path", None) == "/api/news/finance" for route in app.router.routes):
-        app.add_api_route("/api/news/finance", news_router.get_finance_news, methods=["GET"])
 
     return {"calls": call_order}
 

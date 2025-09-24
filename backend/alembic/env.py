@@ -7,6 +7,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from backend.models import Base   # ✅ Import corregido
+from backend import models as _models  # noqa: F401  # Ensure models are imported for metadata
 from dotenv import load_dotenv
 
 # Alembic Config object

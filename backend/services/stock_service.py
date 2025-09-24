@@ -6,8 +6,8 @@ import aiohttp
 from aiohttp import ClientError, ClientTimeout, ContentTypeError
 
 try:  # pragma: no cover
-    from utils.cache import CacheClient
-    from utils.config import Config
+    from backend.utils.cache import CacheClient
+    from backend.utils.config import Config
 except ImportError:  # pragma: no cover
     from backend.utils.cache import CacheClient  # type: ignore[no-redef]
     from backend.utils.config import Config  # type: ignore[no-redef]

@@ -10,7 +10,7 @@ if BACKEND_DIR not in sys.path:
 import pytest
 
 from services.stock_service import StockService
-from utils.config import Config
+from backend.utils.config import Config
 
 
 class DummyCache:

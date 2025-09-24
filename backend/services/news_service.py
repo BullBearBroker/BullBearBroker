@@ -15,8 +15,8 @@ import aiohttp
 from aiohttp import ClientError, ClientTimeout, ContentTypeError
 
 try:  # pragma: no cover - allow running from different entrypoints
-    from utils.cache import CacheClient
-    from utils.config import Config
+    from backend.utils.cache import CacheClient
+    from backend.utils.config import Config
 except ImportError:  # pragma: no cover - fallback for package-based imports
     from backend.utils.cache import CacheClient  # type: ignore[no-redef]
     from backend.utils.config import Config  # type: ignore[no-redef]
@@ -323,4 +323,3 @@ class NewsService:
 news_service = NewsService()
 
 __all__ = ["NewsService", "news_service"]
-

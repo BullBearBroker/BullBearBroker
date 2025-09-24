@@ -19,10 +19,10 @@ except Exception:  # pragma: no cover
     go = None  # type: ignore[assignment]
 
 try:  # pragma: no cover - compatibilidad con distintos puntos de entrada
-    from services.crypto_service import CryptoService
-    from services.stock_service import StockService
-    from utils.cache import CacheClient
-    from utils.config import Config
+    from backend.services.crypto_service import CryptoService
+    from backend.services.stock_service import StockService
+    from backend.utils.cache import CacheClient
+    from backend.utils.config import Config
 except ImportError:  # pragma: no cover
     from backend.services.crypto_service import CryptoService  # type: ignore[no-redef]
     from backend.services.stock_service import StockService  # type: ignore[no-redef]
