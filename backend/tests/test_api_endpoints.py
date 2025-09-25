@@ -115,6 +115,7 @@ class DummyUserService:
         self._sessions: List[SimpleNamespace] = []
         self._alerts: Dict[uuid.UUID, List[DummyAlert]] = {}
         self._refresh_tokens: Dict[str, SimpleNamespace] = {}
+        self._access_tokens: Dict[str, datetime] = {}
         self._secret = "test-secret"
         self._algorithm = "HS256"
 
@@ -204,6 +205,7 @@ class DummyUserService:
 
         session = SimpleNamespace(user_id=user_id, token=token, expires_at=expires_at)
         self._sessions.append(session)
+        self._access_tokens[token] = expires_at
         return token, session
 
     def register_session_activity(self, token: str) -> None:  # noqa: D401
@@ -216,15 +218,35 @@ class DummyUserService:
         self._sessions.append(
             SimpleNamespace(user_id=user_id, token=token, expires_at=expires_at)
         )
+        self._access_tokens[token] = expires_at
 
     def get_current_user(self, token: str) -> DummyUser:
-        payload = self._decode_token(token)
-        user_id = self._extract_user_id(payload)
-
         now = datetime.utcnow()
-        if not any(
-            sess.token == token and sess.user_id == user_id and sess.expires_at > now
-            for sess in self._sessions
+        session = next(
+            (
+                sess
+                for sess in self._sessions
+                if sess.token == token and sess.expires_at > now
+            ),
+            None,
+        )
+
+        if session is not None:
+            user_id = session.user_id
+            if token not in self._access_tokens:
+                self._access_tokens[token] = session.expires_at
+        else:
+            payload = self._decode_token(token)
+            user_id = self._extract_user_id(payload)
+            expires_at = self._access_tokens.get(token)
+            if expires_at is None:
+                self._access_tokens[token] = self._extract_exp(payload)
+
+        expires_at = self._access_tokens.get(token)
+
+        if not (
+            (session is not None and session.expires_at > now)
+            or (expires_at is not None and expires_at > now)
         ):
             raise self.InvalidTokenError("Token inválido")
 
