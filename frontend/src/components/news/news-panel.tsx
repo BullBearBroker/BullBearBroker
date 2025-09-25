@@ -18,6 +18,14 @@ export function NewsPanel({ token }: NewsPanelProps) {
     () => listNews(token)
   );
 
+  const sortedNews = data
+    ?.slice()
+    .sort((a, b) => {
+      const dateA = a.published_at ? new Date(a.published_at).getTime() : 0;
+      const dateB = b.published_at ? new Date(b.published_at).getTime() : 0;
+      return dateB - dateA;
+    });
+
   return (
     <Card className="flex flex-col">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
@@ -29,23 +37,18 @@ export function NewsPanel({ token }: NewsPanelProps) {
       </CardHeader>
       <CardContent className="space-y-3">
         {isLoading && <p className="text-sm text-muted-foreground">Cargando noticias...</p>}
-        {error && (
-          <p className="text-sm text-destructive">
-            No se pudieron cargar las noticias: {error.message}
-          </p>
+        {(error || (!isLoading && !sortedNews?.length)) && (
+          <p className="text-sm text-muted-foreground">No hay noticias disponibles.</p>
         )}
-        {!isLoading && !error && !data?.length && (
-          <p className="text-sm text-muted-foreground">
-            No hay noticias disponibles en este momento.
-          </p>
-        )}
-        {data?.slice(0, 6).map((item) => (
+        {sortedNews?.slice(0, 6).map((item) => (
           <article key={item.id} className="space-y-1 rounded-lg border p-3">
             <h3 className="text-sm font-semibold">{item.title}</h3>
             {item.summary && <p className="text-xs text-muted-foreground">{item.summary}</p>}
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>{item.source ?? "Fuente desconocida"}</span>
-              {item.published_at && <span>{new Date(item.published_at).toLocaleString()}</span>}
+              {item.published_at && (
+                <span>{new Date(item.published_at).toLocaleString("es-ES", { hour12: false })}</span>
+              )}
             </div>
             <Link
               href={item.url}

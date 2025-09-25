@@ -24,10 +24,16 @@ export interface UserProfile {
   [key: string]: unknown;
 }
 
-export interface MarketEntry {
+export interface MarketQuote {
   symbol: string;
   price: number;
-  change_24h?: number;
+  raw_change?: number | null;
+  change?: string | null;
+  high?: number | null;
+  low?: number | null;
+  volume?: number | null;
+  source?: string | null;
+  type?: "crypto" | "stock" | "forex" | string;
   [key: string]: unknown;
 }
 
@@ -135,8 +141,18 @@ export function getProfile(token: string) {
   return request<UserProfile>("/api/auth/me", { method: "GET" }, token);
 }
 
-export function getMarkets(type: "crypto" | "stocks" | "forex", token?: string) {
-  return request<MarketEntry[]>(`/api/markets/${type}`, { method: "GET" }, token);
+export async function getMarketQuote(
+  type: "crypto" | "stock" | "forex",
+  symbol: string,
+  token?: string
+) {
+  const normalizedSymbol = symbol.trim();
+  const path =
+    type === "forex"
+      ? `/api/markets/forex/${encodeURIComponent(normalizedSymbol)}`
+      : `/api/markets/${type}/${encodeURIComponent(normalizedSymbol)}`;
+
+  return request<MarketQuote>(path, { method: "GET" }, token);
 }
 
 export async function sendChatMessage(
@@ -260,8 +276,53 @@ export function deleteAlert(token: string, id: string | number) {
   );
 }
 
-export function listNews(token?: string) {
-  return request<NewsItem[]>("/api/news", { method: "GET" }, token ?? undefined);
+async function fetchNewsCategory(
+  category: string,
+  token?: string
+): Promise<NewsItem[]> {
+  const payload = await request<{ category: string; articles: NewsItem[] }>(
+    `/api/news/${category}`,
+    { method: "GET" },
+    token
+  );
+
+  return payload.articles?.map((article, index) => ({
+    ...article,
+    id: article.id ?? `${category}-${index}`,
+    source: article.source ?? category
+  })) ?? [];
+}
+
+export async function listNews(token?: string) {
+  try {
+    const direct = await request<NewsItem[] | { articles?: NewsItem[] }>(
+      "/api/news",
+      { method: "GET" },
+      token
+    );
+    if (Array.isArray(direct)) {
+      return direct;
+    }
+    if (direct?.articles) {
+      return direct.articles;
+    }
+  } catch (error) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("Falling back to category news endpoints", error);
+    }
+  }
+
+  const categories = ["crypto", "finance"] as const;
+  const results = await Promise.allSettled(categories.map((category) => fetchNewsCategory(category, token)));
+
+  const aggregated: NewsItem[] = [];
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      aggregated.push(...result.value);
+    }
+  }
+
+  return aggregated;
 }
 
 function sanitizeStreamText(raw: string) {
