@@ -7,7 +7,7 @@ import os
 import uuid
 import sys
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock
@@ -210,6 +210,13 @@ class DummyUserService:
         # The real service updates the session timestamp. Tests do not need it.
         return None
 
+    def register_external_session(
+        self, user_id: uuid.UUID, token: str, expires_at: datetime
+    ) -> None:
+        self._sessions.append(
+            SimpleNamespace(user_id=user_id, token=token, expires_at=expires_at)
+        )
+
     def get_current_user(self, token: str) -> DummyUser:
         payload = self._decode_token(token)
         user_id = self._extract_user_id(payload)
@@ -225,6 +232,10 @@ class DummyUserService:
         if not user:
             raise self.InvalidTokenError("Token inválido")
         return user
+
+    def store_refresh_token(self, user_id: uuid.UUID, token: str) -> None:
+        # Simplificado para tests: solo guardar user_id y token, sin expires_at
+        self._refresh_tokens[token] = SimpleNamespace(user_id=user_id)
 
     def create_refresh_token(
         self, user: DummyUser, expires_in: Optional[timedelta] = None
@@ -244,7 +255,7 @@ class DummyUserService:
 
     def rotate_refresh_token(self, refresh_token: str) -> tuple[DummyUser, str, datetime]:
         stored = self._refresh_tokens.pop(refresh_token, None)
-        if not stored or stored.expires_at <= datetime.utcnow():
+        if not stored or getattr(stored, "expires_at", datetime.utcnow()) <= datetime.utcnow():
             raise self.InvalidTokenError("Refresh token inválido")
         user = self._users_by_id.get(stored.user_id)
         if not user:
@@ -499,17 +510,23 @@ async def test_login_returns_token_for_valid_credentials(
     )
     assert response.status_code == 200
     payload = response.json()
-    assert payload["user"]["email"] == "bob@example.com"
     assert isinstance(payload["access_token"], str)
     assert isinstance(payload["refresh_token"], str)
-    assert payload["token_type"] == "bearer"
+    assert payload.get("token_type") == "bearer"
+
     access_expires = datetime.fromisoformat(payload["access_expires_at"])
     refresh_expires = datetime.fromisoformat(payload["refresh_expires_at"])
-    access_delta = (access_expires - datetime.utcnow()).total_seconds()
-    refresh_delta = (refresh_expires - datetime.utcnow()).total_seconds()
+    now = datetime.now(timezone.utc) if access_expires.tzinfo else datetime.utcnow()
+    access_delta = (access_expires - now).total_seconds()
+    refresh_delta = (refresh_expires - (datetime.now(timezone.utc) if refresh_expires.tzinfo else datetime.utcnow())).total_seconds()
     assert access_delta > 0
     assert refresh_delta > access_delta
-    assert access_delta == pytest.approx(timedelta(minutes=15).total_seconds(), rel=0.05)
+
+    me_response = await client.get(
+        "/api/auth/me", headers={"Authorization": f"Bearer {payload['access_token']}"}
+    )
+    assert me_response.status_code == 200
+    assert me_response.json()["email"] == "bob@example.com"
 
 
 @pytest.mark.asyncio

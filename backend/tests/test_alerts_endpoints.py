@@ -312,14 +312,11 @@ async def client() -> AsyncClient:
         yield async_client
 
 
-async def _register_and_login(client: AsyncClient, email: str, password: str) -> str:
-    register_payload = {"email": email, "password": password}
-    response = await client.post("/api/auth/register", json=register_payload)
-    assert response.status_code == 201
-
-    login_response = await client.post("/api/auth/login", json=register_payload)
-    assert login_response.status_code == 200
-    token = login_response.json()["access_token"]
+async def _register_and_login(
+    service: DummyUserService, email: str, password: str
+) -> str:
+    user = service.create_user(email=email, password=password)
+    token, _ = service.create_session(user.id)
     return token
 
 
@@ -330,7 +327,7 @@ def _auth_header(token: str) -> Dict[str, str]:
 @pytest.mark.asyncio
 async def test_create_alert(client: AsyncClient, dummy_user_service: DummyUserService) -> None:
     email = f"user-{uuid.uuid4()}@example.com"
-    token = await _register_and_login(client, email, "secret123")
+    token = await _register_and_login(dummy_user_service, email, "secret123")
 
     payload = {"asset": "aapl", "value": 150.0, "condition": ">"}
     response = await client.post("/api/alerts", json=payload, headers=_auth_header(token))
@@ -345,7 +342,7 @@ async def test_create_alert(client: AsyncClient, dummy_user_service: DummyUserSe
 @pytest.mark.asyncio
 async def test_list_alerts(client: AsyncClient, dummy_user_service: DummyUserService) -> None:
     email = f"user-{uuid.uuid4()}@example.com"
-    token = await _register_and_login(client, email, "secret123")
+    token = await _register_and_login(dummy_user_service, email, "secret123")
 
     payload = {"asset": "btc", "value": 42000.0, "condition": ">"}
     await client.post("/api/alerts", json=payload, headers=_auth_header(token))
@@ -361,7 +358,7 @@ async def test_list_alerts(client: AsyncClient, dummy_user_service: DummyUserSer
 @pytest.mark.asyncio
 async def test_update_alert(client: AsyncClient, dummy_user_service: DummyUserService) -> None:
     email = f"user-{uuid.uuid4()}@example.com"
-    token = await _register_and_login(client, email, "secret123")
+    token = await _register_and_login(dummy_user_service, email, "secret123")
 
     create_payload = {"asset": "eth", "value": 3000.0, "condition": ">"}
     create_response = await client.post(
@@ -384,7 +381,7 @@ async def test_update_alert(client: AsyncClient, dummy_user_service: DummyUserSe
 @pytest.mark.asyncio
 async def test_delete_alert(client: AsyncClient, dummy_user_service: DummyUserService) -> None:
     email = f"user-{uuid.uuid4()}@example.com"
-    token = await _register_and_login(client, email, "secret123")
+    token = await _register_and_login(dummy_user_service, email, "secret123")
 
     create_payload = {"asset": "tsla", "value": 250.0, "condition": ">"}
     create_response = await client.post(
@@ -408,7 +405,7 @@ async def test_delete_alert(client: AsyncClient, dummy_user_service: DummyUserSe
 @pytest.mark.asyncio
 async def test_delete_all_alerts(client: AsyncClient, dummy_user_service: DummyUserService) -> None:
     email = f"user-{uuid.uuid4()}@example.com"
-    token = await _register_and_login(client, email, "secret123")
+    token = await _register_and_login(dummy_user_service, email, "secret123")
 
     payload = {"asset": "msft", "value": 320.0, "condition": "<"}
     await client.post("/api/alerts", json=payload, headers=_auth_header(token))

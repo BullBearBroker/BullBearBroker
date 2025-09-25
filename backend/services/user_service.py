@@ -1,27 +1,25 @@
 from __future__ import annotations
-
-import os
-import secrets
 from contextlib import contextmanager
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Optional, Tuple
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import jwt
-from sqlalchemy import create_engine
+from fastapi import HTTPException
+from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession, sessionmaker, selectinload
+from types import SimpleNamespace
 
-from backend.models import Alert, RefreshToken, Session as SessionModel, User
+from backend.core.security import (
+    create_access_token as core_create_access_token,
+    create_refresh_token as core_create_refresh_token,
+    decode_access,
+    decode_refresh,
+)
+from backend.database import SessionLocal
+from backend.models import Alert, Session as SessionModel, User
+from backend.models.refresh_token import RefreshToken
 from backend.utils.config import Config, password_context
-
-DATABASE_URL = os.getenv("DATABASE_URL")
-if not DATABASE_URL:
-    raise RuntimeError("DATABASE_URL debe estar configurada")
-if not DATABASE_URL.startswith("postgresql"):
-    raise RuntimeError("DATABASE_URL debe apuntar a una base de datos PostgreSQL")
-
-engine = create_engine(DATABASE_URL, echo=False, future=True)
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
 
 class UserAlreadyExistsError(Exception):
@@ -46,6 +44,18 @@ class InvalidTokenError(Exception):
     """Se lanza cuando el token JWT es inválido o expiró."""
 
 
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _as_aware_utc(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
 class UserService:
     def __init__(
         self,
@@ -59,6 +69,7 @@ class UserService:
         self._jwt_secret_key = secret_key or Config.JWT_SECRET_KEY
         self._jwt_algorithm = algorithm or Config.JWT_ALGORITHM
         self._default_session_ttl = default_session_ttl
+        self._in_memory_refresh_tokens: Dict[str, SimpleNamespace] = {}
 
     @contextmanager
     def _session_scope(self) -> Iterable[OrmSession]:
@@ -119,17 +130,6 @@ class UserService:
             raise InvalidCredentialsError("Credenciales inválidas")
         return user
 
-    def _build_token_payload(self, user: User, expires_at: datetime) -> dict[str, Any]:
-        now = datetime.utcnow()
-        return {
-            "sub": str(user.id),
-            "user_id": str(user.id),
-            "email": user.email,
-            "iat": now,
-            "nbf": now,
-            "exp": expires_at,
-        }
-
     def _compute_expiration(self, expires_in: Optional[timedelta]) -> datetime:
         delta = expires_in or self._default_session_ttl
         return datetime.utcnow() + delta
@@ -139,7 +139,7 @@ class UserService:
 
     def _decode_token(self, token: str) -> dict[str, Any]:
         try:
-            return jwt.decode(token, self._jwt_secret_key, algorithms=[self._jwt_algorithm])
+            return decode_access(token)
         except jwt.ExpiredSignatureError as exc:
             raise InvalidTokenError("Token expirado") from exc
         except jwt.InvalidTokenError as exc:
@@ -155,22 +155,22 @@ class UserService:
         raise InvalidTokenError("Token inválido: expiración ausente")
 
     @staticmethod
-    def _extract_identity(payload: dict[str, Any]) -> Tuple[UUID, str]:
+    def _extract_identity(payload: dict[str, Any]) -> Tuple[UUID, Optional[str]]:
         raw_user_id = payload.get("user_id") or payload.get("sub")
-        email = payload.get("email")
-        if not raw_user_id or not email:
+        email = payload.get("email")  # puede venir o no
+        if not raw_user_id:
             raise InvalidTokenError("Token inválido")
         try:
-            return UUID(str(raw_user_id)), str(email)
+            return UUID(str(raw_user_id)), (str(email) if email is not None else None)
         except ValueError as exc:
             raise InvalidTokenError("Token inválido") from exc
 
     def create_access_token(
         self, user: User, expires_in: Optional[timedelta] = None
     ) -> Tuple[str, datetime]:
-        expires_at = self._compute_expiration(expires_in)
-        payload = self._build_token_payload(user, expires_at)
-        token = self._encode_token(payload)
+        expires_in = expires_in or ACCESS_TOKEN_TTL
+        expires_at = datetime.utcnow() + expires_in
+        token = core_create_access_token(sub=str(user.id), extra={"user_id": str(user.id)})
         return token, expires_at
 
     def create_session(
@@ -189,7 +189,7 @@ class UserService:
             else:
                 payload = self._decode_token(token)
                 token_user_id, token_email = self._extract_identity(payload)
-                if token_user_id != user.id or token_email != user.email:
+                if token_user_id != user.id or (token_email is not None and token_email != user.email):
                     raise InvalidTokenError("Token inválido para el usuario especificado")
                 expires_at = self._extract_expiration(payload)
 
@@ -206,22 +206,14 @@ class UserService:
         user_id: UUID,
         expires_in: Optional[timedelta] = None,
     ) -> Tuple[str, datetime]:
-        token_value = secrets.token_urlsafe(48)
-        expires_at = datetime.utcnow() + (expires_in or REFRESH_TOKEN_TTL)
-
-        with self._session_scope() as session:
-            user = session.get(User, user_id)
-            if not user:
-                raise UserNotFoundError("Usuario no encontrado")
-
-            refresh = RefreshToken(
-                user_id=user_id,
-                token=token_value,
-                expires_at=expires_at,
-            )
-            session.add(refresh)
-            session.flush()
-            return token_value, expires_at
+        expires_in = expires_in or REFRESH_TOKEN_TTL
+        expires_at = datetime.utcnow() + expires_in
+        token_value = core_create_refresh_token(sub=str(user_id))
+        self._in_memory_refresh_tokens[token_value] = SimpleNamespace(
+            user_id=user_id,
+            expires_at=expires_at,
+        )
+        return token_value, expires_at
 
     def get_active_sessions(self, user_id: UUID) -> list[SessionModel]:
         with self._session_scope() as session:
@@ -257,49 +249,66 @@ class UserService:
                 raise InvalidTokenError("Token inválido")
 
             user = session.get(User, user_id)
-            if not user or user.email != email:
+            if not user or (email is not None and user.email != email):
                 raise InvalidTokenError("Token inválido")
 
             return self._user_with_relationships(session, user)
 
     def revoke_refresh_token(self, token: str) -> None:
+        self._in_memory_refresh_tokens.pop(token, None)
+
+    def rotate_refresh_token(self, token_str: str) -> tuple[User, str, datetime]:
+        """Rota un refresh token utilizando almacenamiento en base de datos."""
+
+        payload = decode_refresh(token_str)
+        user_id = UUID(payload["sub"])
+        now = _utcnow()
+
+        with SessionLocal() as db:
+            stored: RefreshToken | None = db.execute(
+                select(RefreshToken).where(
+                    RefreshToken.user_id == user_id,
+                    RefreshToken.token == token_str,
+                )
+            ).scalars().first()
+
+            if not stored:
+                raise HTTPException(status_code=401, detail="invalid_refresh")
+
+            expires_attr = getattr(stored, "expires_at", None)
+            aware_exp = _as_aware_utc(expires_attr)
+            if aware_exp is not None and aware_exp <= now:
+                db.delete(stored)
+                db.commit()
+                raise HTTPException(status_code=401, detail="refresh_expired")
+
+            db.delete(stored)
+
+            new_refresh = core_create_refresh_token(sub=str(user_id))
+            db.add(
+                RefreshToken(
+                    id=uuid4(),
+                    user_id=user_id,
+                    token=new_refresh,
+                )
+            )
+            db.commit()
+
+            new_payload = decode_refresh(new_refresh)
+            refresh_expires = datetime.fromtimestamp(
+                int(new_payload["exp"]), tz=timezone.utc
+            )
+
+            user = db.get(User, user_id)
+            if user is None:
+                raise HTTPException(status_code=401, detail="invalid_refresh")
+
         with self._session_scope() as session:
-            refresh = (
-                session.query(RefreshToken).filter(RefreshToken.token == token).first()
-            )
-            if refresh:
-                session.delete(refresh)
-
-    def rotate_refresh_token(
-        self, refresh_token: str
-    ) -> tuple[User, str, datetime]:
-        with self._session_scope() as session:
-            stored = (
-                session.query(RefreshToken)
-                .filter(RefreshToken.token == refresh_token)
-                .first()
-            )
-            if not stored or stored.expires_at <= datetime.utcnow():
-                raise InvalidTokenError("Refresh token inválido")
-
-            user = session.get(User, stored.user_id)
-            if not user:
-                raise InvalidTokenError("Usuario no encontrado para el token")
-
-            session.delete(stored)
-            new_token = secrets.token_urlsafe(48)
-            new_expires_at = datetime.utcnow() + REFRESH_TOKEN_TTL
-            new_refresh = RefreshToken(
-                user_id=stored.user_id,
-                token=new_token,
-                expires_at=new_expires_at,
-            )
-            session.add(new_refresh)
-            session.flush()
-            session.refresh(user)
-            user = self._user_with_relationships(session, user)
-            session.expunge(new_refresh)
-            return user, new_token, new_expires_at
+            fresh_user = session.get(User, user_id)
+            if not fresh_user:
+                raise HTTPException(status_code=401, detail="invalid_refresh")
+            hydrated_user = self._user_with_relationships(session, fresh_user)
+            return hydrated_user, new_refresh, refresh_expires
 
     def issue_token_pair(
         self, user: User
@@ -314,9 +323,65 @@ class UserService:
         )
         return access_token, session.expires_at, refresh_token, refresh_expires_at
 
+    def store_refresh_token(self, user_id: UUID, token: str) -> RefreshToken:
+        """
+        Persiste un refresh token en la tabla refresh_tokens.
+        Si el modelo tiene columna 'expires_at', se completa; si no, se omite.
+        """
+        expires_dt = None
+        try:
+            payload = decode_refresh(token)  # valida firma y decodifica JWT
+            exp = int(payload["exp"])
+            expires_dt = datetime.fromtimestamp(exp, tz=timezone.utc)
+        except Exception:
+            # No bloquear guardado si no pudimos decodificar por alguna razón
+            expires_dt = None
+
+        with SessionLocal() as db:
+            data = {
+                "id": uuid4(),
+                "user_id": user_id,
+                "token": token,
+            }
+            # Solo setea expires_at si la columna existe en el modelo
+            if hasattr(RefreshToken, "expires_at") and expires_dt is not None:
+                data["expires_at"] = expires_dt
+
+            db_ref = RefreshToken(**data)
+            db.add(db_ref)
+            db.commit()
+            db.refresh(db_ref)
+            return db_ref
+
+    def revoke_all_refresh_tokens(self, user_id: UUID) -> None:
+        to_remove = [
+            token
+            for token, data in self._in_memory_refresh_tokens.items()
+            if data.user_id == user_id
+        ]
+        for token in to_remove:
+            self._in_memory_refresh_tokens.pop(token, None)
+
     def register_session_activity(self, token: str) -> None:
         # La tabla de sesiones ya no registra actividad adicional; se mantiene para compatibilidad.
         return None
+
+    def register_external_session(
+        self, user_id: UUID, access_token: str, access_expires: datetime
+    ) -> SessionModel:
+        """Persiste una sesión de acceso en la tabla 'sessions'."""
+
+        with SessionLocal() as db:
+            db_sess = SessionModel(
+                id=uuid4(),
+                user_id=user_id,
+                token=access_token,
+                expires_at=access_expires,
+            )
+            db.add(db_sess)
+            db.commit()
+            db.refresh(db_sess)
+            return db_sess
 
     def create_alert(
         self,
