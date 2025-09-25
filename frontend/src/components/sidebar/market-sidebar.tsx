@@ -4,20 +4,18 @@ import useSWR from "swr";
 import { useMemo } from "react";
 import { LineChart, Coins, Wallet } from "lucide-react";
 
-import {
-  MarketEntry,
-  UserProfile,
-  getMarkets
-} from "@/lib/api";
+import { MarketQuote, UserProfile, getMarketQuote } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 
-const icons = {
+type MarketType = "crypto" | "stock" | "forex";
+
+const icons: Record<MarketType, typeof Coins> = {
   crypto: Coins,
-  stocks: LineChart,
+  stock: LineChart,
   forex: Wallet
 };
 
@@ -27,13 +25,58 @@ interface MarketSidebarProps {
   onLogout: () => void;
 }
 
+interface MarketWatchConfig {
+  id: string;
+  type: MarketType;
+  requestSymbol: string;
+  displaySymbol: string;
+  label: string;
+}
+
+const MARKET_WATCHLIST: MarketWatchConfig[] = [
+  {
+    id: "btc",
+    type: "crypto",
+    requestSymbol: "BTC",
+    displaySymbol: "BTCUSDT",
+    label: "Bitcoin"
+  },
+  {
+    id: "aapl",
+    type: "stock",
+    requestSymbol: "AAPL",
+    displaySymbol: "AAPL",
+    label: "Apple Inc."
+  },
+  {
+    id: "eurusd",
+    type: "forex",
+    requestSymbol: "EURUSD",
+    displaySymbol: "EUR/USD",
+    label: "Euro vs Dólar"
+  }
+];
+
 export function MarketSidebar({ token, user, onLogout }: MarketSidebarProps) {
-  const marketTypes: Array<{ key: "crypto" | "stocks" | "forex"; label: string }> = useMemo(
-    () => [
-      { key: "crypto", label: "Cripto" },
-      { key: "stocks", label: "Acciones" },
-      { key: "forex", label: "Forex" }
-    ],
+  const marketGroups = useMemo(
+    () =>
+      [
+        {
+          key: "crypto" as MarketType,
+          label: "Cripto",
+          items: MARKET_WATCHLIST.filter((item) => item.type === "crypto")
+        },
+        {
+          key: "stock" as MarketType,
+          label: "Acciones",
+          items: MARKET_WATCHLIST.filter((item) => item.type === "stock")
+        },
+        {
+          key: "forex" as MarketType,
+          label: "Forex",
+          items: MARKET_WATCHLIST.filter((item) => item.type === "forex")
+        }
+      ],
     []
   );
 
@@ -47,8 +90,8 @@ export function MarketSidebar({ token, user, onLogout }: MarketSidebarProps) {
       </Card>
       <ScrollArea className="flex-1">
         <div className="space-y-4 pr-2">
-          {marketTypes.map((market) => (
-            <MarketSection key={market.key} type={market.key} label={market.label} token={token} />
+          {marketGroups.map((group) => (
+            <MarketSection key={group.key} label={group.label} items={group.items} token={token} />
           ))}
         </div>
       </ScrollArea>
@@ -61,20 +104,13 @@ export function MarketSidebar({ token, user, onLogout }: MarketSidebarProps) {
 }
 
 interface MarketSectionProps {
-  type: "crypto" | "stocks" | "forex";
   label: string;
+  items: MarketWatchConfig[];
   token?: string;
 }
 
-function MarketSection({ type, label, token }: MarketSectionProps) {
-  const { data, error, isLoading } = useSWR<MarketEntry[]>(
-    ["markets", type, token],
-    () => getMarkets(type, token),
-    {
-      refreshInterval: 1000 * 30
-    }
-  );
-
+function MarketSection({ label, items, token }: MarketSectionProps) {
+  const type = items[0]?.type ?? "crypto";
   const Icon = icons[type];
 
   return (
@@ -87,36 +123,92 @@ function MarketSection({ type, label, token }: MarketSectionProps) {
           </div>
           <Badge variant="secondary">Tiempo real</Badge>
         </div>
-        {isLoading && <p className="text-sm text-muted-foreground">Cargando datos...</p>}
-        {error && (
-          <p className="text-sm text-destructive">
-            Error al cargar datos: {error.message}
-          </p>
-        )}
         <div className="space-y-2">
-          {data?.slice(0, 5).map((item) => (
-            <div key={item.symbol} className="flex items-center justify-between rounded-md bg-muted/40 p-2">
-              <div>
-                <p className="text-sm font-medium">{item.symbol}</p>
-                {item.change_24h !== undefined && (
-                  <p
-                    className={`text-xs ${item.change_24h >= 0 ? "text-emerald-500" : "text-red-500"}`}
-                  >
-                    {item.change_24h >= 0 ? "+" : ""}
-                    {item.change_24h?.toFixed?.(2) ?? item.change_24h}%
-                  </p>
-                )}
-              </div>
-              <p className="text-sm font-semibold">${item.price?.toLocaleString?.() ?? item.price}</p>
-            </div>
+          {items.map((item) => (
+            <MarketRow key={item.id} config={item} token={token} />
           ))}
-          {!isLoading && !error && !data?.length && (
-            <p className="text-sm text-muted-foreground">
-              No hay datos disponibles por el momento.
-            </p>
-          )}
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+interface MarketRowProps {
+  config: MarketWatchConfig;
+  token?: string;
+}
+
+function MarketRow({ config, token }: MarketRowProps) {
+  const { data, error, isLoading } = useSWR<MarketQuote>(
+    ["market", config.type, config.requestSymbol, token],
+    () => getMarketQuote(config.type, config.requestSymbol, token),
+    {
+      refreshInterval: 1000 * 30,
+      revalidateOnFocus: false
+    }
+  );
+
+  const dataType = (data?.type as MarketType | undefined) ?? config.type;
+
+  const priceText = data?.price
+    ? new Intl.NumberFormat("es-ES", {
+        minimumFractionDigits: dataType === "forex" ? 4 : 2,
+        maximumFractionDigits: dataType === "forex" ? 5 : 2
+      }).format(data.price)
+    : "--";
+
+  const change = typeof data?.raw_change === "number" ? data.raw_change : null;
+  const changeText = change !== null ? `${change > 0 ? "+" : ""}${change.toFixed(2)}%` : "--";
+  const changeClass = change === null ? "text-muted-foreground" : change >= 0 ? "text-emerald-500" : "text-red-500";
+
+  return (
+    <div className="flex flex-col gap-2 rounded-md bg-muted/40 p-2">
+      <div className="flex items-center justify-between">
+        <div>
+          <p className="text-sm font-semibold">{config.displaySymbol}</p>
+          <p className="text-xs text-muted-foreground">{config.label}</p>
+        </div>
+        <div className="text-right">
+          <p className="text-sm font-semibold">{priceText}</p>
+          <p className={`text-xs ${changeClass}`}>{changeText}</p>
+        </div>
+      </div>
+      <div className="flex items-center justify-between text-xs text-muted-foreground">
+        {error ? <span>Error</span> : isLoading ? <span>Actualizando...</span> : <span>{data?.source ?? ""}</span>}
+        <Sparkline change={change ?? 0} positive={change !== null ? change >= 0 : undefined} loading={isLoading} />
+      </div>
+    </div>
+  );
+}
+
+interface SparklineProps {
+  change: number;
+  positive?: boolean;
+  loading?: boolean;
+}
+
+function Sparkline({ change, positive, loading }: SparklineProps) {
+  if (loading) {
+    return <span className="italic">...</span>;
+  }
+
+  const clamped = Number.isFinite(change) ? Math.max(Math.min(change, 15), -15) : 0;
+  const baseline = 16;
+  const slope = clamped * 0.6;
+  const mid = baseline - slope / 2;
+  const end = baseline - slope;
+  const color = positive === undefined ? "currentColor" : positive ? "#10b981" : "#ef4444";
+
+  return (
+    <svg viewBox="0 0 100 32" className="h-6 w-16">
+      <polyline
+        fill="none"
+        stroke={color}
+        strokeWidth={2}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        points={`0,${baseline} 50,${mid.toFixed(2)} 100,${end.toFixed(2)}`}
+      />
+    </svg>
   );
 }

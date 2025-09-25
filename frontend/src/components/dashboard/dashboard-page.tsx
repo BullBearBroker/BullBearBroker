@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
+import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/components/providers/auth-provider";
 import { ChatPanel } from "@/components/chat/chat-panel";
@@ -14,8 +14,15 @@ import { Button } from "@/components/ui/button";
 
 export function DashboardPage() {
   const { user, loading, accessToken, logout } = useAuth();
+  const router = useRouter();
 
   const sidebarToken = useMemo(() => accessToken ?? undefined, [accessToken]);
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace("/login");
+    }
+  }, [loading, router, user]);
 
   if (loading) {
     return (
@@ -27,24 +34,8 @@ export function DashboardPage() {
 
   if (!user) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background p-4">
-        <Card className="max-w-md w-full">
-          <CardContent className="space-y-4 pt-6">
-            <h2 className="text-2xl font-semibold">Acceso requerido</h2>
-            <p className="text-muted-foreground">
-              Inicia sesión o regístrate para acceder al panel de mercado inteligente de
-              BullBearBroker.
-            </p>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Button asChild>
-                <Link href="/login">Iniciar sesión</Link>
-              </Button>
-              <Button asChild variant="secondary">
-                <Link href="/register">Crear cuenta</Link>
-              </Button>
-            </div>
-          </CardContent>
-        </Card>
+      <div className="flex min-h-screen items-center justify-center">
+        <p className="text-muted-foreground">Redirigiendo al acceso...</p>
       </div>
     );
   }
