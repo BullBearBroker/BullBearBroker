@@ -43,9 +43,10 @@ function persistTokens(tokens: Pick<AuthContextValue, "accessToken" | "refreshTo
     return;
   }
   const { accessToken, refreshToken } = tokens;
+  const secure = window.location.protocol === "https:";
   if (accessToken) {
     Cookies.set(ACCESS_TOKEN_KEY, accessToken, {
-      secure: true,
+      secure,
       sameSite: "strict"
     });
     localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
@@ -56,7 +57,7 @@ function persistTokens(tokens: Pick<AuthContextValue, "accessToken" | "refreshTo
 
   if (refreshToken) {
     Cookies.set(REFRESH_TOKEN_KEY, refreshToken, {
-      secure: true,
+      secure,
       sameSite: "strict"
     });
     localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
@@ -182,6 +183,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
       } catch (error) {
         console.error("Session invalid", error);
         if (!cancelled) {
+          try {
+            if (refreshToken) {
+              await refreshTokens();
+              return;
+            }
+          } catch (refreshError) {
+            console.error("Unable to refresh after session error", refreshError);
+          }
           clearTokens();
           setUser(null);
         }
@@ -195,7 +204,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
     return () => {
       cancelled = true;
     };
-  }, [accessToken, clearTokens]);
+  }, [accessToken, clearTokens, refreshToken, refreshTokens]);
 
   useEffect(() => {
     if (!refreshToken) return;

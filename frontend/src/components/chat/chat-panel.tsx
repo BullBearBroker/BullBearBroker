@@ -35,17 +35,38 @@ export function ChatPanel({ token }: ChatPanelProps) {
     setError(null);
     const userMessage: MessagePayload = { role: "user", content: input.trim() };
     const pendingConversation = [...messages, userMessage];
+    const scrollToEnd = () => {
+      endRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+
     setMessages(pendingConversation);
     setInput("");
     setLoading(true);
+    scrollToEnd();
     try {
-      const response = await sendChatMessage(pendingConversation, token);
+      let streamed = false;
+      let lastChunk = "";
+      const response = await sendChatMessage(pendingConversation, token, (partial) => {
+        streamed = true;
+        lastChunk = partial;
+        setMessages(() => [
+          ...pendingConversation,
+          { role: "assistant", content: partial }
+        ]);
+        scrollToEnd();
+      });
+
       if (response.messages?.length) {
         setMessages(response.messages);
+      } else if (streamed) {
+        setMessages([
+          ...pendingConversation,
+          { role: "assistant", content: lastChunk }
+        ]);
       } else {
         setMessages(pendingConversation);
       }
-      endRef.current?.scrollIntoView({ behavior: "smooth" });
+      scrollToEnd();
     } catch (err) {
       console.error(err);
       setError(
@@ -53,6 +74,7 @@ export function ChatPanel({ token }: ChatPanelProps) {
           ? err.message
           : "No se pudo enviar el mensaje. Inténtalo de nuevo."
       );
+      setMessages(pendingConversation);
     } finally {
       setLoading(false);
     }

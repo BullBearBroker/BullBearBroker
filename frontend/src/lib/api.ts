@@ -139,18 +139,85 @@ export function getMarkets(type: "crypto" | "stocks" | "forex", token?: string) 
   return request<MarketEntry[]>(`/api/markets/${type}`, { method: "GET" }, token);
 }
 
-export function sendChatMessage(
+export async function sendChatMessage(
   messages: MessagePayload[],
-  token?: string
-) {
-  return request<ChatResponse>(
-    "/api/ai",
-    {
-      method: "POST",
-      body: JSON.stringify({ messages })
-    },
-    token
-  );
+  token?: string,
+  onStreamChunk?: (partial: string) => void
+): Promise<ChatResponse> {
+  const headers = new Headers();
+  headers.set("Content-Type", "application/json");
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const response = await fetch(`${API_BASE_URL}/api/ai`, {
+    method: "POST",
+    body: JSON.stringify({ messages }),
+    headers,
+    credentials: "include"
+  });
+
+  if (!response.ok) {
+    const message = await safeReadError(response);
+    throw new Error(message || `Request failed with status ${response.status}`);
+  }
+
+  const reader = onStreamChunk ? response.body?.getReader?.() : null;
+
+  if (reader) {
+    const decoder = new TextDecoder();
+    let aggregated = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      aggregated += decoder.decode(value, { stream: true });
+      const partial = sanitizeStreamText(aggregated);
+      if (partial.trim()) {
+        onStreamChunk?.(partial);
+      }
+    }
+
+    aggregated += decoder.decode();
+    const finalText = sanitizeStreamText(aggregated).trim();
+    if (!finalText) {
+      return { messages } satisfies ChatResponse;
+    }
+
+    try {
+      return JSON.parse(finalText) as ChatResponse;
+    } catch {
+      return {
+        messages: [
+          ...messages,
+          {
+            role: "assistant",
+            content: finalText
+          }
+        ]
+      } satisfies ChatResponse;
+    }
+  }
+
+  const text = await response.text();
+  if (!text) {
+    return { messages } satisfies ChatResponse;
+  }
+
+  try {
+    return JSON.parse(text) as ChatResponse;
+  } catch {
+    const cleaned = sanitizeStreamText(text).trim();
+    return {
+      messages: [
+        ...messages,
+        {
+          role: "assistant",
+          content: cleaned || text
+        }
+      ]
+    } satisfies ChatResponse;
+  }
 }
 
 export function listAlerts(token: string) {
@@ -195,4 +262,17 @@ export function deleteAlert(token: string, id: string | number) {
 
 export function listNews(token?: string) {
   return request<NewsItem[]>("/api/news", { method: "GET" }, token ?? undefined);
+}
+
+function sanitizeStreamText(raw: string) {
+  if (!raw) return "";
+  if (!raw.includes("data:")) {
+    return raw;
+  }
+
+  return raw
+    .split(/\r?\n/)
+    .filter((line) => line.trim() && !line.startsWith("event:"))
+    .map((line) => (line.startsWith("data:") ? line.replace(/^data:\s*/, "") : line))
+    .join("\n");
 }
