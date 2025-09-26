@@ -19,6 +19,14 @@ if DATABASE_URL.startswith("sqlite"):
 engine = create_engine(DATABASE_URL, future=True, echo=False, connect_args=connect_args)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, future=True)
 
+if os.getenv("BULLBEAR_SKIP_AUTOCREATE", "0") != "1":
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as exc:  # pragma: no cover - logging manual para depurar entornos sin DB
+        import logging
+
+        logging.getLogger(__name__).error("No se pudieron crear las tablas automáticamente: %s", exc)
+
 
 def get_db() -> Generator:
     db = SessionLocal()

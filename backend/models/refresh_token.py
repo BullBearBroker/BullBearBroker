@@ -6,7 +6,7 @@ from sqlalchemy import Column, DateTime, ForeignKey, String, func
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import relationship
 
-from backend.database import Base
+from backend.models.base import Base
 
 
 class RefreshToken(Base):
