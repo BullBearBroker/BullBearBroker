@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable, Optional, Tuple
 from uuid import UUID, uuid4
 
+import logging
+import os
 import jwt
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -109,6 +111,25 @@ class UserService:
             )
             session.add(user)       # ✅ se añade a la sesión
             session.flush()         # ✅ se asegura de generar el ID
+            return self._user_with_relationships(session, user)
+
+    def ensure_user(self, email: str, password: str) -> User:
+        """Garantiza que exista un usuario con las credenciales indicadas."""
+
+        hashed_password = password_context.hash(password)
+        with self._session_scope() as session:
+            user = (
+                session.query(User)
+                .options(selectinload(User.alerts), selectinload(User.sessions))
+                .filter(User.email == email)
+                .first()
+            )
+            if user:
+                return self._user_with_relationships(session, user)
+
+            user = User(email=email, password_hash=hashed_password)
+            session.add(user)
+            session.flush()
             return self._user_with_relationships(session, user)
 
     def get_user_by_email(self, email: str) -> Optional[User]:
@@ -462,3 +483,11 @@ class UserService:
 
 
 user_service = UserService()
+
+try:
+    default_email = os.getenv("BULLBEAR_DEFAULT_USER", "test@bullbear.ai")
+    default_password = os.getenv("BULLBEAR_DEFAULT_PASSWORD", "Test1234!")
+    user_service.ensure_user(default_email, default_password)
+    logging.getLogger(__name__).info("Usuario por defecto disponible (%s)", default_email)
+except Exception as exc:  # pragma: no cover - útil en despliegues sin DB
+    logging.getLogger(__name__).warning("No se pudo garantizar usuario por defecto: %s", exc)

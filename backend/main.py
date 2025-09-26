@@ -34,6 +34,20 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # pragma: no cover - redis opcional en tests
         logger.warning(f"FastAPILimiter no inicializado: {exc}")
 
+    try:
+        from backend.database import Base, engine
+        from backend.services.user_service import user_service
+
+        Base.metadata.create_all(bind=engine)
+        logger.info("Tablas de base de datos verificadas/creadas correctamente")
+
+        default_email = os.getenv("BULLBEAR_DEFAULT_USER", "test@bullbear.ai")
+        default_password = os.getenv("BULLBEAR_DEFAULT_PASSWORD", "Test1234!")
+        user_service.ensure_user(default_email, default_password)
+        logger.info("Usuario por defecto verificado (%s)", default_email)
+    except Exception as exc:  # pragma: no cover - evita fallas en despliegues sin DB
+        logger.error("Error creando tablas en la base de datos: %s", exc)
+
     yield  # ⬅️ Aquí FastAPI empieza a servir requests
 
     # 🔹 Shutdown

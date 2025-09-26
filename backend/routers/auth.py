@@ -8,8 +8,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 from typing import Dict
+import re
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, field_validator
 
 from backend.core.security import create_access_token, create_refresh_token, decode_refresh
 from backend.database import get_db
@@ -27,14 +28,44 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 security = HTTPBearer()
 
 
+EMAIL_REGEX = re.compile(r"^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$", re.IGNORECASE)
+
+
+def _validate_email(value: str) -> str:
+    """Valida direcciones de correo usando email-validator si está disponible."""
+
+    try:
+        from email_validator import EmailNotValidError, validate_email  # type: ignore
+    except Exception:  # pragma: no cover - dependencia opcional ausente en tests
+        if not EMAIL_REGEX.fullmatch(value):
+            raise ValueError("Correo electrónico inválido")
+        return value.lower()
+
+    try:
+        result = validate_email(value, check_deliverability=False)
+    except EmailNotValidError as exc:
+        raise ValueError(str(exc)) from exc
+    return result.normalized
+
+
 class UserCreate(BaseModel):
-    email: EmailStr
+    email: str
     password: str
+
+    @field_validator("email")
+    @classmethod
+    def _validate_email_field(cls, value: str) -> str:
+        return _validate_email(value)
 
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    email: str
     password: str
+
+    @field_validator("email")
+    @classmethod
+    def _validate_email_field(cls, value: str) -> str:
+        return _validate_email(value)
 
 
 class LogoutRequest(BaseModel):
@@ -81,7 +112,7 @@ async def login(credentials: UserLogin, db: Session = Depends(get_db)) -> TokenP
     # ⬇️ Persistimos el refresh token siempre con nuestro servicio
     user_service.store_refresh_token(user.id, refresh_token)
 
-    access_token = create_access_token(sub=sub)
+    access_token = create_access_token(sub=sub, extra={"jti": str(uuid4())})
     access_expires = datetime.utcnow() + timedelta(minutes=15)
     user_service.register_external_session(user.id, access_token, access_expires)
 
@@ -133,7 +164,7 @@ def refresh_token(req: RefreshRequest, db: Session = Depends(get_db)) -> TokenPa
     except InvalidTokenError as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
-    access_token = create_access_token(sub=str(user.id))
+    access_token = create_access_token(sub=str(user.id), extra={"jti": str(uuid4())})
     access_expires = datetime.utcnow() + timedelta(minutes=15)
     user_service.register_external_session(user.id, access_token, access_expires)
     return TokenPair(
