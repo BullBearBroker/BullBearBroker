@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, Iterable, Optional, Sequence
+from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 
 import aiohttp
 from aiohttp import ClientError, ClientTimeout, ContentTypeError
@@ -37,6 +37,12 @@ class ForexService:
                 "callable": self._fetch_twelvedata,
                 "requires_key": True,
                 "api_key": Config.TWELVEDATA_API_KEY,
+            },
+            {
+                "name": "Alpha Vantage",
+                "callable": self._fetch_alpha_vantage,
+                "requires_key": True,
+                "api_key": Config.ALPHA_VANTAGE_API_KEY,
             },
             {
                 "name": "Yahoo Finance",
@@ -157,6 +163,33 @@ class ForexService:
         change_value = float(change) if change is not None else None
         return {"price": price, "change": change_value}
 
+    async def _fetch_alpha_vantage(
+        self, session: aiohttp.ClientSession, symbol: str
+    ) -> Dict[str, Any]:
+        if not Config.ALPHA_VANTAGE_API_KEY:
+            raise KeyError("ALPHA_VANTAGE_API_KEY no configurada")
+
+        base, quote = self._split_symbol(symbol)
+        url = "https://www.alphavantage.co/query"
+        params = {
+            "function": "CURRENCY_EXCHANGE_RATE",
+            "from_currency": base,
+            "to_currency": quote,
+            "apikey": Config.ALPHA_VANTAGE_API_KEY,
+        }
+        data = await self._fetch_json(
+            session, url, params=params, source_name="Alpha Vantage"
+        )
+
+        info = data.get("Realtime Currency Exchange Rate")
+        if not isinstance(info, dict):
+            raise KeyError("Respuesta inválida de Alpha Vantage")
+
+        price = float(info["5. Exchange Rate"])
+        change = info.get("9. Ask Price") or info.get("8. Bid Price")
+        change_value = float(change) if change is not None else None
+        return {"price": price, "change": change_value}
+
     @staticmethod
     def _normalize_symbol(symbol: str) -> str:
         symbol = symbol.strip().upper().replace("-", "/")
@@ -171,6 +204,16 @@ class ForexService:
             return f"{base}{quote}=X"
         # Símbolos de materias primas suelen coincidir con Yahoo
         return symbol
+
+    @staticmethod
+    def _split_symbol(symbol: str) -> Tuple[str, str]:
+        normalized = ForexService._normalize_symbol(symbol)
+        if "/" in normalized:
+            base, quote = normalized.split("/", maxsplit=1)
+            return base, quote
+        if len(normalized) == 6:
+            return normalized[:3], normalized[3:]
+        raise ValueError(f"Símbolo FX inválido: {symbol}")
 
 
 forex_service = ForexService()

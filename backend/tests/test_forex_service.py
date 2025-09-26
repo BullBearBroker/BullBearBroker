@@ -9,7 +9,7 @@ if BACKEND_DIR not in sys.path:
 
 import pytest
 
-from services.forex_service import ForexService
+from backend.services.forex_service import ForexService
 from backend.utils.config import Config
 
 
@@ -34,9 +34,11 @@ class DummySession:
 
 @pytest.fixture(autouse=True)
 def restore_config():
-    original_key = Config.TWELVEDATA_API_KEY
+    original_td = Config.TWELVEDATA_API_KEY
+    original_av = Config.ALPHA_VANTAGE_API_KEY
     yield
-    Config.TWELVEDATA_API_KEY = original_key
+    Config.TWELVEDATA_API_KEY = original_td
+    Config.ALPHA_VANTAGE_API_KEY = original_av
 
 
 def make_service(monkeypatch, return_map):
@@ -57,11 +59,13 @@ def make_service(monkeypatch, return_map):
 
 def test_forex_service_prefers_twelvedata(monkeypatch):
     Config.TWELVEDATA_API_KEY = "test"
+    Config.ALPHA_VANTAGE_API_KEY = "alpha"
     service = make_service(
         monkeypatch,
         {
             "Twelve Data": {"price": 1.2345, "change": 0.5},
             "Yahoo Finance": {"price": 1.0, "change": 0.1},
+            "Alpha Vantage": {"price": 0.5, "change": 0.05},
         },
     )
 
@@ -76,6 +80,7 @@ def test_forex_service_prefers_twelvedata(monkeypatch):
 
 def test_forex_service_fallback_to_yahoo(monkeypatch):
     Config.TWELVEDATA_API_KEY = None
+    Config.ALPHA_VANTAGE_API_KEY = None
     service = make_service(
         monkeypatch,
         {
@@ -95,6 +100,7 @@ def test_forex_service_fallback_to_yahoo(monkeypatch):
 
 def test_forex_service_uses_cache(monkeypatch):
     Config.TWELVEDATA_API_KEY = "test"
+    Config.ALPHA_VANTAGE_API_KEY = "alpha"
     calls = {"count": 0}
 
     async def fake_call(self, handler, session, symbol, source_name):  # noqa: ANN001
@@ -112,3 +118,24 @@ def test_forex_service_uses_cache(monkeypatch):
 
     assert first == second
     assert calls["count"] == 1
+
+
+def test_forex_service_uses_alpha_vantage(monkeypatch):
+    Config.TWELVEDATA_API_KEY = None
+    Config.ALPHA_VANTAGE_API_KEY = "alpha"
+    service = make_service(
+        monkeypatch,
+        {
+            "Twelve Data": None,
+            "Alpha Vantage": {"price": 1.5, "change": 0.2},
+            "Yahoo Finance": None,
+        },
+    )
+
+    result = asyncio.run(service.get_quote("usdbrl"))
+    assert result == {
+        "symbol": "USD/BRL",
+        "price": 1.5,
+        "change": 0.2,
+        "source": "Alpha Vantage",
+    }

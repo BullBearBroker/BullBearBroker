@@ -44,27 +44,9 @@ export function ChatPanel({ token }: ChatPanelProps) {
     setLoading(true);
     scrollToEnd();
     try {
-      let streamed = false;
-      let lastChunk = "";
-      const response = await sendChatMessage(pendingConversation, token, (partial) => {
-        streamed = true;
-        lastChunk = partial;
-        setMessages(() => [
-          ...pendingConversation,
-          { role: "assistant", content: partial }
-        ]);
-        scrollToEnd();
-      });
-
+      const response = await sendChatMessage(pendingConversation, token);
       if (response.messages?.length) {
         setMessages(response.messages);
-      } else if (streamed) {
-        setMessages([
-          ...pendingConversation,
-          { role: "assistant", content: lastChunk }
-        ]);
-      } else {
-        setMessages(pendingConversation);
       }
       scrollToEnd();
     } catch (err) {

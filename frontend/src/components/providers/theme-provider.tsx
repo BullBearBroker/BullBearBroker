@@ -1,11 +1,16 @@
 "use client";
 
 import { ThemeProvider as NextThemesProvider } from "next-themes";
-import type { ThemeProviderProps } from "next-themes/dist/types";
+import type { ThemeProviderProps } from "next-themes"; // ✅ corregido
 
 export function ThemeProvider({ children, ...props }: ThemeProviderProps) {
   return (
-    <NextThemesProvider defaultTheme="system" attribute="class" enableSystem {...props}>
+    <NextThemesProvider
+      defaultTheme="system"
+      attribute="class"
+      enableSystem
+      {...props}
+    >
       {children}
     </NextThemesProvider>
   );

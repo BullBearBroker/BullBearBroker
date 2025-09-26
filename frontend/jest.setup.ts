@@ -1,25 +1,20 @@
-import "@testing-library/jest-dom";
+import type { Config } from "jest";
 
-const mockRouter: {
-  push: jest.Mock;
-  replace: jest.Mock;
-  refresh: jest.Mock;
-  prefetch: jest.Mock;
-  back: jest.Mock;
-  forward: jest.Mock;
-} = {
-  push: jest.fn(),
-  replace: jest.fn(),
-  refresh: jest.fn(),
-  prefetch: jest.fn(),
-  back: jest.fn(),
-  forward: jest.fn()
+const config: Config = {
+  testEnvironment: "jsdom",
+  setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
+  moduleNameMapper: {
+    "^@/(.*)$": "<rootDir>/src/$1",
+    "\\.(css|less|scss|sass)$": "identity-obj-proxy"
+  },
+  transform: {
+    "^.+\\.(ts|tsx)$": "ts-jest"
+  },
+  testPathIgnorePatterns: ["/node_modules/", "/.next/"],
+  collectCoverageFrom: [
+    "src/**/*.{ts,tsx}",
+    "!src/**/*.d.ts"
+  ]
 };
 
-jest.mock("next/navigation", () => ({
-  useRouter: () => mockRouter
-}));
-
-beforeEach(() => {
-  Object.values(mockRouter).forEach((fn) => fn.mockClear());
-});
+export default config;

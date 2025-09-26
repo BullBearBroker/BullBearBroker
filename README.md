@@ -34,7 +34,7 @@ NEWSAPI_API_KEY=
 CRYPTOPANIC_API_KEY=
 FINFEED_API_KEY=
 MEDIASTACK_API_KEY=
-HUGGINGFACE_API_TOKEN=
+HUGGINGFACE_API_KEY=
 HUGGINGFACE_SENTIMENT_MODEL="distilbert-base-uncased-finetuned-sst-2-english"
 MISTRAL_API_KEY=
 TELEGRAM_BOT_TOKEN=
@@ -54,7 +54,7 @@ Si `BULLBEARBROKER_SECRET_KEY` no está definida, el backend generará una clave
 - **Backend y alert-worker**: requieren `BULLBEARBROKER_SECRET_KEY`, `DATABASE_URL` y `REDIS_URL` para operar.
 - **Mercados**: `ALPHA_VANTAGE_API_KEY`, `TWELVEDATA_API_KEY`, `COINGECKO_API_KEY` y `COINMARKETCAP_API_KEY` habilitan los distintos proveedores de precios.
 - **Noticias**: `NEWSAPI_API_KEY`, `CRYPTOPANIC_API_KEY`, `FINFEED_API_KEY` y `MEDIASTACK_API_KEY` enriquecen los listados.
-- **IA y notificaciones**: `HUGGINGFACE_API_TOKEN`, `HUGGINGFACE_SENTIMENT_MODEL`, `MISTRAL_API_KEY`, `TELEGRAM_BOT_TOKEN` y `TELEGRAM_DEFAULT_CHAT_ID` son usados por los servicios de sentimiento, generación y alertas.
+- **IA y notificaciones**: `HUGGINGFACE_API_KEY`, `HUGGINGFACE_SENTIMENT_MODEL`, `MISTRAL_API_KEY`, `TELEGRAM_BOT_TOKEN` y `TELEGRAM_DEFAULT_CHAT_ID` son usados por los servicios de sentimiento, generación y alertas.
 
 ### Ejecución con Docker Compose
 
