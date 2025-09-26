@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import List, Optional, Tuple
+from typing import Awaitable, Dict, List, Optional, Tuple
 
 # APScheduler es opcional
 try:
@@ -26,6 +26,11 @@ except ImportError:
 
 from .forex_service import forex_service
 from .market_service import market_service
+
+try:
+    import aiohttp
+except Exception:  # pragma: no cover - aiohttp es dependencia opcional en runtime
+    aiohttp = None  # type: ignore[assignment]
 
 try:
     from telegram import Bot
@@ -63,7 +68,12 @@ class AlertService:
         self._interval = interval_seconds
         self._websocket_manager = None
         self.is_running = False
-        self._telegram_bot = Bot(telegram_bot_token) if telegram_bot_token and Bot else None
+        self._telegram_token = telegram_bot_token or Config.TELEGRAM_BOT_TOKEN
+        self._telegram_bot = (
+            Bot(self._telegram_token) if self._telegram_token and Bot else None
+        )
+        self._discord_token = Config.DISCORD_BOT_TOKEN
+        self._discord_application_id = Config.DISCORD_APPLICATION_ID
 
     def register_websocket_manager(self, manager) -> None:
         """Permite enviar notificaciones en tiempo real mediante websockets."""
@@ -170,15 +180,118 @@ class AlertService:
         await self._notify_telegram(alert, message)
 
     async def _notify_telegram(self, alert: Alert, message: str) -> None:
-        if not self._telegram_bot:
-            return
         chat_id = Config.TELEGRAM_DEFAULT_CHAT_ID
         if not chat_id:
             return
         try:
-            await self._telegram_bot.send_message(chat_id=chat_id, text=message)
+            await self._send_telegram_message(chat_id, message)
         except Exception as exc:
             LOGGER.warning("AlertService: error enviando mensaje a Telegram: %s", exc)
+
+    async def send_external_alert(
+        self,
+        *,
+        message: str,
+        telegram_chat_id: Optional[str] = None,
+        discord_channel_id: Optional[str] = None,
+    ) -> Dict[str, Dict[str, str]]:
+        """Send an arbitrary alert message through configured providers."""
+
+        targets = []
+        if telegram_chat_id:
+            targets.append(("telegram", telegram_chat_id))
+        if discord_channel_id:
+            targets.append(("discord", discord_channel_id))
+
+        if not targets:
+            raise ValueError("No notification targets were provided")
+
+        results: Dict[str, Dict[str, str]] = {}
+        deliveries = []
+        for provider, target in targets:
+            if provider == "telegram":
+                deliveries.append(
+                    self._send_with_result(
+                        provider,
+                        target,
+                        self._send_telegram_message(target, message),
+                    )
+                )
+            elif provider == "discord":
+                deliveries.append(
+                    self._send_with_result(
+                        provider,
+                        target,
+                        self._send_discord_message(target, message),
+                    )
+                )
+
+        for provider, target, outcome in await asyncio.gather(*deliveries):
+            results[provider] = {
+                "target": target,
+                "status": "sent" if outcome is None else "error",
+                **({"error": outcome} if outcome else {}),
+            }
+
+        return results
+
+    async def _send_with_result(
+        self,
+        provider: str,
+        target: str,
+        coroutine: Awaitable[None],
+    ) -> Tuple[str, str, Optional[str]]:
+        try:
+            await coroutine
+            return provider, target, None
+        except Exception as exc:  # pragma: no cover - errors surfaced to caller
+            LOGGER.error("AlertService: %s delivery failed: %s", provider, exc)
+            return provider, target, str(exc)
+
+    async def _send_telegram_message(self, chat_id: str, message: str) -> None:
+        token = self._telegram_token
+        if not token:
+            raise RuntimeError("TELEGRAM_BOT_TOKEN no configurado")
+
+        if self._telegram_bot is not None:
+            await self._telegram_bot.send_message(chat_id=chat_id, text=message)
+            return
+
+        if aiohttp is None:
+            raise RuntimeError("aiohttp es requerido para enviar mensajes de Telegram")
+
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        payload = {"chat_id": chat_id, "text": message}
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, timeout=10) as response:
+                if response.status >= 400:
+                    body = await response.text()
+                    raise RuntimeError(
+                        f"Telegram API devolvió estado {response.status}: {body}"
+                    )
+
+    async def _send_discord_message(self, channel_id: str, message: str) -> None:
+        if not self._discord_token:
+            raise RuntimeError("DISCORD_BOT_TOKEN no configurado")
+        if not self._discord_application_id:
+            raise RuntimeError("DISCORD_APPLICATION_ID no configurado")
+        if aiohttp is None:
+            raise RuntimeError("aiohttp es requerido para enviar mensajes de Discord")
+
+        url = f"https://discord.com/api/v10/channels/{channel_id}/messages"
+        headers = {
+            "Authorization": f"Bot {self._discord_token}",
+            "Content-Type": "application/json",
+        }
+        payload = {"content": message}
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=payload, timeout=10) as response:
+                if response.status >= 400:
+                    body = await response.text()
+                    raise RuntimeError(
+                        f"Discord API devolvió estado {response.status}: {body}"
+                    )
 
 
 alert_service = AlertService()

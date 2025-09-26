@@ -39,6 +39,27 @@ async def _get_news(
     return articles
 
 
+@router.get("/latest")
+async def get_latest_news(limit: int = 20) -> Dict[str, Any]:
+    """Aggregate the latest headlines from all providers."""
+
+    try:
+        articles = await news_service.get_latest_news(limit)
+    except Exception as exc:  # pragma: no cover - handled in service logging
+        raise HTTPException(
+            status_code=502,
+            detail=f"Error agregando noticias: {exc}",
+        ) from exc
+
+    if not articles:
+        raise HTTPException(
+            status_code=404,
+            detail="No hay noticias disponibles",
+        )
+
+    return {"articles": articles, "count": len(articles)}
+
+
 @router.get("/crypto")
 async def get_crypto_news(limit: int = 10) -> Dict[str, Any]:
     """Return crypto-related news articles following the configured fallbacks."""

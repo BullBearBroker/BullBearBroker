@@ -9,6 +9,7 @@ import {
   createAlert,
   deleteAlert,
   listAlerts,
+  sendAlertNotification,
   updateAlert
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,12 @@ export function AlertsPanel({ token }: AlertsPanelProps) {
   const [condition, setCondition] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [dispatchMessage, setDispatchMessage] = useState("");
+  const [telegramChatId, setTelegramChatId] = useState("");
+  const [discordChannelId, setDiscordChannelId] = useState("");
+  const [dispatching, setDispatching] = useState(false);
+  const [dispatchFeedback, setDispatchFeedback] = useState<string | null>(null);
+  const [dispatchError, setDispatchError] = useState<string | null>(null);
 
   const handleCreate = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
@@ -101,6 +108,43 @@ export function AlertsPanel({ token }: AlertsPanelProps) {
     [mutate, token]
   );
 
+  const handleSendNotification = useCallback(
+    async (event: React.FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      if (!token) return;
+      if (!dispatchMessage.trim()) {
+        setDispatchError("Escribe un mensaje para enviar la alerta.");
+        return;
+      }
+
+      setDispatchError(null);
+      setDispatchFeedback(null);
+      setDispatching(true);
+      try {
+        const result = await sendAlertNotification(token, {
+          message: dispatchMessage.trim(),
+          telegram_chat_id: telegramChatId.trim() || undefined,
+          discord_channel_id: discordChannelId.trim() || undefined
+        });
+        const summary = Object.entries(result)
+          .map(([channel, payload]) => `${channel}: ${payload.status}`)
+          .join(" | ");
+        setDispatchFeedback(`Notificación enviada (${summary}).`);
+        setDispatchMessage("");
+      } catch (err) {
+        console.error(err);
+        setDispatchError(
+          err instanceof Error
+            ? err.message
+            : "No se pudo enviar la notificación."
+        );
+      } finally {
+        setDispatching(false);
+      }
+    },
+    [discordChannelId, dispatchMessage, telegramChatId, token]
+  );
+
   return (
     <Card className="flex flex-col">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
@@ -128,6 +172,34 @@ export function AlertsPanel({ token }: AlertsPanelProps) {
           <Button type="submit" disabled={!token || submitting} className="w-full">
             <PlusCircle className="mr-2 h-4 w-4" />
             {submitting ? "Creando..." : "Crear alerta"}
+          </Button>
+        </form>
+        <form onSubmit={handleSendNotification} className="space-y-3 rounded-lg border p-3">
+          <p className="text-sm font-medium">Enviar alerta manual</p>
+          <Textarea
+            placeholder="Mensaje para Telegram/Discord"
+            value={dispatchMessage}
+            onChange={(event) => setDispatchMessage(event.target.value)}
+            disabled={!token || dispatching}
+          />
+          <div className="grid gap-2 md:grid-cols-2">
+            <Input
+              placeholder="Chat ID de Telegram (opcional)"
+              value={telegramChatId}
+              onChange={(event) => setTelegramChatId(event.target.value)}
+              disabled={!token || dispatching}
+            />
+            <Input
+              placeholder="Canal de Discord (opcional)"
+              value={discordChannelId}
+              onChange={(event) => setDiscordChannelId(event.target.value)}
+              disabled={!token || dispatching}
+            />
+          </div>
+          {dispatchError && <p className="text-xs text-destructive">{dispatchError}</p>}
+          {dispatchFeedback && <p className="text-xs text-emerald-600">{dispatchFeedback}</p>}
+          <Button type="submit" variant="secondary" disabled={!token || dispatching} className="w-full">
+            {dispatching ? "Enviando..." : "Enviar notificación"}
           </Button>
         </form>
         <div className="space-y-3">

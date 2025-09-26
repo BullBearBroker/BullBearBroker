@@ -67,8 +67,8 @@ class SentimentService:
             return cached
 
         headers = {"Content-Type": "application/json"}
-        if Config.HUGGINGFACE_API_TOKEN:
-            headers["Authorization"] = f"Bearer {Config.HUGGINGFACE_API_TOKEN}"
+        if Config.HUGGINGFACE_API_KEY:
+            headers["Authorization"] = f"Bearer {Config.HUGGINGFACE_API_KEY}"
 
         payload = json.dumps({"inputs": normalized})
         url = f"{Config.HUGGINGFACE_API_URL}/{Config.HUGGINGFACE_SENTIMENT_MODEL}"

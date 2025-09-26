@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Awaitable, Callable, Dict, Optional
+from typing import Awaitable, Callable, Dict, Optional, Tuple
 
 import aiohttp
 
@@ -27,7 +27,7 @@ COINGECKO_MAP = {
 }
 
 
-def normalize_symbol(symbol: str) -> dict:
+def normalize_symbol(symbol: str) -> Dict[str, str]:
     """
     Normaliza un símbolo tipo 'BTCUSDT' en sus variantes
     para distintos proveedores.
@@ -37,10 +37,14 @@ def normalize_symbol(symbol: str) -> dict:
     if symbol.endswith("USDT"):
         base = symbol[:-4]  # BTCUSDT -> BTC
 
+    pair = f"{base}/USD"
+
     return {
         "binance": symbol,  # Binance usa BTCUSDT directamente
         "coinmarketcap": base,  # CoinMarketCap espera BTC
         "coingecko": COINGECKO_MAP.get(base, base.lower()),  # CoinGecko espera 'bitcoin'
+        "twelvedata": pair,
+        "alpha_vantage": base,
     }
 
 
@@ -63,10 +67,21 @@ class CryptoService:
             # 🔹 Normalizamos una sola vez
             normalized = normalize_symbol(symbol)
 
-            providers = (
+            providers: Tuple[Tuple[str, Callable[[str], Awaitable[Optional[float]]]], ...] = (
                 ("CoinGecko", lambda _: self.coingecko(normalized["coingecko"])),
                 ("Binance", lambda _: self.binance(normalized["binance"])),
-                ("CoinMarketCap", lambda _: self.coinmarketcap(normalized["coinmarketcap"])),
+                (
+                    "CoinMarketCap",
+                    lambda _: self.coinmarketcap(normalized["coinmarketcap"]),
+                ),
+                (
+                    "TwelveData",
+                    lambda _: self.twelvedata(normalized["twelvedata"]),
+                ),
+                (
+                    "AlphaVantage",
+                    lambda _: self.alpha_vantage(normalized["alpha_vantage"]),
+                ),
             )
 
             for provider_name, provider in providers:
@@ -119,6 +134,8 @@ class CryptoService:
 
     async def coinmarketcap(self, symbol: str) -> Optional[float]:
         """API Fallback: CoinMarketCap"""
+        if not Config.COINMARKETCAP_API_KEY:
+            raise RuntimeError("COINMARKETCAP_API_KEY is not configured")
         url = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest"
         headers = {"X-CMC_PRO_API_KEY": Config.COINMARKETCAP_API_KEY}
         params = {"symbol": symbol}
@@ -137,6 +154,57 @@ class CryptoService:
             return float(data["data"][symbol_key]["quote"]["USD"]["price"])
         except (KeyError, TypeError, ValueError) as exc:
             LOGGER.error("Respuesta inválida de CoinMarketCap para %s: %s", symbol, exc)
+            return None
+
+    async def twelvedata(self, pair: str) -> Optional[float]:
+        """Support crypto pricing using TwelveData when API key is available."""
+
+        if not Config.TWELVEDATA_API_KEY:
+            raise RuntimeError("TWELVEDATA_API_KEY is not configured")
+
+        url = "https://api.twelvedata.com/price"
+        params = {"symbol": pair, "apikey": Config.TWELVEDATA_API_KEY}
+
+        try:
+            async with aiohttp.ClientSession(timeout=CLIENT_TIMEOUT) as session:
+                data = await self._request_json(url, session=session, params=params)
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
+            LOGGER.error("Error obteniendo precio en TwelveData para %s: %s", pair, exc)
+            return None
+
+        try:
+            return float(data["price"])
+        except (KeyError, TypeError, ValueError) as exc:
+            LOGGER.error("Respuesta inválida de TwelveData para %s: %s", pair, exc)
+            return None
+
+    async def alpha_vantage(self, symbol: str) -> Optional[float]:
+        """Fallback provider using Alpha Vantage currency exchange endpoint."""
+
+        if not Config.ALPHA_VANTAGE_API_KEY:
+            raise RuntimeError("ALPHA_VANTAGE_API_KEY is not configured")
+
+        url = "https://www.alphavantage.co/query"
+        params = {
+            "function": "CURRENCY_EXCHANGE_RATE",
+            "from_currency": symbol,
+            "to_currency": "USD",
+            "apikey": Config.ALPHA_VANTAGE_API_KEY,
+        }
+
+        try:
+            async with aiohttp.ClientSession(timeout=CLIENT_TIMEOUT) as session:
+                data = await self._request_json(url, session=session, params=params)
+        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
+            LOGGER.error("Error obteniendo precio en Alpha Vantage para %s: %s", symbol, exc)
+            return None
+
+        try:
+            info = data["Realtime Currency Exchange Rate"]
+            price_value = info["5. Exchange Rate"]
+            return float(price_value)
+        except (KeyError, TypeError, ValueError) as exc:
+            LOGGER.error("Respuesta inválida de Alpha Vantage para %s: %s", symbol, exc)
             return None
 
     async def _request_json(
