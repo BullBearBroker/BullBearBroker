@@ -61,6 +61,25 @@ class NewsService:
             fallback_query="stock market OR finance",
         )
 
+    async def get_latest_news(self, limit: int = 20) -> List[Dict[str, Any]]:
+        """Aggregate the freshest crypto and finance headlines."""
+
+        limited = max(1, min(limit, 100))
+        tasks = [
+            asyncio.create_task(self.get_crypto_headlines(limited)),
+            asyncio.create_task(self.get_finance_headlines(limited)),
+        ]
+
+        aggregated: List[Dict[str, Any]] = []
+        for result in await asyncio.gather(*tasks, return_exceptions=True):
+            if isinstance(result, Exception):
+                LOGGER.warning("NewsService: error agregando noticias: %s", result)
+                continue
+            aggregated.extend(result)
+
+        aggregated.sort(key=self._sort_key, reverse=True)
+        return aggregated[:limited]
+
     async def _get_articles(
         self,
         *,
@@ -292,6 +311,18 @@ class NewsService:
             "published_at": article.get("published_at"),
             "summary": article.get("summary") or "",
         }
+
+    def _sort_key(self, article: Dict[str, Any]) -> datetime:
+        published = article.get("published_at")
+        if not published:
+            return datetime.min.replace(tzinfo=timezone.utc)
+        try:
+            return datetime.fromisoformat(published.replace("Z", "+00:00"))
+        except ValueError:
+            try:
+                return parsedate_to_datetime(published)
+            except (TypeError, ValueError, IndexError):
+                return datetime.min.replace(tzinfo=timezone.utc)
 
     def _normalize_datetime(self, value: Optional[str]) -> Optional[str]:
         if not value:

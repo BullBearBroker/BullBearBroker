@@ -44,6 +44,7 @@ export interface MessagePayload {
 
 export interface ChatResponse {
   messages: MessagePayload[];
+  provider?: string;
 }
 
 export interface Alert {
@@ -146,13 +147,36 @@ export async function getMarketQuote(
   symbol: string,
   token?: string
 ) {
-  const normalizedSymbol = symbol.trim();
-  const path =
-    type === "forex"
-      ? `/api/markets/forex/${encodeURIComponent(normalizedSymbol)}`
-      : `/api/markets/${type}/${encodeURIComponent(normalizedSymbol)}`;
+  const normalizedSymbol = symbol.trim().toUpperCase();
+  const encodedSymbol = encodeURIComponent(normalizedSymbol);
+  let path: string;
 
-  return request<MarketQuote>(path, { method: "GET" }, token);
+  switch (type) {
+    case "crypto":
+      path = `/api/markets/crypto/prices?symbols=${encodedSymbol}`;
+      break;
+    case "stock":
+      path = `/api/markets/stocks/quotes?symbols=${encodedSymbol}`;
+      break;
+    case "forex":
+      path = `/api/markets/forex/rates?pairs=${encodedSymbol}`;
+      break;
+    default:
+      throw new Error(`Tipo de mercado no soportado: ${type}`);
+  }
+
+  const payload = await request<{ quotes: MarketQuote[]; missing?: string[] }>(
+    path,
+    { method: "GET" },
+    token
+  );
+
+  const firstQuote = payload.quotes?.[0];
+  if (firstQuote) {
+    return firstQuote;
+  }
+
+  throw new Error(`No se encontró información para ${normalizedSymbol}`);
 }
 
 export async function sendChatMessage(
@@ -160,80 +184,36 @@ export async function sendChatMessage(
   token?: string,
   onStreamChunk?: (partial: string) => void
 ): Promise<ChatResponse> {
-  const headers = new Headers();
-  headers.set("Content-Type", "application/json");
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
-
-  const response = await fetch(`${API_BASE_URL}/api/ai`, {
-    method: "POST",
-    body: JSON.stringify({ messages }),
-    headers,
-    credentials: "include"
-  });
-
-  if (!response.ok) {
-    const message = await safeReadError(response);
-    throw new Error(message || `Request failed with status ${response.status}`);
-  }
-
-  const reader = onStreamChunk ? response.body?.getReader?.() : null;
-
-  if (reader) {
-    const decoder = new TextDecoder();
-    let aggregated = "";
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      aggregated += decoder.decode(value, { stream: true });
-      const partial = sanitizeStreamText(aggregated);
-      if (partial.trim()) {
-        onStreamChunk?.(partial);
-      }
+  const body = {
+    prompt: messages[messages.length - 1]?.content ?? "",
+    context: {
+      history: messages.slice(0, -1)
     }
+  };
 
-    aggregated += decoder.decode();
-    const finalText = sanitizeStreamText(aggregated).trim();
-    if (!finalText) {
-      return { messages } satisfies ChatResponse;
-    }
+  const payload = await request<{ response: string; provider?: string }>(
+    "/api/ai/chat",
+    {
+      method: "POST",
+      body: JSON.stringify(body)
+    },
+    token
+  );
 
-    try {
-      return JSON.parse(finalText) as ChatResponse;
-    } catch {
-      return {
-        messages: [
-          ...messages,
-          {
-            role: "assistant",
-            content: finalText
-          }
-        ]
-      } satisfies ChatResponse;
-    }
+  const assistantMessage: MessagePayload = {
+    role: "assistant",
+    content: payload.response
+  };
+
+  const updated = [...messages, assistantMessage];
+  if (payload.response && onStreamChunk) {
+    onStreamChunk(payload.response);
   }
 
-  const text = await response.text();
-  if (!text) {
-    return { messages } satisfies ChatResponse;
-  }
-
-  try {
-    return JSON.parse(text) as ChatResponse;
-  } catch {
-    const cleaned = sanitizeStreamText(text).trim();
-    return {
-      messages: [
-        ...messages,
-        {
-          role: "assistant",
-          content: cleaned || text
-        }
-      ]
-    } satisfies ChatResponse;
-  }
+  return {
+    messages: updated,
+    provider: payload.provider
+  } satisfies ChatResponse;
 }
 
 export function listAlerts(token: string) {
@@ -276,64 +256,33 @@ export function deleteAlert(token: string, id: string | number) {
   );
 }
 
-async function fetchNewsCategory(
-  category: string,
-  token?: string
-): Promise<NewsItem[]> {
-  const payload = await request<{ category: string; articles: NewsItem[] }>(
-    `/api/news/${category}`,
+export function sendAlertNotification(
+  token: string,
+  payload: { message: string; telegram_chat_id?: string; discord_channel_id?: string }
+) {
+  return request<Record<string, { status: string; target: string; error?: string }>>(
+    "/api/alerts/send",
+    {
+      method: "POST",
+      body: JSON.stringify(payload)
+    },
+    token
+  );
+}
+
+export async function listNews(token?: string) {
+  const payload = await request<{ articles: NewsItem[] }>(
+    "/api/news/latest",
     { method: "GET" },
     token
   );
 
-  return payload.articles?.map((article, index) => ({
-    ...article,
-    id: article.id ?? `${category}-${index}`,
-    source: article.source ?? category
-  })) ?? [];
+  return (
+    payload.articles?.map((article, index) => ({
+      ...article,
+      id: article.id ?? `latest-${index}`,
+      source: article.source ?? "Desconocida"
+    })) ?? []
+  );
 }
 
-export async function listNews(token?: string) {
-  try {
-    const direct = await request<NewsItem[] | { articles?: NewsItem[] }>(
-      "/api/news",
-      { method: "GET" },
-      token
-    );
-    if (Array.isArray(direct)) {
-      return direct;
-    }
-    if (direct?.articles) {
-      return direct.articles;
-    }
-  } catch (error) {
-    if (process.env.NODE_ENV !== "production") {
-      console.warn("Falling back to category news endpoints", error);
-    }
-  }
-
-  const categories = ["crypto", "finance"] as const;
-  const results = await Promise.allSettled(categories.map((category) => fetchNewsCategory(category, token)));
-
-  const aggregated: NewsItem[] = [];
-  for (const result of results) {
-    if (result.status === "fulfilled") {
-      aggregated.push(...result.value);
-    }
-  }
-
-  return aggregated;
-}
-
-function sanitizeStreamText(raw: string) {
-  if (!raw) return "";
-  if (!raw.includes("data:")) {
-    return raw;
-  }
-
-  return raw
-    .split(/\r?\n/)
-    .filter((line) => line.trim() && !line.startsWith("event:"))
-    .map((line) => (line.startsWith("data:") ? line.replace(/^data:\s*/, "") : line))
-    .join("\n");
-}

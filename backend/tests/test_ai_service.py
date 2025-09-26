@@ -1,5 +1,7 @@
 from types import MethodType
 
+from types import MethodType
+
 import pytest
 
 from backend.services import ai_service as ai_service_module
@@ -13,7 +15,7 @@ def anyio_backend():
 
 @pytest.fixture(autouse=True)
 def configure_providers(monkeypatch):
-    monkeypatch.setattr(ai_service_module.Config, 'HUGGINGFACE_API_TOKEN', 'test-token', raising=False)
+    monkeypatch.setattr(ai_service_module.Config, 'HUGGINGFACE_API_KEY', 'test-token', raising=False)
     monkeypatch.setattr(ai_service_module.Config, 'HUGGINGFACE_MODEL', 'test/model', raising=False)
     monkeypatch.setattr(ai_service_module.Config, 'HUGGINGFACE_API_URL', 'https://example.com/models', raising=False)
     monkeypatch.setattr(ai_service_module.Config, 'OLLAMA_HOST', 'http://localhost:11434', raising=False)

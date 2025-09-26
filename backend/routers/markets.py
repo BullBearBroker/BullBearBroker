@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+import asyncio
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
 try:  # pragma: no cover - allow running from different entrypoints
     from services.market_service import market_service
@@ -14,6 +15,69 @@ except ImportError:  # pragma: no cover - fallback for package-based imports
     from backend.services.forex_service import forex_service  # type: ignore
 
 router = APIRouter(tags=["Markets"])
+
+
+def _parse_symbols(raw: Sequence[str] | str) -> List[str]:
+    if isinstance(raw, str):
+        items = [item.strip() for item in raw.split(",")]
+    else:
+        items = [item.strip() for item in raw]
+    normalized = [item for item in items if item]
+    if not normalized:
+        raise HTTPException(status_code=400, detail="Se requiere al menos un símbolo")
+    return normalized
+
+
+async def _collect_quotes(
+    symbols: Sequence[str],
+    fetcher,
+) -> Tuple[List[Dict[str, Any]], List[str]]:
+    tasks = [asyncio.create_task(fetcher(symbol)) for symbol in symbols]
+    results: List[Dict[str, Any]] = []
+    missing: List[str] = []
+
+    for symbol, task in zip(symbols, await asyncio.gather(*tasks, return_exceptions=True)):
+        if isinstance(task, Exception):
+            raise HTTPException(
+                status_code=502,
+                detail=f"Error obteniendo datos de {symbol}: {task}",
+            ) from task
+        if task:
+            results.append(task)
+        else:
+            missing.append(symbol.upper())
+
+    if not results:
+        raise HTTPException(status_code=404, detail="No se encontraron cotizaciones")
+
+    return results, missing
+
+
+@router.get("/crypto/prices")
+async def get_crypto_prices(symbols: str = Query(..., description="Lista de símbolos separados por coma")) -> Dict[str, Any]:
+    """Return crypto prices for the provided symbols."""
+
+    parsed = _parse_symbols(symbols)
+    quotes, missing = await _collect_quotes(parsed, market_service.get_crypto_price)
+    return {"quotes": quotes, "missing": missing}
+
+
+@router.get("/stocks/quotes")
+async def get_stock_quotes(symbols: str = Query(..., description="Lista de tickers separados por coma")) -> Dict[str, Any]:
+    """Return stock prices for the provided tickers."""
+
+    parsed = _parse_symbols(symbols)
+    quotes, missing = await _collect_quotes(parsed, market_service.get_stock_price)
+    return {"quotes": quotes, "missing": missing}
+
+
+@router.get("/forex/rates")
+async def get_forex_rates(pairs: str = Query(..., description="Pares FX separados por coma")) -> Dict[str, Any]:
+    """Return forex rates for the given currency pairs."""
+
+    parsed = _parse_symbols(pairs)
+    quotes, missing = await _collect_quotes(parsed, forex_service.get_quote)
+    return {"quotes": quotes, "missing": missing}
 
 
 @router.get("/crypto/{symbol}")

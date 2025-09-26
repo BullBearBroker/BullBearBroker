@@ -33,7 +33,7 @@ class AIService:
             ("mistral", lambda: self.process_with_mistral(message, context))
         ]
 
-        if Config.HUGGINGFACE_API_TOKEN:
+        if Config.HUGGINGFACE_API_KEY:
             providers.append(
                 ("huggingface", lambda: self._call_huggingface(message, context))
             )
@@ -107,7 +107,7 @@ class AIService:
         raise RuntimeError("No providers available")
 
     async def _call_huggingface(self, message: str, context: Dict[str, Any]) -> str:
-        if not Config.HUGGINGFACE_API_TOKEN:
+        if not Config.HUGGINGFACE_API_KEY:
             raise RuntimeError("HuggingFace token not configured")
 
         model = Config.HUGGINGFACE_MODEL
@@ -116,7 +116,7 @@ class AIService:
         prompt = self._build_prompt(message, context)
 
         headers = {
-            "Authorization": f"Bearer {Config.HUGGINGFACE_API_TOKEN}",
+            "Authorization": f"Bearer {Config.HUGGINGFACE_API_KEY}",
             "Content-Type": "application/json"
         }
 

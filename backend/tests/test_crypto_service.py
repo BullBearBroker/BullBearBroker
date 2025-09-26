@@ -17,6 +17,7 @@ from fastapi import HTTPException
 from backend.services.crypto_service import CryptoService
 from backend.services.market_service import market_service
 from backend.routers.markets import get_crypto
+from backend.utils.config import Config
 
 crypto_service = market_service.crypto_service
 
@@ -79,6 +80,7 @@ def test_binance_failure(monkeypatch):
 
 def test_coinmarketcap_invalid_response(monkeypatch):
     service = CryptoService(cache_client=DummyCache())
+    monkeypatch.setattr(Config, "COINMARKETCAP_API_KEY", "fake-key", raising=False)
 
     async def fake_request(*args, **kwargs):
         return {"data": {"ETH": {"quote": {"USD": {}}}}}
@@ -87,6 +89,39 @@ def test_coinmarketcap_invalid_response(monkeypatch):
 
     result = asyncio.run(service.coinmarketcap("BTC"))
     assert result is None
+
+
+def test_twelvedata_success(monkeypatch):
+    service = CryptoService(cache_client=DummyCache())
+    monkeypatch.setattr(Config, "TWELVEDATA_API_KEY", "fake-key", raising=False)
+
+    async def fake_request(self, url, *, session=None, params=None, **kwargs):
+        assert "twelvedata" in url
+        assert params == {"symbol": "BTC/USD", "apikey": "fake-key"}
+        return {"price": "456.78"}
+
+    monkeypatch.setattr(CryptoService, "_request_json", fake_request)
+
+    price = asyncio.run(service.twelvedata("BTC/USD"))
+    assert price == pytest.approx(456.78)
+
+
+def test_alpha_vantage_success(monkeypatch):
+    service = CryptoService(cache_client=DummyCache())
+    monkeypatch.setattr(Config, "ALPHA_VANTAGE_API_KEY", "alpha-key", raising=False)
+
+    async def fake_request(self, url, *, session=None, params=None, **kwargs):
+        assert params["from_currency"] == "BTC"
+        return {
+            "Realtime Currency Exchange Rate": {
+                "5. Exchange Rate": "34567.89",
+            }
+        }
+
+    monkeypatch.setattr(CryptoService, "_request_json", fake_request)
+
+    price = asyncio.run(service.alpha_vantage("BTC"))
+    assert price == pytest.approx(34567.89)
 
 
 def test_get_price_uses_cache(monkeypatch):
