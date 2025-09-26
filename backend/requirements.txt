@@ -28,6 +28,7 @@ redis==5.0.1
 # Modelado y validación
 pydantic==2.9.2
 pydantic-settings==2.5.2
+email-validator==2.2.0      # ✅ Fix requerido por Pydantic para validar emails
 
 # Datos / ML (fase futura de IA y análisis)
 numpy==1.26.4
@@ -41,6 +42,7 @@ kaleido==0.2.1
 
 # Bots / Integraciones
 python-telegram-bot==21.6
+discord.py==2.4.0           # ✅ Para integrar el bot de Discord en el futuro
 
 # Logging
 loguru==0.7.2

@@ -1,4 +1,5 @@
 import pytest
+import uuid
 from httpx import AsyncClient, ASGITransport
 from backend.main import app
 
@@ -20,18 +21,21 @@ async def test_rate_limit_health():
 
 @pytest.mark.asyncio
 async def test_refresh_flow():
+    # Generar email único para cada ejecución del test
+    unique_email = f"refresh_{uuid.uuid4().hex}@test.com"
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         # 1. Registrar usuario nuevo
         register = await client.post(
             "/api/auth/register",
-            json={"email": "refresh@test.com", "password": "refresh123"},
+            json={"email": unique_email, "password": "refresh123"},
         )
         assert register.status_code in (200, 201), register.text
 
         # 2. Login para obtener tokens
         login = await client.post(
             "/api/auth/login",
-            json={"email": "refresh@test.com", "password": "refresh123"},
+            json={"email": unique_email, "password": "refresh123"},
         )
         assert login.status_code == 200, login.text
         tokens = login.json()

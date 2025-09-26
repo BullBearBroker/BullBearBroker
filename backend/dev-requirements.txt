@@ -1,4 +1,3 @@
-# backend/dev-requirements.txt
 # Dependencias SOLO para desarrollo y pruebas
 
 # Testing
@@ -16,3 +15,6 @@ mypy==1.11.2
 # Herramientas adicionales
 httpx==0.27.0        # útil para pruebas de API
 coverage==7.6.1      # control detallado de cobertura
+
+# Extras dev
+email-validator==2.2.0   # ✅ asegurar compatibilidad de tests en dev
