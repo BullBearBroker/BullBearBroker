@@ -9,18 +9,26 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # API keys requeridas por los servicios durante los tests
+      ALPHA_VANTAGE_API_KEY: ${{ secrets.ALPHA_VANTAGE_API_KEY }}
+      TWELVEDATA_API_KEY: ${{ secrets.TWELVEDATA_API_KEY }}
     steps:
-    - uses: actions/checkout@v3
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: "3.11"
-    - name: Install dependencies
-      run: |
-        pip install -r backend/requirements.txt
-    - name: Run tests
-      run: |
-        pytest
-    - name: Build Docker image
-      run: |
-        docker build -t bullbearbroker-backend .
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r backend/requirements.txt
+
+      - name: Run tests
+        run: |
+          pytest -q
+
+      - name: Build Docker image
+        run: |
+          docker build -t bullbearbroker-backend .
