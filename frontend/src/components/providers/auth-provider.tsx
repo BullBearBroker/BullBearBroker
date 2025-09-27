@@ -1,6 +1,13 @@
 "use client";
 
-import Cookies from "js-cookie";
+import {
+  AuthResponse,
+  UserProfile,
+  getProfile,
+  login,
+  register,
+  refreshToken
+} from "@/lib/api";
 import {
   createContext,
   useCallback,
@@ -10,245 +17,148 @@ import {
   useState
 } from "react";
 
-import {
-  AuthResponse,
-  LoginPayload,
-  RegisterPayload,
-  UserProfile,
-  getProfile,
-  login as loginRequest,
-  refreshToken as refreshTokenRequest,
-  register as registerRequest
-} from "@/lib/api";
-
-interface AuthContextValue {
+interface AuthContextProps {
   user: UserProfile | null;
-  accessToken: string | null;
-  refreshToken: string | null;
+  token: string | null;
   loading: boolean;
-  login: (payload: LoginPayload) => Promise<void>;
-  register: (payload: RegisterPayload) => Promise<void>;
+  loginUser: (email: string, password: string) => Promise<void>;
+  registerUser: (
+    email: string,
+    password: string,
+    name?: string,
+    riskProfile?: "conservador" | "moderado" | "agresivo"
+  ) => Promise<void>;
   logout: () => void;
-  refreshTokens: () => Promise<void>;
-  reloadProfile: (tokenOverride?: string) => Promise<void>;
 }
 
-const AuthContext = createContext<AuthContextValue | undefined>(undefined);
+const AuthContext = createContext<AuthContextProps | undefined>(undefined);
 
-const ACCESS_TOKEN_KEY = "bb_access_token";
-const REFRESH_TOKEN_KEY = "bb_refresh_token";
-
-function persistTokens(tokens: Pick<AuthContextValue, "accessToken" | "refreshToken">) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  const { accessToken, refreshToken } = tokens;
-  const secure = window.location.protocol === "https:";
-  if (accessToken) {
-    Cookies.set(ACCESS_TOKEN_KEY, accessToken, {
-      secure,
-      sameSite: "strict"
-    });
-    localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
+function persistRefreshToken(token: string | null) {
+  if (typeof window === "undefined") return;
+  if (token) {
+    localStorage.setItem("refresh_token", token);
   } else {
-    Cookies.remove(ACCESS_TOKEN_KEY);
-    localStorage.removeItem(ACCESS_TOKEN_KEY);
-  }
-
-  if (refreshToken) {
-    Cookies.set(REFRESH_TOKEN_KEY, refreshToken, {
-      secure,
-      sameSite: "strict"
-    });
-    localStorage.setItem(REFRESH_TOKEN_KEY, refreshToken);
-  } else {
-    Cookies.remove(REFRESH_TOKEN_KEY);
-    localStorage.removeItem(REFRESH_TOKEN_KEY);
+    localStorage.removeItem("refresh_token");
   }
 }
 
-function readToken(key: string) {
-  if (typeof window === "undefined") return null;
-  return Cookies.get(key) || localStorage.getItem(key) || null;
+async function fetchProfile(accessToken: string) {
+  return getProfile(accessToken);
 }
 
-interface AuthProviderProps {
-  children: React.ReactNode;
-}
-
-export function AuthProvider({ children }: AuthProviderProps) {
+export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
-  const [accessToken, setAccessToken] = useState<string | null>(null);
-  const [refreshToken, setRefreshToken] = useState<string | null>(null);
+  const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-
-  const applyTokens = useCallback((payload: AuthResponse) => {
-    setAccessToken(payload.access_token);
-    setRefreshToken(payload.refresh_token);
-    persistTokens({ accessToken: payload.access_token, refreshToken: payload.refresh_token });
-  }, []);
-
-  const clearTokens = useCallback(() => {
-    setAccessToken(null);
-    setRefreshToken(null);
-    persistTokens({ accessToken: null, refreshToken: null });
-  }, []);
-
-  const reloadProfile = useCallback(
-    async (tokenOverride?: string) => {
-      const tokenToUse = tokenOverride ?? accessToken;
-      if (!tokenToUse) {
-        setUser(null);
-        setLoading(false);
-        return;
-      }
-
-      try {
-        setLoading(true);
-        const profile = await getProfile(tokenToUse);
-        setUser(profile);
-      } catch (error) {
-        console.error("Unable to load profile", error);
-        clearTokens();
-        setUser(null);
-      } finally {
-        setLoading(false);
-      }
-    },
-    [accessToken, clearTokens]
-  );
-
-  const login = useCallback(
-    async (payload: LoginPayload) => {
-      const auth = await loginRequest(payload);
-      applyTokens(auth);
-      await reloadProfile(auth.access_token);
-    },
-    [applyTokens, reloadProfile]
-  );
-
-  const register = useCallback(
-    async (payload: RegisterPayload) => {
-      const auth = await registerRequest(payload);
-      applyTokens(auth);
-      await reloadProfile(auth.access_token);
-    },
-    [applyTokens, reloadProfile]
-  );
-
-  const logout = useCallback(() => {
-    clearTokens();
-    setUser(null);
-  }, [clearTokens]);
-
-  const refreshTokens = useCallback(async () => {
-    if (!refreshToken) return;
-    try {
-      const refreshed = await refreshTokenRequest(refreshToken);
-      applyTokens(refreshed);
-      await reloadProfile(refreshed.access_token);
-    } catch (error) {
-      console.error("Unable to refresh tokens", error);
-      logout();
-    }
-  }, [applyTokens, logout, refreshToken, reloadProfile]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const storedAccess = readToken(ACCESS_TOKEN_KEY);
-    const storedRefresh = readToken(REFRESH_TOKEN_KEY);
-    if (storedAccess) {
-      setAccessToken(storedAccess);
-    }
-    if (storedRefresh) {
-      setRefreshToken(storedRefresh);
-    }
-  }, []);
 
-  useEffect(() => {
-    if (!accessToken) {
+    const savedRefresh = localStorage.getItem("refresh_token");
+    if (!savedRefresh) {
       setLoading(false);
-      setUser(null);
       return;
     }
 
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
+    let active = true;
+
+    const hydrateSession = async () => {
       try {
-        const profile = await getProfile(accessToken);
-        if (!cancelled) {
-          setUser(profile);
-        }
+        const refreshed = await refreshToken(savedRefresh);
+        if (!active) return;
+        setToken(refreshed.access_token);
+        persistRefreshToken(refreshed.refresh_token);
+        const profile = await fetchProfile(refreshed.access_token);
+        if (!active) return;
+        setUser(profile);
       } catch (error) {
-        console.error("Session invalid", error);
-        if (!cancelled) {
-          try {
-            if (refreshToken) {
-              await refreshTokens();
-              return;
-            }
-          } catch (refreshError) {
-            console.error("Unable to refresh after session error", refreshError);
-          }
-          clearTokens();
-          setUser(null);
-        }
+        if (!active) return;
+        console.error("No se pudo refrescar la sesión", error);
+        persistRefreshToken(null);
+        setToken(null);
+        setUser(null);
       } finally {
-        if (!cancelled) {
+        if (active) {
           setLoading(false);
         }
       }
-    })();
+    };
+
+    hydrateSession();
 
     return () => {
-      cancelled = true;
+      active = false;
     };
-  }, [accessToken, clearTokens, refreshToken, refreshTokens]);
+  }, []);
 
-  useEffect(() => {
-    if (!refreshToken) return;
-    const interval = window.setInterval(() => {
-      refreshTokens().catch((error) =>
-        console.error("Scheduled refresh failed", error)
-      );
-    }, 1000 * 60 * 10); // every 10 minutes
+  const persistSession = useCallback((response: AuthResponse) => {
+    setToken(response.access_token);
+    persistRefreshToken(response.refresh_token);
+  }, []);
 
-    return () => window.clearInterval(interval);
-  }, [refreshToken, refreshTokens]);
+  const loginUser = useCallback(
+    async (email: string, password: string) => {
+      setLoading(true);
+      try {
+        const auth = await login({ email, password });
+        persistSession(auth);
+        const profile = await fetchProfile(auth.access_token);
+        setUser(profile);
+      } catch (error) {
+        persistRefreshToken(null);
+        setToken(null);
+        setUser(null);
+        throw error;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [persistSession]
+  );
 
-  const value = useMemo<AuthContextValue>(
-    () => ({
-      user,
-      accessToken,
-      refreshToken,
-      loading,
-      login,
-      register,
-      logout,
-      refreshTokens,
-      reloadProfile
-    }),
-    [
-      accessToken,
-      refreshToken,
-      loading,
-      login,
-      logout,
-      refreshTokens,
-      register,
-      reloadProfile,
-      user
-    ]
+  const registerUser = useCallback(
+    async (
+      email: string,
+      password: string,
+      name?: string,
+      riskProfile?: "conservador" | "moderado" | "agresivo"
+    ) => {
+      setLoading(true);
+      try {
+        const auth = await register({ email, password, name, risk_profile: riskProfile });
+        persistSession(auth);
+        const profile = await fetchProfile(auth.access_token);
+        setUser(profile);
+      } catch (error) {
+        persistRefreshToken(null);
+        setToken(null);
+        setUser(null);
+        throw error;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [persistSession]
+  );
+
+  const logout = useCallback(() => {
+    setUser(null);
+    setToken(null);
+    persistRefreshToken(null);
+  }, []);
+
+  const value = useMemo(
+    () => ({ user, token, loading, loginUser, registerUser, logout }),
+    [loading, loginUser, logout, registerUser, token, user]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider");
+  const ctx = useContext(AuthContext);
+  if (!ctx) {
+    throw new Error("useAuth must be used within AuthProvider");
   }
-  return context;
+  return ctx;
 }

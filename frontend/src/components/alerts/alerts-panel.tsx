@@ -10,7 +10,8 @@ import {
   deleteAlert,
   listAlerts,
   sendAlertNotification,
-  updateAlert
+  suggestAlertCondition, // [Codex] nuevo
+  updateAlert,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -29,7 +30,9 @@ export function AlertsPanel({ token }: AlertsPanelProps) {
   );
 
   const [title, setTitle] = useState("");
+  const [asset, setAsset] = useState("");
   const [condition, setCondition] = useState("");
+  const [value, setValue] = useState<number | "">("");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [dispatchMessage, setDispatchMessage] = useState("");
@@ -38,25 +41,57 @@ export function AlertsPanel({ token }: AlertsPanelProps) {
   const [dispatching, setDispatching] = useState(false);
   const [dispatchFeedback, setDispatchFeedback] = useState<string | null>(null);
   const [dispatchError, setDispatchError] = useState<string | null>(null);
+  const [suggesting, setSuggesting] = useState(false); // [Codex] nuevo
+  const [suggestError, setSuggestError] = useState<string | null>(null); // [Codex] nuevo
+  const [suggestNote, setSuggestNote] = useState<string | null>(null); // [Codex] nuevo
 
+  // Crear alerta nueva
   const handleCreate = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       if (!token) return;
-      if (!title.trim() || !condition.trim()) {
-        setFormError("Completa el título y la condición de la alerta.");
+
+      if (!title.trim()) {
+        setFormError("Debes asignar un título a la alerta.");
         return;
       }
+
+      if (!condition.trim()) {
+        setFormError("Debes especificar una condición para la alerta.");
+        return;
+      }
+
+      if (value === "") {
+        setFormError("Debes indicar un valor numérico para la alerta.");
+        return;
+      }
+
+      if (Number.isNaN(Number(value))) {
+        setFormError("El valor debe ser numérico.");
+        return;
+      }
+
       setFormError(null);
       setSubmitting(true);
       try {
-        await createAlert(token, {
+        const payload = {
           title: title.trim(),
+          asset: asset.trim().toUpperCase(),
           condition: condition.trim(),
-          active: true
-        });
+          value: typeof value === "number" ? value : Number(value),
+          active: true,
+        };
+
+        if (!payload.asset) {
+          setFormError("Debes indicar el activo para la alerta.");
+          return;
+        }
+
+        await createAlert(token, payload);
         setTitle("");
+        setAsset("");
         setCondition("");
+        setValue("");
         await mutate();
       } catch (err) {
         console.error(err);
@@ -69,9 +104,10 @@ export function AlertsPanel({ token }: AlertsPanelProps) {
         setSubmitting(false);
       }
     },
-    [condition, mutate, title, token]
+    [asset, condition, mutate, title, token, value]
   );
 
+  // Alternar activa/pausada
   const toggleAlert = useCallback(
     async (alert: Alert) => {
       if (!token) return;
@@ -90,6 +126,35 @@ export function AlertsPanel({ token }: AlertsPanelProps) {
     [mutate, token]
   );
 
+  const handleSuggest = useCallback(async () => {
+    if (!token) return;
+    if (!asset.trim()) {
+      setSuggestError("Completa el campo de activo antes de pedir sugerencias.");
+      return;
+    }
+    setSuggestError(null);
+    setSuggestNote(null);
+    setSuggesting(true);
+    try {
+      const response = await suggestAlertCondition(token, {
+        asset: asset.trim(),
+        interval: "1h",
+      });
+        setCondition(response.suggestion ?? "");
+      setSuggestNote(response.notes ?? null);
+    } catch (err) {
+      console.error(err);
+      setSuggestError(
+        err instanceof Error
+          ? err.message
+          : "No se pudo obtener la sugerencia de la IA."
+      );
+    } finally {
+      setSuggesting(false);
+    }
+  }, [asset, token]);
+
+  // Eliminar alerta
   const removeAlert = useCallback(
     async (alert: Alert) => {
       if (!token) return;
@@ -108,10 +173,12 @@ export function AlertsPanel({ token }: AlertsPanelProps) {
     [mutate, token]
   );
 
+  // Enviar notificación manual
   const handleSendNotification = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
       event.preventDefault();
       if (!token) return;
+
       if (!dispatchMessage.trim()) {
         setDispatchError("Escribe un mensaje para enviar la alerta.");
         return;
@@ -124,7 +191,7 @@ export function AlertsPanel({ token }: AlertsPanelProps) {
         const result = await sendAlertNotification(token, {
           message: dispatchMessage.trim(),
           telegram_chat_id: telegramChatId.trim() || undefined,
-          discord_channel_id: discordChannelId.trim() || undefined
+          discord_channel_id: discordChannelId.trim() || undefined,
         });
         const summary = Object.entries(result)
           .map(([channel, payload]) => `${channel}: ${payload.status}`)
@@ -148,18 +215,27 @@ export function AlertsPanel({ token }: AlertsPanelProps) {
   return (
     <Card className="flex flex-col">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-        <CardTitle className="text-lg font-medium">Alertas personalizadas</CardTitle>
+        <CardTitle className="text-lg font-medium">
+          Alertas personalizadas
+        </CardTitle>
         <Badge variant="secondary" className="flex items-center gap-1">
           <AlertTriangle className="h-3.5 w-3.5" />
           Activas
         </Badge>
       </CardHeader>
       <CardContent className="space-y-4">
+        {/* Formulario: Crear alerta */}
         <form onSubmit={handleCreate} className="space-y-3">
           <Input
             placeholder="Título de la alerta"
             value={title}
             onChange={(event) => setTitle(event.target.value)}
+            disabled={!token || submitting}
+          />
+          <Input
+            placeholder="Activo (ej. BTCUSDT, AAPL)"
+            value={asset}
+            onChange={(event) => setAsset(event.target.value)}
             disabled={!token || submitting}
           />
           <Textarea
@@ -168,13 +244,54 @@ export function AlertsPanel({ token }: AlertsPanelProps) {
             onChange={(event) => setCondition(event.target.value)}
             disabled={!token || submitting}
           />
+          <select
+            value={condition}
+            onChange={(event) => setCondition(event.target.value as "<" | ">" | "==")}
+            disabled={!token || submitting}
+            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+          >
+            <option value="">Selecciona condición</option>
+            <option value="<">Menor que (&lt;)</option>
+            <option value=">">Mayor que (&gt;)</option>
+            <option value="==">Igual a (==)</option>
+          </select>
+          <Input
+            type="number"
+            placeholder="Valor (ej. 30)"
+            value={value === "" ? "" : value}
+            onChange={(event) =>
+              setValue(event.target.value === "" ? "" : Number(event.target.value))
+            }
+            disabled={!token || submitting}
+          />
+          <div className="flex items-center justify-between gap-2">
+            {suggestError && (
+              <p className="text-sm text-destructive">{suggestError}</p>
+            )}
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={handleSuggest}
+              disabled={!token || suggesting}
+            >
+              ✨ {suggesting ? "Consultando..." : "Sugerir alerta con AI"}
+            </Button>
+          </div>
+          {suggestNote && (
+            <p className="text-xs text-muted-foreground">{suggestNote}</p>
+          )}
           {formError && <p className="text-sm text-destructive">{formError}</p>}
           <Button type="submit" disabled={!token || submitting} className="w-full">
             <PlusCircle className="mr-2 h-4 w-4" />
             {submitting ? "Creando..." : "Crear alerta"}
           </Button>
         </form>
-        <form onSubmit={handleSendNotification} className="space-y-3 rounded-lg border p-3">
+
+        {/* Formulario: Enviar notificación manual */}
+        <form
+          onSubmit={handleSendNotification}
+          className="space-y-3 rounded-lg border p-3"
+        >
           <p className="text-sm font-medium">Enviar alerta manual</p>
           <Textarea
             placeholder="Mensaje para Telegram/Discord"
@@ -196,16 +313,32 @@ export function AlertsPanel({ token }: AlertsPanelProps) {
               disabled={!token || dispatching}
             />
           </div>
-          {dispatchError && <p className="text-xs text-destructive">{dispatchError}</p>}
-          {dispatchFeedback && <p className="text-xs text-emerald-600">{dispatchFeedback}</p>}
-          <Button type="submit" variant="secondary" disabled={!token || dispatching} className="w-full">
+          {dispatchError && (
+            <p className="text-xs text-destructive">{dispatchError}</p>
+          )}
+          {dispatchFeedback && (
+            <p className="text-xs text-emerald-600">{dispatchFeedback}</p>
+          )}
+          <Button
+            type="submit"
+            variant="secondary"
+            disabled={!token || dispatching}
+            className="w-full"
+          >
             {dispatching ? "Enviando..." : "Enviar notificación"}
           </Button>
         </form>
+
+        {/* Lista de alertas */}
         <div className="space-y-3">
-          {isLoading && <p className="text-sm text-muted-foreground">Cargando alertas...</p>}
+          {isLoading && (
+            <p className="text-sm text-muted-foreground">Cargando alertas...</p>
+          )}
           {error && (
-            <p className="text-sm text-destructive">Error al cargar alertas: {error.message}</p>
+            <p className="text-sm text-destructive">
+              Error al cargar alertas:{" "}
+              {error instanceof Error ? error.message : "Desconocido"}
+            </p>
           )}
           {!isLoading && !error && !data?.length && (
             <p className="text-sm text-muted-foreground">
@@ -219,6 +352,9 @@ export function AlertsPanel({ token }: AlertsPanelProps) {
             >
               <div className="space-y-1">
                 <p className="font-medium">{alert.title}</p>
+                <p className="text-xs text-muted-foreground">
+                  {alert.asset} · objetivo {alert.value}
+                </p>
                 <p className="text-muted-foreground">{alert.condition}</p>
                 <Badge variant={alert.active ? "default" : "secondary"}>
                   {alert.active ? "Activa" : "Pausada"}

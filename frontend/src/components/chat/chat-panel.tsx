@@ -16,6 +16,13 @@ interface ChatPanelProps {
   token?: string;
 }
 
+const SOURCE_LABELS: Record<string, string> = {
+  prices: "Precios", // [Codex] nuevo - etiqueta humana para precios
+  indicators: "Indicadores", // [Codex] nuevo
+  news: "Noticias", // [Codex] nuevo
+  alerts: "Alertas", // [Codex] nuevo
+};
+
 export function ChatPanel({ token }: ChatPanelProps) {
   const [messages, setMessages] = useState<MessagePayload[]>([
     {
@@ -28,6 +35,8 @@ export function ChatPanel({ token }: ChatPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  const [sources, setSources] = useState<string[]>([]); // [Codex] nuevo - fuentes de datos reales
+  const [usedData, setUsedData] = useState(false); // [Codex] nuevo - bandera de datos reales
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -48,6 +57,8 @@ export function ChatPanel({ token }: ChatPanelProps) {
       if (response.messages?.length) {
         setMessages(response.messages);
       }
+      setSources(response.sources ?? []); // [Codex] nuevo - persistimos fuentes
+      setUsedData(Boolean(response.used_data)); // [Codex] nuevo
       scrollToEnd();
     } catch (err) {
       console.error(err);
@@ -57,6 +68,8 @@ export function ChatPanel({ token }: ChatPanelProps) {
           : "No se pudo enviar el mensaje. Inténtalo de nuevo."
       );
       setMessages(pendingConversation);
+      setSources([]); // [Codex] nuevo - limpiar fuentes ante error
+      setUsedData(false);
     } finally {
       setLoading(false);
     }
@@ -66,7 +79,15 @@ export function ChatPanel({ token }: ChatPanelProps) {
     <div className="flex h-full flex-col gap-4">
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold">Chat con IA</h2>
-        <Badge variant="secondary">IA</Badge>
+        {sources.length ? (
+          <Badge variant="default">
+            {`Respuesta con datos reales (${sources
+              .map((source) => SOURCE_LABELS[source] ?? source)
+              .join(", ")})`}
+          </Badge>
+        ) : (
+          <Badge variant="secondary">{usedData ? "Datos reales" : "IA"}</Badge>
+        )}
       </div>
       <ScrollArea className="flex-1 rounded-lg border">
         <div className="space-y-4 p-4">

@@ -1,6 +1,10 @@
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
+/* ===========
+   INTERFACES
+   =========== */
+
 export interface LoginPayload {
   email: string;
   password: string;
@@ -8,6 +12,7 @@ export interface LoginPayload {
 
 export interface RegisterPayload extends LoginPayload {
   name?: string;
+  risk_profile?: "conservador" | "moderado" | "agresivo"; // [Codex] nuevo
 }
 
 export interface AuthResponse {
@@ -45,14 +50,19 @@ export interface MessagePayload {
 export interface ChatResponse {
   messages: MessagePayload[];
   provider?: string;
+  used_data?: boolean; // [Codex] nuevo - refleja si hubo datos reales
+  sources?: string[]; // [Codex] nuevo - fuentes utilizadas por la IA
 }
 
 export interface Alert {
   id: string | number;
   title: string;
+  asset: string;
   condition: string;
+  value: number;
   active: boolean;
   created_at?: string;
+  updated_at?: string;
   [key: string]: unknown;
 }
 
@@ -64,6 +74,10 @@ export interface NewsItem {
   published_at?: string;
   summary?: string;
 }
+
+/* ===========
+   CORE REQUEST
+   =========== */
 
 export async function request<T>(
   path: string,
@@ -97,7 +111,6 @@ export async function request<T>(
   try {
     return text ? (JSON.parse(text) as T) : (undefined as T);
   } catch (err) {
-    // 👇 corregido: ahora usamos el error en un console.error para evitar el warning de ESLint
     console.error("JSON parse error:", err);
     throw new Error("Invalid JSON response");
   }
@@ -118,6 +131,10 @@ async function safeReadError(response: Response) {
     return response.statusText;
   }
 }
+
+/* ===========
+   AUTH
+   =========== */
 
 export function login(payload: LoginPayload) {
   return request<AuthResponse>("/api/auth/login", {
@@ -143,6 +160,10 @@ export function refreshToken(refresh_token: string) {
 export function getProfile(token: string) {
   return request<UserProfile>("/api/auth/me", { method: "GET" }, token);
 }
+
+/* ===========
+   MARKETS
+   =========== */
 
 export async function getMarketQuote(
   type: "crypto" | "stock" | "forex",
@@ -181,19 +202,45 @@ export async function getMarketQuote(
   throw new Error(`No se encontró información para ${normalizedSymbol}`);
 }
 
+/* ===========
+   CHAT AI (ahora con indicadores)
+   =========== */
+
 export async function sendChatMessage(
   messages: MessagePayload[],
   token?: string,
-  onStreamChunk?: (partial: string) => void
+  onStreamChunk?: (partial: string) => void,
+  options?: { symbol?: string; interval?: "1h" | "4h" | "1d" }
 ): Promise<ChatResponse> {
+  // 🔹 Obtener indicadores si hay símbolo
+  let indicators: any = null;
+  if (options?.symbol) {
+    try {
+      indicators = await getIndicators(
+        "crypto",
+        options.symbol,
+        options.interval || "1h",
+        token
+      );
+    } catch (err) {
+      console.warn("No se pudieron obtener indicadores:", err);
+    }
+  }
+
   const body = {
     prompt: messages[messages.length - 1]?.content ?? "",
     context: {
       history: messages.slice(0, -1),
+      indicators, // 👈 ahora la IA recibe indicadores técnicos
     },
   };
 
-  const payload = await request<{ response: string; provider?: string }>(
+  const payload = await request<{
+    response: string;
+    provider?: string;
+    used_data?: boolean;
+    sources?: string[];
+  }>(
     "/api/ai/chat",
     {
       method: "POST",
@@ -208,6 +255,7 @@ export async function sendChatMessage(
   };
 
   const updated = [...messages, assistantMessage];
+
   if (payload.response && onStreamChunk) {
     onStreamChunk(payload.response);
   }
@@ -215,14 +263,29 @@ export async function sendChatMessage(
   return {
     messages: updated,
     provider: payload.provider,
-  } satisfies ChatResponse;
+    used_data: payload.used_data,
+    sources: payload.sources,
+  };
 }
+
+/* ===========
+   ALERTS
+   =========== */
 
 export function listAlerts(token: string) {
   return request<Alert[]>("/api/alerts", { method: "GET" }, token);
 }
 
-export function createAlert(token: string, payload: Partial<Alert>) {
+export function createAlert(
+  token: string,
+  payload: {
+    title: string;
+    asset: string;
+    condition: string;
+    value: number;
+    active: boolean;
+  }
+) {
   return request<Alert>(
     "/api/alerts",
     {
@@ -278,6 +341,25 @@ export function sendAlertNotification(
   );
 }
 
+export function suggestAlertCondition(
+  token: string,
+  payload: { asset: string; interval?: "1h" | "4h" | "1d" }
+) {
+  // [Codex] nuevo - endpoint para sugerencias impulsadas por IA
+  return request<{ suggestion: string; notes?: string }>(
+    "/api/alerts/suggest",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    token
+  );
+}
+
+/* ===========
+   NEWS
+   =========== */
+
 export async function listNews(token?: string) {
   const payload = await request<{ articles: NewsItem[] }>(
     "/api/news/latest",
@@ -292,4 +374,46 @@ export async function listNews(token?: string) {
       source: article.source ?? "Desconocida",
     })) ?? []
   );
+}
+
+/* ===========
+   INDICATORS
+   =========== */
+
+export async function getIndicators(
+  type: "crypto" | "stock" | "forex",
+  symbol: string,
+  interval: "1h" | "4h" | "1d" = "1h",
+  token?: string,
+  options?: {
+    includeAtr?: boolean;
+    includeStochRsi?: boolean;
+    includeIchimoku?: boolean;
+    includeVwap?: boolean;
+  }
+) {
+  const query = new URLSearchParams({
+    type,
+    symbol,
+    interval,
+    include_atr: (options?.includeAtr ?? true).toString(), // [Codex] cambiado - activamos indicadores avanzados
+    include_stoch_rsi: (options?.includeStochRsi ?? true).toString(),
+    include_ichimoku: (options?.includeIchimoku ?? true).toString(),
+    include_vwap: (options?.includeVwap ?? true).toString(),
+  });
+
+  return request<{
+    symbol: string;
+    type: string;
+    interval: string;
+    count: number;
+    source?: string;
+    indicators: Record<string, any>;
+    series?: {
+      closes?: number[];
+      highs?: number[];
+      lows?: number[];
+      volumes?: number[];
+    };
+  }>(`/api/markets/indicators?${query.toString()}`, { method: "GET" }, token);
 }

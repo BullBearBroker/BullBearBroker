@@ -74,6 +74,8 @@ class Config:
     DISCORD_BOT_TOKEN = _get_env("DISCORD_BOT_TOKEN")
     DISCORD_APPLICATION_ID = _get_env("DISCORD_APPLICATION_ID")
 
+    API_BASE_URL = _get_env("BULLBEAR_API_URL", "http://localhost:8000")  # [Codex] nuevo
+
     require_env = staticmethod(_require_env)
 
 

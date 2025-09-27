@@ -12,6 +12,7 @@ from backend.core.http_logging import RequestLogMiddleware
 # Routers de la app
 from backend.routers import alerts, markets, news, auth, ai
 from backend.routers import health  # nuevo router de salud
+from backend.services.integration_reporter import log_api_integration_report
 
 logger = get_logger()
 logger.info("Backend iniciado correctamente 🚀")
@@ -47,6 +48,12 @@ async def lifespan(app: FastAPI):
         logger.info("Usuario por defecto verificado (%s)", default_email)
     except Exception as exc:  # pragma: no cover - evita fallas en despliegues sin DB
         logger.error("Error creando tablas en la base de datos: %s", exc)
+
+    try:
+        # Informe de integraciones para confirmar que usamos APIs reales.
+        await log_api_integration_report()
+    except Exception as exc:  # pragma: no cover - logging defensivo
+        logger.warning("No se pudo generar el reporte de integraciones: %s", exc)
 
     yield  # ⬅️ Aquí FastAPI empieza a servir requests
 

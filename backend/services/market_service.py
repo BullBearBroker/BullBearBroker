@@ -611,74 +611,14 @@ class MarketService:
         return "crypto" if symbol.upper() in crypto_symbols else "stock"
 
     async def get_simulated_data(self) -> Dict[str, Any]:
-        """Datos simulados de respaldo cuando las fuentes externas fallan."""
+        """Fallback sin datos sintéticos para evitar métricas artificiadas."""
+        # Ajuste: en lugar de devolver precios ficticios dejamos la estructura vacía
+        # para garantizar que el cliente sepa que las fuentes externas fallaron.
         return {
-            "top_performers": [
-                {
-                    "symbol": "BTC",
-                    "price": "$45,123.45",
-                    "change": "+2.5%",
-                    "type": "crypto",
-                },
-                {
-                    "symbol": "ETH",
-                    "price": "$2,567.89",
-                    "change": "+1.8%",
-                    "type": "crypto",
-                },
-                {
-                    "symbol": "AAPL",
-                    "price": "$178.90",
-                    "change": "+0.7%",
-                    "type": "stock",
-                },
-                {
-                    "symbol": "MSFT",
-                    "price": "$345.21",
-                    "change": "+0.3%",
-                    "type": "stock",
-                },
-                {
-                    "symbol": "SOL",
-                    "price": "$95.67",
-                    "change": "+1.2%",
-                    "type": "crypto",
-                },
-            ],
-            "worst_performers": [
-                {
-                    "symbol": "TSLA",
-                    "price": "$245.67",
-                    "change": "-0.8%",
-                    "type": "stock",
-                },
-                {
-                    "symbol": "XRP",
-                    "price": "$0.58",
-                    "change": "-0.3%",
-                    "type": "crypto",
-                },
-                {
-                    "symbol": "NFLX",
-                    "price": "$567.89",
-                    "change": "-0.5%",
-                    "type": "stock",
-                },
-                {
-                    "symbol": "DOGE",
-                    "price": "$0.12",
-                    "change": "-0.2%",
-                    "type": "crypto",
-                },
-                {
-                    "symbol": "ADA",
-                    "price": "$0.45",
-                    "change": "-0.1%",
-                    "type": "crypto",
-                },
-            ],
+            "top_performers": [],
+            "worst_performers": [],
             "market_summary": {
-                "note": "Datos simulados utilizados como fallback",
+                "note": "Fuentes externas no disponibles; se omite data simulada.",
             },
         }
 

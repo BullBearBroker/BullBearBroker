@@ -87,9 +87,11 @@ class DummyAlert:
 
     id: uuid.UUID
     user_id: uuid.UUID
+    title: str
     asset: str
     value: float
     condition: str
+    active: bool = True
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
 
@@ -296,9 +298,11 @@ class DummyUserService:
         self,
         user_id: uuid.UUID,
         *,
+        title: str,
         asset: str,
         value: float,
         condition: str,
+        active: bool = True,
     ) -> DummyAlert:
         if user_id not in self._alerts:
             raise self.UserNotFoundError("Usuario no encontrado")
@@ -306,9 +310,11 @@ class DummyUserService:
         alert = DummyAlert(
             id=uuid.uuid4(),
             user_id=user_id,
+            title=title,
             asset=asset,
             value=value,
             condition=condition,
+            active=active,
         )
         self._alerts[user_id].append(alert)
         return alert
@@ -679,7 +685,7 @@ async def test_forex_endpoint_falls_back_to_yahoo(
     payload = response.json()
     assert payload["price"] == pytest.approx(1.2345)
     assert payload["source"] == "Yahoo Finance"
-    assert info["calls"] == ["Twelve Data", "Yahoo Finance"]
+    assert info["calls"] == ["Twelve Data", "Alpha Vantage", "Yahoo Finance"]
 
 
 @pytest.mark.asyncio
@@ -729,12 +735,20 @@ async def test_alert_workflow_triggers_notification(
     headers = {"Authorization": f"Bearer {token}"}
     response = await client.post(
         "/api/alerts",
-        json={"asset": "AAPL", "value": 120.0, "condition": "=="},
+        json={
+            "title": "Alerta AAPL",
+            "asset": "AAPL",
+            "value": 120.0,
+            "condition": "==",
+            "active": True,
+        },
         headers=headers,
     )
     assert response.status_code == 201
     created_payload = response.json()
+    assert created_payload["title"] == "Alerta AAPL"
     assert created_payload["condition"] == "=="
+    assert created_payload["active"] is True
     assert "updated_at" in created_payload
     assert created_payload["updated_at"]
 
@@ -783,7 +797,13 @@ async def test_alerts_list_returns_created_alert(
 
     create = await client.post(
         "/api/alerts",
-        json={"asset": "ETH", "value": 1500.0, "condition": "<"},
+        json={
+            "title": "ETH caída",
+            "asset": "ETH",
+            "value": 1500.0,
+            "condition": "<",
+            "active": True,
+        },
         headers=headers,
     )
     assert create.status_code == 201
@@ -795,7 +815,9 @@ async def test_alerts_list_returns_created_alert(
     assert listing.status_code == 200
     alerts = listing.json()
     assert len(alerts) == 1
+    assert alerts[0]["title"] == "ETH caída"
     assert alerts[0]["asset"] == "ETH"
     assert alerts[0]["condition"] == "<"
+    assert alerts[0]["active"] is True
     assert "updated_at" in alerts[0]
     assert alerts[0]["updated_at"]

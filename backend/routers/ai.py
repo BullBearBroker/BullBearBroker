@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List  # [Codex] cambiado
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -30,6 +30,8 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     provider: Optional[str] = None
+    used_data: bool = False  # [Codex] nuevo - informa si se usaron datos reales
+    sources: List[str] = Field(default_factory=list)  # [Codex] nuevo - fuentes de datos
 
 
 def _ensure_provider_available() -> None:
@@ -58,5 +60,15 @@ async def chat_endpoint(payload: ChatRequest) -> ChatResponse:
             status_code=502, detail="El servicio de IA no devolvió ninguna respuesta"
         )
 
-    return ChatResponse(response=reply, provider="auto")
+    # [Codex] cambiado - la respuesta ahora transporta metadatos del middleware
+    text = getattr(reply, "text", str(reply))
+    provider = getattr(reply, "provider", None) or "auto"
+    used_data = bool(getattr(reply, "used_data", False))
+    sources = list(getattr(reply, "sources", []) or [])
 
+    return ChatResponse(
+        response=text,
+        provider=provider,
+        used_data=used_data,
+        sources=sources,
+    )

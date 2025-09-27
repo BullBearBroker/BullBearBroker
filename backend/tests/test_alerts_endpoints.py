@@ -28,9 +28,11 @@ class DummyAlert:
 
     id: uuid.UUID
     user_id: uuid.UUID
+    title: str
     asset: str
     value: float
     condition: str
+    active: bool = True
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
 
@@ -226,9 +228,11 @@ class DummyUserService:
         self,
         user_id: uuid.UUID,
         *,
+        title: str,
         asset: str,
         value: float,
         condition: str,
+        active: bool = True,
     ) -> DummyAlert:
         if user_id not in self._alerts:
             raise self.UserNotFoundError("Usuario no encontrado")
@@ -236,9 +240,11 @@ class DummyUserService:
         alert = DummyAlert(
             id=uuid.uuid4(),
             user_id=user_id,
+            title=title,
             asset=asset.upper(),
             value=value,
             condition=condition,
+            active=active,
         )
         self._alerts[user_id].append(alert)
         return alert
@@ -261,9 +267,11 @@ class DummyUserService:
         user_id: uuid.UUID,
         alert_id: uuid.UUID,
         *,
+        title: Optional[str] = None,
         asset: Optional[str] = None,
         value: Optional[float] = None,
         condition: Optional[str] = None,
+        active: Optional[bool] = None,
     ) -> DummyAlert:
         alerts = self._alerts.get(user_id)
         if not alerts:
@@ -271,12 +279,16 @@ class DummyUserService:
 
         for alert in alerts:
             if alert.id == alert_id:
+                if title is not None:
+                    alert.title = title
                 if asset is not None:
                     alert.asset = asset.upper()
                 if value is not None:
                     alert.value = value
                 if condition is not None:
                     alert.condition = condition
+                if active is not None:
+                    alert.active = active
                 alert.updated_at = datetime.utcnow()
                 return alert
 
@@ -329,14 +341,22 @@ async def test_create_alert(client: AsyncClient, dummy_user_service: DummyUserSe
     email = f"user-{uuid.uuid4()}@example.com"
     token = await _register_and_login(dummy_user_service, email, "secret123")
 
-    payload = {"asset": "aapl", "value": 150.0, "condition": ">"}
+    payload = {
+        "title": "Cruce AAPL",
+        "asset": "aapl",
+        "value": 150.0,
+        "condition": ">",
+        "active": True,
+    }
     response = await client.post("/api/alerts", json=payload, headers=_auth_header(token))
 
     assert response.status_code == 201
     body = response.json()
+    assert body["title"] == "Cruce AAPL"
     assert body["asset"] == "AAPL"
     assert body["condition"] == ">"
     assert pytest.approx(body["value"], rel=1e-6) == 150.0
+    assert body["active"] is True
 
 
 @pytest.mark.asyncio
@@ -344,7 +364,13 @@ async def test_list_alerts(client: AsyncClient, dummy_user_service: DummyUserSer
     email = f"user-{uuid.uuid4()}@example.com"
     token = await _register_and_login(dummy_user_service, email, "secret123")
 
-    payload = {"asset": "btc", "value": 42000.0, "condition": ">"}
+    payload = {
+        "title": "BTC supera",
+        "asset": "btc",
+        "value": 42000.0,
+        "condition": ">",
+        "active": True,
+    }
     await client.post("/api/alerts", json=payload, headers=_auth_header(token))
 
     response = await client.get("/api/alerts", headers=_auth_header(token))
@@ -352,7 +378,9 @@ async def test_list_alerts(client: AsyncClient, dummy_user_service: DummyUserSer
     body = response.json()
     assert isinstance(body, list)
     assert len(body) == 1
+    assert body[0]["title"] == "BTC supera"
     assert body[0]["asset"] == "BTC"
+    assert body[0]["active"] is True
 
 
 @pytest.mark.asyncio
@@ -360,13 +388,25 @@ async def test_update_alert(client: AsyncClient, dummy_user_service: DummyUserSe
     email = f"user-{uuid.uuid4()}@example.com"
     token = await _register_and_login(dummy_user_service, email, "secret123")
 
-    create_payload = {"asset": "eth", "value": 3000.0, "condition": ">"}
+    create_payload = {
+        "title": "ETH objetivo",
+        "asset": "eth",
+        "value": 3000.0,
+        "condition": ">",
+        "active": True,
+    }
     create_response = await client.post(
         "/api/alerts", json=create_payload, headers=_auth_header(token)
     )
     alert_id = create_response.json()["id"]
 
-    update_payload = {"asset": "eth", "value": 2950.0, "condition": "<"}
+    update_payload = {
+        "title": "ETH soporte",
+        "asset": "eth",
+        "value": 2950.0,
+        "condition": "<",
+        "active": False,
+    }
     response = await client.put(
         f"/api/alerts/{alert_id}", json=update_payload, headers=_auth_header(token)
     )
@@ -374,8 +414,10 @@ async def test_update_alert(client: AsyncClient, dummy_user_service: DummyUserSe
     assert response.status_code == 200
     body = response.json()
     assert body["id"] == alert_id
+    assert body["title"] == "ETH soporte"
     assert body["condition"] == "<"
     assert pytest.approx(body["value"], rel=1e-6) == 2950.0
+    assert body["active"] is False
 
 
 @pytest.mark.asyncio
@@ -383,7 +425,13 @@ async def test_delete_alert(client: AsyncClient, dummy_user_service: DummyUserSe
     email = f"user-{uuid.uuid4()}@example.com"
     token = await _register_and_login(dummy_user_service, email, "secret123")
 
-    create_payload = {"asset": "tsla", "value": 250.0, "condition": ">"}
+    create_payload = {
+        "title": "TSLA breakout",
+        "asset": "tsla",
+        "value": 250.0,
+        "condition": ">",
+        "active": True,
+    }
     create_response = await client.post(
         "/api/alerts", json=create_payload, headers=_auth_header(token)
     )
@@ -407,7 +455,13 @@ async def test_delete_all_alerts(client: AsyncClient, dummy_user_service: DummyU
     email = f"user-{uuid.uuid4()}@example.com"
     token = await _register_and_login(dummy_user_service, email, "secret123")
 
-    payload = {"asset": "msft", "value": 320.0, "condition": "<"}
+    payload = {
+        "title": "MSFT retroceso",
+        "asset": "msft",
+        "value": 320.0,
+        "condition": "<",
+        "active": True,
+    }
     await client.post("/api/alerts", json=payload, headers=_auth_header(token))
     await client.post("/api/alerts", json=payload, headers=_auth_header(token))
 

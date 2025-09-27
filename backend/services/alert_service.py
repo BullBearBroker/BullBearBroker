@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Awaitable, Dict, List, Optional, Tuple
+from typing import Awaitable, Dict, List, Optional, Tuple, NamedTuple
+import re
 
 # APScheduler es opcional
 try:
@@ -26,6 +27,11 @@ except ImportError:
 
 from .forex_service import forex_service
 from .market_service import market_service
+
+try:
+    from backend.services.ai_service import ai_service  # [Codex] nuevo
+except ImportError:  # pragma: no cover - compatibilidad en otros entrypoints
+    from services.ai_service import ai_service  # type: ignore  # [Codex] nuevo
 
 try:
     import aiohttp
@@ -113,6 +119,8 @@ class AlertService:
 
         triggered: List[Tuple[Alert, float]] = []
         for alert in alerts:
+            if not getattr(alert, "active", True):
+                continue
             price = await self._resolve_price(alert.asset)
             if price is None:
                 continue
@@ -128,7 +136,7 @@ class AlertService:
     def _fetch_alerts(self) -> List[Alert]:
         assert self._session_factory is not None
         with self._session_factory() as session:
-            result = session.scalars(select(Alert)).all()
+            result = session.scalars(select(Alert).where(Alert.active.is_(True))).all()
             for alert in result:
                 session.expunge(alert)
             return result
@@ -150,6 +158,8 @@ class AlertService:
 
     @staticmethod
     def _should_trigger(alert: Alert, price: float) -> bool:
+        if not getattr(alert, "active", True):
+            return False
         condition = alert.condition or ">"
         if condition in (">", "above"):
             return price >= alert.value
@@ -161,7 +171,8 @@ class AlertService:
 
     async def _notify(self, alert: Alert, price: float) -> None:
         message = (
-            f"Alerta para {alert.asset}: precio actual {price:.2f}, objetivo {alert.value:.2f}"
+            f"Alerta '{getattr(alert, 'title', alert.asset)}' para {alert.asset}: "
+            f"precio actual {price:.2f}, objetivo {alert.value:.2f}"
         )
         payload = {
             "type": "alert",
@@ -187,6 +198,70 @@ class AlertService:
             await self._send_telegram_message(chat_id, message)
         except Exception as exc:
             LOGGER.warning("AlertService: error enviando mensaje a Telegram: %s", exc)
+
+    async def suggest_alert_condition(self, asset: str, interval: str = "1h") -> Dict[str, str]:
+        """Genera una condición sugerida usando IA para un activo dado."""  # [Codex] nuevo
+        asset_clean = (asset or "").strip().upper()
+        if not asset_clean:
+            raise ValueError("Se requiere el símbolo del activo")
+
+        interval_norm = (interval or "1h").lower()
+        if interval_norm not in {"1h", "4h", "1d"}:
+            interval_norm = "1h"
+
+        prompt = (
+            f"Genera una recomendación breve para configurar una alerta automática en el activo {asset_clean} "
+            f"con datos del intervalo {interval_norm}. "
+            "Responde EXACTAMENTE en dos líneas usando el formato:\n"
+            "Condición: <regla técnica concisa>\nNota: <explicación corta>."
+            "Utiliza indicadores como RSI, MACD, ATR o VWAP según aplique."
+        )
+
+        try:
+            ai_payload = await ai_service.process_message(prompt)
+        except Exception as exc:
+            LOGGER.warning("No se pudo obtener sugerencia AI para %s: %s", asset_clean, exc)
+            fallback = f"{asset_clean} precio cruza promedio de 20 velas"
+            return {"suggestion": fallback, "notes": "Sugerencia local por indisponibilidad de IA"}
+
+        # [Codex] cambiado - la IA ahora regresa metadatos, tomamos el texto plano
+        ai_text = ai_payload.text if hasattr(ai_payload, "text") else str(ai_payload)
+
+        condition = None
+        note = None
+        for raw_line in ai_text.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            lower = line.lower()
+            if lower.startswith("condición"):
+                condition = line.split(":", 1)[-1].strip() if ":" in line else line
+            elif lower.startswith("nota"):
+                note = line.split(":", 1)[-1].strip() if ":" in line else line
+
+        if not condition:
+            condition = ai_text.splitlines()[0].strip() if ai_text.strip() else "Condición no disponible"
+        if not note:
+            note = "Generada automáticamente por IA"
+
+        return {
+            "suggestion": condition,
+            "notes": note,
+        }
+
+    def validate_condition_expression(self, condition: str) -> None:
+        """Validar sintaxis de la expresión de condición."""
+
+        expression = (condition or "").strip()
+        if not expression:
+            raise ValueError("La condición de la alerta es obligatoria")
+
+        legacy_comparators = {"<", ">", "=="}
+        if expression in legacy_comparators:
+            return
+
+        parser = _ConditionExpressionParser(expression)
+        parser.parse()
 
     async def send_external_alert(
         self,
@@ -292,6 +367,138 @@ class AlertService:
                     raise RuntimeError(
                         f"Discord API devolvió estado {response.status}: {body}"
                     )
+
+
+class _ConditionExpressionParser:
+    """Pequeño parser para validar expresiones condicionales de alertas."""
+
+    _TOKEN_SPECIFICATION = [
+        ("WS", r"\s+"),
+        ("AND", r"AND\b"),
+        ("OR", r"OR\b"),
+        ("EQ", r"=="),
+        ("LT", r"<"),
+        ("GT", r">"),
+        ("PLUS", r"\+"),
+        ("MINUS", r"-"),
+        ("LPAREN", r"\("),
+        ("RPAREN", r"\)"),
+        ("COMMA", r","),
+        ("NUMBER", r"\d+(?:\.\d+)?"),
+        ("IDENT", r"[A-Za-z_][A-Za-z0-9_]*"),
+    ]
+
+    _TOKEN_REGEX = re.compile(
+        "|".join(f"(?P<{name}>{pattern})" for name, pattern in _TOKEN_SPECIFICATION),
+        re.IGNORECASE,
+    )
+
+    def __init__(self, expression: str) -> None:
+        self.expression = expression
+        self.tokens = self._tokenize(expression)
+        self.index = 0
+
+    def parse(self) -> None:
+        if not self.tokens:
+            raise ValueError("La condición no puede estar vacía")
+        self._parse_expression()
+        if self._current() is not None:
+            token = self._current()
+            raise ValueError(f"Token inesperado '{token.value}' en la condición")
+
+    # ---- Grammar helpers -------------------------------------------------
+    def _parse_expression(self) -> None:
+        self._parse_comparison()
+        while True:
+            if self._match("AND") or self._match("OR"):
+                self._parse_comparison()
+            else:
+                break
+
+    def _parse_comparison(self) -> None:
+        self._parse_additive()
+        if self._match("LT") or self._match("GT") or self._match("EQ"):
+            self._parse_additive()
+        else:
+            raise ValueError("Se esperaba un operador de comparación (<, >, ==)")
+
+    def _parse_additive(self) -> None:
+        self._parse_factor()
+        while True:
+            if self._match("PLUS") or self._match("MINUS"):
+                self._parse_factor()
+            else:
+                break
+
+    def _parse_factor(self) -> None:
+        if self._match("LPAREN"):
+            self._parse_expression()
+            self._expect("RPAREN", "Se esperaba ')' en la condición")
+            return
+
+        if self._match("NUMBER"):
+            return
+
+        token = self._match("IDENT")
+        if token is None:
+            raise ValueError("Se esperaba un indicador, identificador o número en la condición")
+
+        # Funciones tipo RSI(14)
+        if self._match("LPAREN"):
+            if self._match("RPAREN"):
+                return
+            self._parse_function_arguments()
+            self._expect("RPAREN", "Se esperaba ')' al cerrar la función")
+
+    def _parse_function_arguments(self) -> None:
+        while True:
+            if not (self._match("NUMBER") or self._match("IDENT")):
+                raise ValueError("Argumento de función inválido en la condición")
+            if self._match("COMMA"):
+                continue
+            break
+
+    # ---- Token utilities -------------------------------------------------
+    def _tokenize(self, expression: str) -> List["_Token"]:
+        tokens: List[_Token] = []
+        position = 0
+        while position < len(expression):
+            match = self._TOKEN_REGEX.match(expression, position)
+            if not match:
+                snippet = expression[position:position + 10]
+                raise ValueError(f"Símbolo inesperado cerca de '{snippet}'")
+            kind = match.lastgroup
+            value = match.group()
+            position = match.end()
+
+            if kind == "WS":
+                continue
+            if kind in {"AND", "OR"}:
+                tokens.append(_Token(kind.upper(), value.upper()))
+            else:
+                tokens.append(_Token(kind.upper(), value))
+        return tokens
+
+    def _current(self) -> Optional["_Token"]:
+        if self.index < len(self.tokens):
+            return self.tokens[self.index]
+        return None
+
+    def _match(self, token_type: str) -> Optional["_Token"]:
+        current = self._current()
+        if current and current.type == token_type:
+            self.index += 1
+            return current
+        return None
+
+    def _expect(self, token_type: str, message: str) -> None:
+        if self._match(token_type) is None:
+            raise ValueError(message)
+
+
+class _Token(NamedTuple):
+    type: str
+    value: str
 
 
 alert_service = AlertService()

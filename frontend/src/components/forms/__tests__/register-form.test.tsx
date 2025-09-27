@@ -1,70 +1,163 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-
+// [Codex] nuevo - Tests ajustados a placeholders y flujo de useAuth
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { RegisterForm } from "../register-form";
 
-const registerMock = jest.fn();
-
+// Mock de useAuth
+const registerUserMock = jest.fn().mockResolvedValue(undefined);
 jest.mock("@/components/providers/auth-provider", () => ({
   useAuth: () => ({
-    register: registerMock
-  })
+    registerUser: registerUserMock,
+  }),
 }));
+
+const pushMock = jest.fn();
+
+jest.mock("next/navigation", () => ({
+  useRouter: () => ({
+    push: pushMock,
+    replace: jest.fn(),
+    refresh: jest.fn(),
+    prefetch: jest.fn(),
+    back: jest.fn(),
+  }),
+})); // [Codex] nuevo - mock de router de Next
 
 describe("RegisterForm", () => {
   beforeEach(() => {
-    registerMock.mockReset();
+    registerUserMock.mockClear();
+    pushMock.mockClear();
   });
 
-  it("muestra error cuando las contraseñas no coinciden", async () => {
+  it("valida campos obligatorios", async () => {
     render(<RegisterForm />);
 
-    fireEvent.input(screen.getByLabelText(/correo electrónico/i), {
-      target: { value: "user@example.com" }
-    });
-
-    fireEvent.input(screen.getByLabelText(/^contraseña$/i), {
-      target: { value: "password" }
-    });
-
-    fireEvent.input(screen.getByLabelText(/confirmar contraseña/i), {
-      target: { value: "otra" }
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: /registrarse/i }));
+    const submit = screen.getByRole("button", { name: /registrarse/i });
+    const form = submit.closest("form");
+    expect(form).toBeTruthy();
+    fireEvent.submit(form!);
 
     expect(
-      await screen.findByText(/las contraseñas no coinciden/i)
+      await screen.findByText(/el nombre es obligatorio/i)
     ).toBeInTheDocument();
-    expect(registerMock).not.toHaveBeenCalled();
+    expect(registerUserMock).not.toHaveBeenCalled();
+  });
+
+  it("muestra error cuando el correo tiene formato inválido", async () => {
+    render(<RegisterForm />);
+
+    fireEvent.input(screen.getByPlaceholderText(/nombre/i), {
+      target: { value: "Jane" },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/correo electrónico/i), {
+      target: { value: "usuario" },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/^contraseña$/i), {
+      target: { value: "secret123" },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/confirmar contraseña/i), {
+      target: { value: "secret123" },
+    });
+
+    const submit = screen.getByRole("button", { name: /registrarse/i });
+    const form = submit.closest("form");
+    expect(form).toBeTruthy();
+    fireEvent.submit(form!);
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/debe ingresar un correo válido/i)
+      ).toBeInTheDocument();
+    });
+    expect(registerUserMock).not.toHaveBeenCalled();
+  });
+
+  it("muestra error cuando las contraseñas no coinciden", () => {
+    render(<RegisterForm />);
+
+    fireEvent.input(screen.getByPlaceholderText(/nombre/i), {
+      target: { value: "Jane" },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/correo electrónico/i), {
+      target: { value: "user@example.com" },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/^contraseña$/i), {
+      target: { value: "secret123" },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/confirmar contraseña/i), {
+      target: { value: "otra" },
+    });
+
+    const submit = screen.getByRole("button", { name: /registrarse/i });
+    const form = submit.closest("form");
+    expect(form).toBeTruthy();
+    fireEvent.submit(form!);
+
+    expect(
+      screen.getByText(/las contraseñas no coinciden/i)
+    ).toBeInTheDocument();
   });
 
   it("envía los datos válidos", async () => {
     render(<RegisterForm />);
 
-    fireEvent.input(screen.getByLabelText(/nombre/i), {
-      target: { value: "Jane" }
+    fireEvent.input(screen.getByPlaceholderText(/nombre/i), {
+      target: { value: "Jane" },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/correo electrónico/i), {
+      target: { value: "user@example.com" },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/^contraseña$/i), {
+      target: { value: "secret123" },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/confirmar contraseña/i), {
+      target: { value: "secret123" },
     });
 
-    fireEvent.input(screen.getByLabelText(/correo electrónico/i), {
-      target: { value: "jane@example.com" }
+    // Seleccionar perfil de riesgo (dejar "moderado" por defecto también es válido)
+    fireEvent.change(screen.getByDisplayValue(/moderado/i), {
+      target: { value: "agresivo" },
     });
 
-    fireEvent.input(screen.getByLabelText(/^contraseña$/i), {
-      target: { value: "password" }
+    const submit = screen.getByRole("button", { name: /registrarse/i });
+    const form = submit.closest("form");
+    expect(form).toBeTruthy();
+    fireEvent.submit(form!);
+
+    await waitFor(() =>
+      expect(registerUserMock).toHaveBeenCalledWith(
+        "user@example.com",
+        "secret123",
+        "Jane",
+        "agresivo"
+      )
+    );
+    expect(pushMock).toHaveBeenCalledWith("/");
+  });
+
+  it("muestra mensaje de error cuando el registro falla", async () => {
+    registerUserMock.mockRejectedValueOnce(new Error("Duplicado"));
+
+    render(<RegisterForm />);
+
+    fireEvent.input(screen.getByPlaceholderText(/nombre/i), {
+      target: { value: "Jane" },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/correo electrónico/i), {
+      target: { value: "user@example.com" },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/^contraseña$/i), {
+      target: { value: "secret123" },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/confirmar contraseña/i), {
+      target: { value: "secret123" },
     });
 
-    fireEvent.input(screen.getByLabelText(/confirmar contraseña/i), {
-      target: { value: "password" }
-    });
+    const submit = screen.getByRole("button", { name: /registrarse/i });
+    const form = submit.closest("form");
+    expect(form).toBeTruthy();
+    fireEvent.submit(form!);
 
-    fireEvent.click(screen.getByRole("button", { name: /registrarse/i }));
-
-    await waitFor(() => {
-      expect(registerMock).toHaveBeenCalledWith({
-        name: "Jane",
-        email: "jane@example.com",
-        password: "password"
-      });
-    });
+    expect(await screen.findByText(/duplicado/i)).toBeInTheDocument();
+    expect(pushMock).not.toHaveBeenCalled();
   });
 });

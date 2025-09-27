@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
-from typing import Dict, Literal, Optional, List
+from typing import Dict, Optional, List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, Field, field_validator  # 👈 actualizado
+from pydantic import BaseModel, Field, field_validator
 
 USER_SERVICE_ERROR: Optional[Exception] = None
 
@@ -46,65 +45,18 @@ except ImportError:  # pragma: no cover - fallback for package-based imports
     except ImportError:  # pragma: no cover - fallback when running from app package
         from services.alert_service import alert_service  # type: ignore
 
+from backend.schemas.alert import (
+    AlertCreate,
+    AlertResponse,
+    AlertSuggestionPayload,
+    AlertSuggestionResult,
+    AlertUpdate,
+)
 from backend.utils.config import Config
 
 # 👇 sin prefix aquí
 router = APIRouter(tags=["alerts"])
 security = HTTPBearer()
-
-
-class AlertCreate(BaseModel):
-    asset: str = Field(..., min_length=1, max_length=50)
-    value: float = Field(..., description="Precio objetivo de la alerta")
-    condition: Literal["<", ">", "=="] = Field(
-        ">", description="Condición de activación"
-    )
-
-    @field_validator("asset")  # 👈 actualizado
-    @classmethod
-    def _strip_asset(cls, value: str) -> str:
-        cleaned = value.strip()
-        if not cleaned:
-            raise ValueError("El símbolo del activo es obligatorio")
-        return cleaned.upper()
-
-
-class AlertUpdate(BaseModel):
-    asset: Optional[str] = Field(None, min_length=1, max_length=50)
-    value: Optional[float] = Field(None, description="Nuevo precio objetivo")
-    condition: Optional[Literal["<", ">", "=="]] = Field(
-        None, description="Nueva condición de activación"
-    )
-
-    @field_validator("asset")  # 👈 actualizado
-    @classmethod
-    def _strip_asset(cls, value: Optional[str]) -> Optional[str]:
-        if value is None:
-            return value
-        cleaned = value.strip()
-        if not cleaned:
-            raise ValueError("El símbolo del activo no puede estar vacío")
-        return cleaned.upper()
-
-
-class AlertResponse(BaseModel):
-    id: str
-    asset: str
-    condition: str
-    value: float
-    created_at: datetime
-    updated_at: datetime
-
-    @classmethod
-    def from_model(cls, alert: Alert) -> "AlertResponse":
-        return cls(
-            id=str(alert.id),
-            asset=alert.asset,
-            condition=alert.condition,
-            value=alert.value,
-            created_at=alert.created_at,
-            updated_at=alert.updated_at,
-        )
 
 
 class AlertDispatchRequest(BaseModel):
@@ -157,7 +109,7 @@ async def list_alerts(current_user: User = Depends(get_current_user)) -> List[Al
     _ensure_user_service_available()
 
     alerts = await asyncio.to_thread(user_service.get_alerts_for_user, current_user.id)
-    return [AlertResponse.from_model(alert) for alert in alerts]
+    return [AlertResponse.from_orm(alert) for alert in alerts]
 
 
 @router.post("", response_model=AlertResponse, status_code=status.HTTP_201_CREATED)
@@ -168,18 +120,51 @@ async def create_alert(
 
     _ensure_user_service_available()
 
+    if not alert_in.asset:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El campo 'asset' es obligatorio",
+        )
+
+    try:
+        alert_service.validate_condition_expression(alert_in.condition)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    normalized_value = alert_in.value if alert_in.value is not None else 0.0
+    normalized_active = alert_in.active if alert_in.active is not None else True
+
     try:
         alert = await asyncio.to_thread(
             user_service.create_alert,
             current_user.id,
+            title=alert_in.title,
             asset=alert_in.asset,
-            value=alert_in.value,
+            value=normalized_value,
             condition=alert_in.condition,
+            active=normalized_active,
         )
     except UserNotFoundError as exc:  # pragma: no cover - defensive safety
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    return AlertResponse.from_model(alert)
+    return AlertResponse.from_orm(alert)
+
+
+@router.post("/suggest", response_model=AlertSuggestionResult)
+async def suggest_alert_condition(
+    payload: AlertSuggestionPayload, current_user: User = Depends(get_current_user)
+) -> AlertSuggestionResult:
+    """Genera una condición sugerida reforzada con IA para agilizar la creación de alertas."""  # [Codex] nuevo
+
+    _ensure_user_service_available()
+
+    suggestion = await alert_service.suggest_alert_condition(
+        payload.asset,
+        payload.interval or "1h",
+    )
+    return AlertSuggestionResult(**suggestion)
 
 
 @router.delete("/{alert_id}", status_code=status.HTTP_200_OK)
@@ -213,19 +198,29 @@ async def update_alert(
 
     _ensure_user_service_available()
 
+    if alert_in.condition is not None:
+        try:
+            alert_service.validate_condition_expression(alert_in.condition)
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
     try:
         alert = await asyncio.to_thread(
             user_service.update_alert,
             current_user.id,
             alert_id,
+            title=alert_in.title,
             asset=alert_in.asset,
             value=alert_in.value,
             condition=alert_in.condition,
+            active=alert_in.active,
         )
     except UserNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    return AlertResponse.from_model(alert)
+    return AlertResponse.from_orm(alert)
 
 
 @router.post("/send", status_code=status.HTTP_200_OK)

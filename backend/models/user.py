@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from datetime import datetime
 import uuid
-from typing import TYPE_CHECKING
+from enum import Enum as PyEnum  # [Codex] nuevo
+from typing import TYPE_CHECKING, Optional  # [Codex] cambiado - se usa Optional
 
-from sqlalchemy import DateTime, String
+from sqlalchemy import DateTime, Enum, String  # [Codex] cambiado - se añade Enum
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -23,6 +24,12 @@ except ImportError:  # pragma: no cover
     from backend.utils.config import password_context  # type: ignore[no-redef]
 
 
+class RiskProfile(PyEnum):  # [Codex] nuevo
+    CONSERVADOR = "conservador"
+    MODERADO = "moderado"
+    AGRESIVO = "agresivo"
+
+
 class User(Base):
     """Modelo persistente de usuario."""
 
@@ -33,6 +40,9 @@ class User(Base):
     )
     email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
+    risk_profile: Mapped[Optional[str]] = mapped_column(  # [Codex] nuevo
+        Enum(RiskProfile, name="risk_profile_enum", native_enum=False), nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
@@ -59,6 +69,7 @@ class User(Base):
         return {
             "id": str(self.id) if self.id else None,
             "email": self.email,
+            "risk_profile": self.risk_profile,  # [Codex] nuevo
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }

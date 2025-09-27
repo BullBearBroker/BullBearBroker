@@ -20,6 +20,7 @@ from backend.core.security import (
 )
 from backend.database import SessionLocal
 from backend.models import Alert, Session as SessionModel, User
+from backend.models.user import RiskProfile  # [Codex] nuevo
 from backend.models.refresh_token import RefreshToken
 from backend.utils.config import Config, password_context
 
@@ -99,8 +100,15 @@ class UserService:
         )
         return self._detach_entity(session, user)
 
-    def create_user(self, email: str, password: str) -> User:
+    def create_user(self, email: str, password: str, *, risk_profile: Optional[str] = None) -> User:
         hashed_password = password_context.hash(password)
+        normalized_profile: Optional[str] = None
+        if risk_profile:
+            candidate = risk_profile.lower()
+            valid_values = {item.value for item in RiskProfile}
+            if candidate not in valid_values:
+                raise ValueError("Perfil de riesgo inválido")
+            normalized_profile = candidate
         with self._session_scope() as session:
             if session.query(User).filter(User.email == email).first():
                 raise UserAlreadyExistsError("Email ya está registrado")
@@ -108,6 +116,7 @@ class UserService:
             user = User(
                 email=email,
                 password_hash=hashed_password,
+                risk_profile=normalized_profile,  # [Codex] nuevo
             )
             session.add(user)       # ✅ se añade a la sesión
             session.flush()         # ✅ se asegura de generar el ID
@@ -408,19 +417,33 @@ class UserService:
         self,
         user_id: UUID,
         *,
+        title: str,
         asset: str,
-        value: float,
+        value: Optional[float] = None,
         condition: str = ">",
+        active: bool = True,
     ) -> Alert:
         with self._session_scope() as session:
             if not session.get(User, user_id):
                 raise UserNotFoundError("Usuario no encontrado")
 
+            title_clean = (title or "").strip()
+            if not title_clean:
+                raise ValueError("El título de la alerta es obligatorio")
+
+            asset_clean = (asset or "").strip().upper()
+            if not asset_clean:
+                raise ValueError("El activo de la alerta es obligatorio")
+
+            condition_clean = (condition or "").strip() or ">"
+
             alert = Alert(
                 user_id=user_id,
-                asset=asset.upper(),
-                value=value,
-                condition=condition,
+                title=title_clean,
+                asset=asset_clean,
+                value=float(value if value is not None else 0.0),
+                condition=condition_clean,
+                active=bool(active),
             )
             session.add(alert)
             return self._detach_entity(session, alert)
@@ -450,9 +473,11 @@ class UserService:
         user_id: UUID,
         alert_id: UUID,
         *,
+        title: Optional[str] = None,
         asset: Optional[str] = None,
         value: Optional[float] = None,
         condition: Optional[str] = None,
+        active: Optional[bool] = None,
     ) -> Alert:
         """Actualizar los campos de una alerta existente."""
         with self._session_scope() as session:
@@ -464,12 +489,25 @@ class UserService:
             if not alert:
                 raise UserNotFoundError("Alerta no encontrada para este usuario")
 
+            if title is not None:
+                title_clean = title.strip()
+                if not title_clean:
+                    raise ValueError("El título de la alerta es obligatorio")
+                alert.title = title_clean
             if asset is not None:
-                alert.asset = asset.upper()
+                asset_clean = asset.strip().upper()
+                if not asset_clean:
+                    raise ValueError("El activo de la alerta es obligatorio")
+                alert.asset = asset_clean
             if value is not None:
-                alert.value = value
+                alert.value = float(value)
             if condition is not None:
-                alert.condition = condition
+                cleaned_condition = condition.strip()
+                if not cleaned_condition:
+                    raise ValueError("La condición de la alerta no puede estar vacía")
+                alert.condition = cleaned_condition
+            if active is not None:
+                alert.active = bool(active)
 
             alert.updated_at = datetime.utcnow()
             session.add(alert)

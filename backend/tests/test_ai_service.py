@@ -67,7 +67,8 @@ async def test_process_message_retries_before_switch(service, monkeypatch):
 
     result = await service.process_message('¿Cómo está el mercado?')
 
-    assert result == 'respuesta mistral'
+    assert result.text == 'respuesta mistral'  # [Codex] cambiado - ahora devolvemos payload
+    assert result.provider == 'mistral'
     assert attempts['count'] == 3
     assert hf_calls['count'] == 0
     assert ollama_calls['count'] == 0
@@ -103,7 +104,8 @@ async def test_process_message_falls_back_to_huggingface(service, monkeypatch):
 
     result = await service.process_message('Dame ideas de inversión')
 
-    assert result == 'respuesta huggingface'
+    assert result.text == 'respuesta huggingface'  # [Codex] cambiado
+    assert result.provider == 'huggingface'
     assert attempts['count'] == 3
     assert hf_calls['count'] == 1
     assert sleep_calls == [1, 2]
@@ -138,7 +140,8 @@ async def test_process_message_falls_back_to_ollama(service, monkeypatch):
 
     result = await service.process_message('¿Qué opinas de BTC?')
 
-    assert result == 'respuesta ollama'
+    assert result.text == 'respuesta ollama'  # [Codex] cambiado
+    assert result.provider == 'ollama'
     assert hf_attempts['count'] == 3
     assert ollama_calls['count'] == 1
     assert sleep_calls == [1, 2, 1, 2]
@@ -171,5 +174,6 @@ async def test_process_message_uses_local_fallback(service, monkeypatch):
 
     result = await service.process_message('Necesito asesoría financiera')
 
-    assert result == 'respuesta local'
+    assert result.text == 'respuesta local'  # [Codex] cambiado
+    assert result.provider == 'local'
     assert sleep_calls == [1, 2, 1, 2, 1, 2]

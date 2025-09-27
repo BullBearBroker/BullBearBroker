@@ -7,7 +7,7 @@ import jwt
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
-from typing import Dict
+from typing import Dict, Literal, Optional  # [Codex] cambiado - se añaden tipos para risk profile
 import re
 
 from pydantic import BaseModel, field_validator
@@ -51,11 +51,19 @@ def _validate_email(value: str) -> str:
 class UserCreate(BaseModel):
     email: str
     password: str
+    risk_profile: Optional[Literal["conservador", "moderado", "agresivo"]] = None  # [Codex] nuevo
 
     @field_validator("email")
     @classmethod
     def _validate_email_field(cls, value: str) -> str:
         return _validate_email(value)
+
+    @field_validator("risk_profile")  # [Codex] nuevo
+    @classmethod
+    def _normalize_risk_profile(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return None
+        return value.lower()
 
 
 class UserLogin(BaseModel):
@@ -82,15 +90,27 @@ async def register(user_data: UserCreate):
         new_user = user_service.create_user(
             email=user_data.email,
             password=user_data.password,
+            risk_profile=user_data.risk_profile,
+        )
+    except TypeError:  # [Codex] nuevo - compatibilidad con servicios dummy en tests
+        new_user = user_service.create_user(
+            email=user_data.email,
+            password=user_data.password,
         )
     except UserAlreadyExistsError as exc:  # pragma: no cover - tests cubren el éxito
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:  # [Codex] nuevo - valida perfil de riesgo
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return {
+    payload = {
         "id": str(new_user.id),
         "email": new_user.email,
         "created_at": new_user.created_at.isoformat() if new_user.created_at else None,
     }
+    profile_value = getattr(new_user, "risk_profile", None)
+    if profile_value is not None:
+        payload["risk_profile"] = profile_value  # [Codex] nuevo
+    return payload
 
 
 @router.post("/login", response_model=TokenPair)

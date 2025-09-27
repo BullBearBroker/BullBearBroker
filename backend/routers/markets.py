@@ -175,3 +175,145 @@ async def get_forex(pair: str) -> Dict[str, Any]:
         )
 
     return result
+
+
+# ============================================================
+# NUEVO ENDPOINT: Indicadores técnicos (RSI, EMA, MACD, Bollinger)
+# ============================================================
+
+from backend.services.timeseries_service import get_closes
+from backend.utils.indicators import (
+    rsi,
+    ema,
+    macd,
+    bollinger,
+    average_true_range,  # [Codex] nuevo
+    stochastic_rsi,      # [Codex] nuevo
+    ichimoku_cloud,      # [Codex] nuevo
+    volume_weighted_average_price,  # [Codex] nuevo
+)
+
+@router.get("/indicators")
+async def get_indicators(
+    type: str = Query(..., pattern="^(crypto|stock|forex)$"),
+    symbol: str = Query(..., description="Ej: BTCUSDT, AAPL, EURUSD"),
+    interval: str = Query("1h", pattern="^(1h|4h|1d)$"),
+    limit: int = Query(300, ge=50, le=500),
+    rsi_period: int = Query(14, ge=2, le=100),
+    ema_periods: str = Query("20,50"),
+    macd_fast: int = Query(12, ge=2, le=100),
+    macd_slow: int = Query(26, ge=2, le=200),
+    macd_signal: int = Query(9, ge=2, le=100),
+    bb_period: int = Query(20, ge=5, le=200),
+    bb_mult: float = Query(2.0, ge=0.1, le=5.0),
+    include_atr: bool = Query(False),  # [Codex] nuevo
+    atr_period: int = Query(14, ge=2, le=200),  # [Codex] nuevo
+    include_stoch_rsi: bool = Query(False),  # [Codex] nuevo
+    stoch_rsi_period: int = Query(14, ge=2, le=100),  # [Codex] nuevo
+    stoch_rsi_k: int = Query(3, ge=1, le=10),  # [Codex] nuevo
+    stoch_rsi_d: int = Query(3, ge=1, le=10),  # [Codex] nuevo
+    include_ichimoku: bool = Query(False),  # [Codex] nuevo
+    ichimoku_conversion: int = Query(9, ge=2, le=60),  # [Codex] nuevo
+    ichimoku_base: int = Query(26, ge=2, le=120),  # [Codex] nuevo
+    ichimoku_span_b: int = Query(52, ge=2, le=240),  # [Codex] nuevo
+    include_vwap: bool = Query(False),  # [Codex] nuevo
+):
+    """
+    Devuelve indicadores técnicos calculados sobre series históricas.
+    """
+    try:
+        closes, meta = await get_closes(type, symbol, interval, limit)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    if not closes or len(closes) < 30:
+        raise HTTPException(status_code=400, detail="No hay suficientes datos para calcular indicadores")
+
+    indicators: Dict[str, Any] = {"last_close": closes[-1]}
+
+    highs = meta.get("highs") or []  # [Codex] nuevo
+    lows = meta.get("lows") or []   # [Codex] nuevo
+    volumes = meta.get("volumes") or []  # [Codex] nuevo
+
+    rsi_val = rsi(closes, rsi_period)
+    if rsi_val is not None:
+        indicators["rsi"] = {"period": rsi_period, "value": rsi_val}
+
+    # Múltiples EMAs
+    try:
+        periods = [int(x.strip()) for x in ema_periods.split(",") if x.strip()]
+    except Exception:
+        periods = [20, 50]
+    ema_list = []
+    for p in periods:
+        val = ema(closes, p)
+        if val is not None:
+            ema_list.append({"period": p, "value": val})
+    if ema_list:
+        indicators["ema"] = ema_list
+
+    macd_obj = macd(closes, fast=macd_fast, slow=macd_slow, signal=macd_signal)
+    if macd_obj:
+        indicators["macd"] = {"fast": macd_fast, "slow": macd_slow, "signal": macd_signal, **macd_obj}
+
+    bb_obj = bollinger(closes, period=bb_period, mult=bb_mult)
+    if bb_obj:
+        indicators["bollinger"] = {"period": bb_period, "mult": bb_mult, **bb_obj}
+
+    if include_atr:
+        atr_val = average_true_range(highs, lows, closes, period=atr_period)
+        if atr_val is not None:
+            indicators["atr"] = {"period": atr_period, "value": atr_val}  # [Codex] nuevo
+
+    if include_stoch_rsi:
+        stoch_val = stochastic_rsi(
+            closes,
+            period=stoch_rsi_period,
+            smooth_k=stoch_rsi_k,
+            smooth_d=stoch_rsi_d,
+        )
+        if stoch_val:
+            indicators["stochastic_rsi"] = {
+                "period": stoch_rsi_period,
+                "smooth_k": stoch_rsi_k,
+                "smooth_d": stoch_rsi_d,
+                **stoch_val,
+            }  # [Codex] nuevo
+
+    if include_ichimoku:
+        ichimoku_vals = ichimoku_cloud(
+            highs,
+            lows,
+            closes,
+            conversion_period=ichimoku_conversion,
+            base_period=ichimoku_base,
+            span_b_period=ichimoku_span_b,
+        )
+        if ichimoku_vals:
+            indicators["ichimoku"] = {
+                "conversion": ichimoku_conversion,
+                "base": ichimoku_base,
+                "span_b": ichimoku_span_b,
+                **ichimoku_vals,
+            }  # [Codex] nuevo
+
+    if include_vwap:
+        vwap_val = volume_weighted_average_price(highs, lows, closes, volumes)
+        if vwap_val is not None:
+            indicators["vwap"] = {"value": vwap_val}  # [Codex] nuevo
+
+    return {
+        "symbol": symbol.upper(),
+        "type": type.lower(),
+        "interval": interval.lower(),
+        "count": len(closes),
+        "source": meta.get("source"),
+        "note": meta.get("note"),
+        "indicators": indicators,
+        "series": {
+            "closes": closes,  # [Codex] nuevo
+            "highs": highs,
+            "lows": lows,
+            "volumes": volumes,
+        },
+    }

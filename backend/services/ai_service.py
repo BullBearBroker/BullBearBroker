@@ -1,56 +1,197 @@
+from dataclasses import dataclass
 from typing import Dict, Any, Callable, Awaitable, List, Tuple, Optional
 import asyncio
 import logging
 import re
+from urllib.parse import urljoin  # [Codex] nuevo
 
 import aiohttp
 
 from backend.utils.config import Config
 from .mistral_service import mistral_service
+try:  # pragma: no cover - optional imports depending on entrypoint
+    from backend.services.market_service import market_service
+except ImportError:  # pragma: no cover
+    market_service = None  # type: ignore
+
+try:  # pragma: no cover - optional imports depending on entrypoint
+    from backend.services.news_service import news_service
+except ImportError:  # pragma: no cover
+    from services.news_service import news_service  # type: ignore
+
+try:  # pragma: no cover
+    from backend.services.forex_service import forex_service
+except ImportError:  # pragma: no cover
+    from services.forex_service import forex_service  # type: ignore
 
 
 logger = logging.getLogger(__name__)
 
+
+@dataclass
+class AIResponsePayload:
+    text: str
+    provider: Optional[str]
+    used_data: bool = False
+    sources: List[str] = None
+
+    def __post_init__(self) -> None:
+        if self.sources is None:
+            self.sources = []
+
+
 class AIService:
+    MARKET_KEYWORDS = {
+        "precio",
+        "price",
+        "valor",
+        "cotización",
+        "acciones",
+        "acción",
+        "stock",
+        "mercado",
+        "eurusd",
+        "usd",
+        "btc",
+        "eth",
+        "forex",
+    }
+    INDICATOR_KEYWORDS = {"rsi", "macd", "vwap", "atr", "indicador", "bollinger"}
+    NEWS_KEYWORDS = {"news", "noticia", "noticias", "headline", "titular"}
+    ALERT_KEYWORDS = {"alerta", "alertas"}
+
     def __init__(self):
-        self.market_service = None
+        self.market_service = market_service
         self.use_real_ai = True  # Mantener compatibilidad con otros servicios
+        self._api_base_url = Config.API_BASE_URL.rstrip("/")  # [Codex] nuevo - base para indicadores
         
     def set_market_service(self, market_service):
         self.market_service = market_service
 
-    async def process_message(self, message: str, context: Dict[str, Any] = None) -> str:
-        """Procesar mensaje del usuario y generar respuesta"""
+    async def process_message(self, message: str, context: Dict[str, Any] = None) -> AIResponsePayload:
+        """Procesar mensaje del usuario y generar respuesta enriquecida."""
+
         context = dict(context or {})
 
-        try:
-            market_context = await self.get_market_context(message)
-            context.update(market_context)
-        except Exception:
-            logger.exception("Error collecting market context")
+        decision = self._analyze_message(message)
+        symbols = decision["symbols"]
+        interval = decision["interval"] or "1h"
+
+        used_data = False
+        sources: List[str] = []
+        enrichment: Dict[str, List[str]] = {}
+
+        # Market data (precios)
+        market_context: Dict[str, Any] = {}
+        if decision["use_market_data"]:
+            try:
+                market_context = await self.get_market_context(message)
+                if market_context:
+                    context.update(market_context)
+                    price_lines = self._summarize_market_context(market_context)
+                    if price_lines:
+                        enrichment.setdefault("prices", []).extend(price_lines)
+                        used_data = True
+                        if "prices" not in sources:
+                            sources.append("prices")
+            except Exception:
+                logger.exception("Error collecting market context")
+
+        # Indicadores técnicos
+        if decision["need_indicators"]:
+            try:
+                indicator_context = await self._collect_indicator_snapshots(message)
+                if indicator_context:
+                    context["indicator_data"] = indicator_context
+                    indicator_lines = self._summarize_indicators(indicator_context)
+                    if indicator_lines:
+                        enrichment.setdefault("indicators", []).extend(indicator_lines)
+                        used_data = True
+                        if "indicators" not in sources:
+                            sources.append("indicators")
+            except Exception:
+                logger.exception("Error collecting indicator snapshots")
+
+        # Noticias
+        if decision["need_news"]:
+            try:
+                news_items = await self._collect_news_highlights(symbols)
+                if news_items:
+                    context["news"] = news_items
+                    news_lines = self._summarize_news(news_items)
+                    if news_lines:
+                        enrichment.setdefault("news", []).extend(news_lines)
+                        used_data = True
+                        if "news" not in sources:
+                            sources.append("news")
+            except Exception:
+                logger.exception("Error collecting news highlights")
+
+        # Alertas sugeridas
+        if decision["need_alerts"] and symbols:
+            try:
+                alert_suggestions = await self._collect_alert_suggestions(symbols, interval)
+                if alert_suggestions:
+                    context["alert_suggestions"] = alert_suggestions
+                    alert_lines = self._summarize_alerts(alert_suggestions)
+                    if alert_lines:
+                        enrichment.setdefault("alerts", []).extend(alert_lines)
+                        used_data = True
+                        if "alerts" not in sources:
+                            sources.append("alerts")
+            except Exception:
+                logger.exception("Error collecting alert suggestions")
+
+        # Cotizaciones forex específicas
+        if decision["forex_pairs"]:
+            try:
+                forex_lines = await self._collect_forex_quotes(decision["forex_pairs"])
+                if forex_lines:
+                    enrichment.setdefault("prices", []).extend(forex_lines)
+                    used_data = True
+                    if "prices" not in sources:
+                        sources.append("prices")
+            except Exception:
+                logger.exception("Error collecting forex quotes")
+
+        enrichment_text = self._build_enrichment_summary(enrichment)
+        if enrichment_text:
+            context["enrichment_summary"] = enrichment_text
 
         providers: List[Tuple[str, Callable[[], Awaitable[str]]]] = [
             ("mistral", lambda: self.process_with_mistral(message, context))
         ]
 
         if Config.HUGGINGFACE_API_KEY:
-            providers.append(
-                ("huggingface", lambda: self._call_huggingface(message, context))
-            )
+            providers.append(("huggingface", lambda: self._call_huggingface(message, context)))
         else:
             logger.info("HuggingFace token not configured. Skipping provider.")
 
         providers.append(("ollama", lambda: self._call_ollama(message, context)))
 
         try:
-            response, provider = await self._call_with_backoff(providers)
+            ai_text, provider = await self._call_with_backoff(providers)
             logger.info("AI response generated using provider %s", provider)
-            return response
         except Exception as exc:
             logger.error("Falling back to local response after provider failures: %s", exc)
-            local_response = await self.generate_response(message)
+            ai_text = await self.generate_response(message)
+            provider = "local"
             logger.info("AI response generated using local fallback")
-            return local_response
+
+        final_parts: List[str] = []
+        if enrichment_text:
+            final_parts.append(enrichment_text)
+        if ai_text:
+            final_parts.append(ai_text)
+
+        final_message = "\n\n".join(part for part in final_parts if part.strip()) or ai_text
+
+        return AIResponsePayload(
+            text=final_message,
+            provider=provider,
+            used_data=used_data,
+            sources=sources,
+        )
 
     async def process_with_mistral(self, message: str, context: Dict[str, Any] = None) -> str:
         """Procesar mensaje con Mistral AI"""
@@ -205,15 +346,43 @@ class AIService:
             if market_data:
                 prompt_lines.append(f"Datos de mercado: {market_data}")
 
+            indicator_data = context.get("indicator_data")  # [Codex] nuevo
+            if indicator_data:
+                prompt_lines.append(f"Indicadores técnicos: {indicator_data}")  # [Codex] nuevo
+
             other_context = {
                 key: value for key, value in context.items()
-                if key not in {"market_data"}
+                if key not in {"market_data", "indicator_data"}  # [Codex] cambiado - excluir indicadores ya agregados
             }
             if other_context:
                 prompt_lines.append(f"Contexto adicional: {other_context}")
 
         prompt_lines.append("Responde en español con recomendaciones concretas y breves.")
         return "\n".join(prompt_lines)
+
+    def _analyze_message(self, message: str) -> Dict[str, Any]:
+        lower = message.lower()
+        symbols = self.extract_symbols(message)
+        interval = self._extract_interval(message)
+
+        need_indicators = any(keyword in lower for keyword in self.INDICATOR_KEYWORDS)
+        need_news = any(keyword in lower for keyword in self.NEWS_KEYWORDS)
+        need_alerts = any(keyword in lower for keyword in self.ALERT_KEYWORDS)
+        price_terms = any(keyword in lower for keyword in self.MARKET_KEYWORDS)
+
+        forex_pairs = [symbol for symbol in symbols if self._looks_like_forex_pair(symbol)]
+
+        use_market_data = bool(symbols or price_terms or need_indicators or need_news or need_alerts)
+
+        return {
+            "symbols": symbols,
+            "interval": interval,
+            "need_indicators": need_indicators,
+            "need_news": need_news,
+            "need_alerts": need_alerts,
+            "forex_pairs": forex_pairs,
+            "use_market_data": use_market_data,
+        }
 
     async def get_market_context(self, message: str) -> Dict[str, Any]:
         """Obtener contexto de mercado relevante"""
@@ -245,6 +414,339 @@ class AIService:
                 context['symbols'] = list(market_data.keys())
 
         return context
+
+    async def _collect_indicator_snapshots(self, message: str) -> Dict[str, Any]:
+        """Busca símbolos + intervalos y consulta /api/markets/indicators con datos reales."""  # [Codex] nuevo
+        interval = self._extract_interval(message)
+        if not interval:
+            return {}
+
+        symbols = self.extract_symbols(message)
+        if not symbols:
+            return {}
+
+        tasks = []
+        prepared: List[Tuple[str, str]] = []
+
+        session_timeout = aiohttp.ClientTimeout(total=20)
+        async with aiohttp.ClientSession(timeout=session_timeout) as session:
+            for symbol in symbols[:2]:  # [Codex] nuevo - limitamos a dos símbolos para evitar latencia
+                asset_type = await self._resolve_asset_type(symbol)
+                if asset_type is None:
+                    continue
+                normalized = self._normalize_symbol_for_indicators(asset_type, symbol)
+                url = urljoin(self._api_base_url + '/', 'api/markets/indicators')
+                params = {
+                    'type': asset_type,
+                    'symbol': normalized,
+                    'interval': interval,
+                    'limit': '300',
+                    'include_atr': 'true',
+                    'atr_period': '14',
+                    'include_stoch_rsi': 'true',
+                    'stoch_rsi_period': '14',
+                    'stoch_rsi_k': '3',
+                    'stoch_rsi_d': '3',
+                    'include_ichimoku': 'true',
+                    'ichimoku_conversion': '9',
+                    'ichimoku_base': '26',
+                    'ichimoku_span_b': '52',
+                    'include_vwap': 'true',
+                }
+                tasks.append(self._fetch_indicator_snapshot(session, url, params))
+                prepared.append((symbol.upper(), asset_type))
+
+            if not tasks:
+                return {}
+
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        indicator_map: Dict[str, Any] = {}
+        for (symbol_key, asset_type), result in zip(prepared, results):
+            if isinstance(result, Exception):
+                logger.warning("Indicator snapshot failed for %s: %s", symbol_key, result)
+                continue
+            if not isinstance(result, dict):
+                continue
+            indicator_map[symbol_key] = {
+                'asset_type': asset_type,
+                'interval': result.get('interval'),
+                'source': result.get('source'),
+                'indicators': result.get('indicators', {}),
+            }
+        return indicator_map
+
+    async def _fetch_indicator_snapshot(self, session: aiohttp.ClientSession, url: str, params: Dict[str, str]) -> Dict[str, Any]:
+        """Realiza la llamada HTTP para recuperar indicadores técnicos."""  # [Codex] nuevo
+        async with session.get(url, params=params) as response:
+            if response.status != 200:
+                body = await response.text()
+                raise RuntimeError(f"Indicadores {params.get('symbol')} -> {response.status}: {body[:200]}")
+            return await response.json()
+
+    async def _collect_news_highlights(self, symbols: List[str], limit: int = 3) -> List[Dict[str, Any]]:
+        if news_service is None:
+            return []
+        try:
+            articles = await news_service.get_latest_news(limit=8)
+        except Exception as exc:
+            logger.warning("NewsService error: %s", exc)
+            return []
+
+        if not articles:
+            return []
+
+        symbols_lower = [sym.lower() for sym in symbols if sym]
+        selected: List[Dict[str, Any]] = []
+        for article in articles:
+            title = article.get("title") or ""
+            summary = article.get("summary") or ""
+            text_blob = f"{title} {summary}".lower()
+            if symbols_lower:
+                if any(sym in text_blob for sym in symbols_lower):
+                    selected.append(article)
+            else:
+                selected.append(article)
+            if len(selected) >= limit:
+                break
+
+        if not selected and symbols_lower:
+            selected = articles[:limit]
+
+        highlights: List[Dict[str, Any]] = []
+        for item in selected[:limit]:
+            highlights.append(
+                {
+                    "title": item.get("title") or "Sin título",
+                    "source": item.get("source") or "News",
+                    "url": item.get("url"),
+                    "published_at": item.get("published_at"),
+                    "summary": item.get("summary"),
+                }
+            )
+        return highlights
+
+    async def _collect_alert_suggestions(self, symbols: List[str], interval: str) -> List[Dict[str, str]]:
+        try:
+            from backend.services.alert_service import alert_service as shared_alert_service
+        except ImportError:  # pragma: no cover - evitar fallos en modo standalone
+            return []
+
+        suggestions: List[Dict[str, str]] = []
+        for symbol in symbols[:2]:
+            try:
+                result = await shared_alert_service.suggest_alert_condition(symbol, interval)
+                if result:
+                    payload = {"symbol": symbol, **result}
+                    suggestions.append(payload)
+            except Exception as exc:
+                logger.warning("Alert suggestion failed for %s: %s", symbol, exc)
+        return suggestions
+
+    async def _collect_forex_quotes(self, pairs: List[str]) -> List[str]:
+        if forex_service is None:
+            return []
+        summaries: List[str] = []
+        for pair in pairs[:3]:
+            try:
+                quote = await forex_service.get_quote(pair)
+            except Exception as exc:
+                logger.warning("Forex quote failed for %s: %s", pair, exc)
+                continue
+            if not quote:
+                continue
+            price = quote.get("price")
+            change = quote.get("change")
+            source = quote.get("source") or "Forex"
+            change_str = f"{change:+.4f}" if isinstance(change, (int, float)) else change or "n/d"
+            price_str = f"{price:.4f}" if isinstance(price, (int, float)) else price or "n/d"
+            formatted_pair = self._format_forex_symbol(pair)
+            summaries.append(f"{formatted_pair}: {price_str} ({change_str}) — {source}")
+        return summaries
+
+    def _summarize_market_context(self, market_context: Dict[str, Any]) -> List[str]:
+        if not market_context:
+            return []
+        market_data = market_context.get("market_data") or {}
+        lines: List[str] = []
+        for symbol, payload in market_data.items():
+            raw_price = payload.get("raw_price")
+            price = (
+                f"{raw_price:,.2f}"
+                if isinstance(raw_price, (int, float))
+                else payload.get("price")
+            )
+            raw_change = payload.get("raw_change")
+            change = (
+                f"{raw_change:+.2f}%"
+                if isinstance(raw_change, (int, float))
+                else payload.get("change")
+            )
+            source = payload.get("source") or "Mercado"
+            lines.append(f"{symbol}: precio {price or 'n/d'} ({change or 'n/d'}) — {source}")
+        return lines
+
+    def _summarize_indicators(self, indicator_map: Dict[str, Any]) -> List[str]:
+        lines: List[str] = []
+        for symbol, payload in indicator_map.items():
+            indicators = payload.get("indicators", {})
+            parts: List[str] = []
+            rsi = indicators.get("rsi", {}).get("value")
+            if isinstance(rsi, (int, float)):
+                parts.append(f"RSI {rsi:.1f}")
+            macd_obj = indicators.get("macd") or {}
+            macd_val = macd_obj.get("macd")
+            if isinstance(macd_val, (int, float)):
+                parts.append(f"MACD {macd_val:.3f}")
+            atr = indicators.get("atr", {}).get("value")
+            if isinstance(atr, (int, float)):
+                parts.append(f"ATR {atr:.3f}")
+            stoch = indicators.get("stochastic_rsi") or {}
+            stoch_k = stoch.get("%K")
+            if isinstance(stoch_k, (int, float)):
+                parts.append(f"StochRSI %K {stoch_k:.1f}")
+            vwap = indicators.get("vwap", {}).get("value")
+            if isinstance(vwap, (int, float)):
+                parts.append(f"VWAP {vwap:.3f}")
+
+            if not parts:
+                continue
+            interval = payload.get("interval", "n/d")
+            lines.append(f"{symbol} ({interval}): {', '.join(parts)}")
+        return lines
+
+    def _summarize_news(self, news_items: List[Dict[str, Any]]) -> List[str]:
+        lines: List[str] = []
+        for item in news_items:
+            title = item.get("title") or "Sin título"
+            source = item.get("source") or "News"
+            lines.append(f"{title} — {source}")
+        return lines
+
+    def _summarize_alerts(self, suggestions: List[Dict[str, str]]) -> List[str]:
+        lines: List[str] = []
+        for item in suggestions:
+            symbol = item.get("symbol", "Activo")
+            suggestion = item.get("suggestion")
+            note = item.get("notes")
+            if not suggestion:
+                continue
+            if note:
+                lines.append(f"{symbol}: {suggestion} (nota: {note})")
+            else:
+                lines.append(f"{symbol}: {suggestion}")
+        return lines
+
+    def _build_enrichment_summary(self, enrichment: Dict[str, List[str]]) -> str:
+        if not enrichment:
+            return ""
+        sections: List[str] = []
+        if enrichment.get("prices"):
+            sections.append(
+                "📈 Datos de mercado:\n" + "\n".join(f"- {line}" for line in enrichment["prices"])
+            )
+        if enrichment.get("indicators"):
+            sections.append(
+                "📊 Indicadores técnicos:\n"
+                + "\n".join(f"- {line}" for line in enrichment["indicators"])
+            )
+        if enrichment.get("news"):
+            sections.append(
+                "📰 Noticias relevantes:\n" + "\n".join(f"- {line}" for line in enrichment["news"]) 
+            )
+        if enrichment.get("alerts"):
+            sections.append(
+                "🚨 Ideas de alertas:\n" + "\n".join(f"- {line}" for line in enrichment["alerts"])
+            )
+        return "\n\n".join(sections).strip()
+
+    def _looks_like_forex_pair(self, symbol: str) -> bool:
+        if "/" in symbol:
+            parts = symbol.split("/")
+            return len(parts) == 2 and all(len(p) == 3 for p in parts)
+        if len(symbol) == 6 and symbol.isalpha():
+            return True
+        return False
+
+    def _format_forex_symbol(self, symbol: str) -> str:
+        if "/" in symbol:
+            return symbol.upper()
+        if len(symbol) == 6:
+            return f"{symbol[:3]}/{symbol[3:]}".upper()
+        return symbol.upper()
+
+    async def _resolve_asset_type(self, symbol: str) -> Optional[str]:
+        """Determina tipo de activo combinando heurísticas con MarketService."""  # [Codex] nuevo
+        symbol_up = symbol.upper()
+        if '/' in symbol_up or (len(symbol_up) == 6 and symbol_up.isalpha() and symbol_up.isupper()):
+            return 'forex'
+        if self.market_service:
+            try:
+                detected = await self.market_service.detect_asset_type(symbol_up)
+                if detected in {'crypto', 'stock'}:
+                    return detected
+            except Exception:
+                logger.debug("No se pudo detectar tipo via MarketService para %s", symbol_up)
+        return 'stock'
+
+    def _normalize_symbol_for_indicators(self, asset_type: str, symbol: str) -> str:
+        """Normaliza símbolo según la API de indicadores."""  # [Codex] nuevo
+        symbol_up = symbol.upper()
+        if asset_type == 'crypto' and not symbol_up.endswith('USDT'):
+            return f"{symbol_up}USDT"
+        if asset_type == 'forex':
+            return symbol_up.replace('/', '')
+        return symbol_up
+
+    def _extract_interval(self, message: str) -> Optional[str]:
+        """Busca intervalos soportados (1h, 4h, 1d) dentro del mensaje."""  # [Codex] nuevo
+        match = re.search(r"\b(1h|4h|1d)\b", message, flags=re.IGNORECASE)
+        return match.group(1).lower() if match else None
+
+    def _merge_indicator_response(self, ai_response: str, indicator_map: Dict[str, Any]) -> str:
+        """Combina la respuesta textual del modelo con un resumen de indicadores."""  # [Codex] nuevo
+        if not indicator_map:
+            return ai_response
+
+        lines = ["", "📊 Indicadores recientes:"]
+        for symbol, payload in indicator_map.items():
+            data = payload.get('indicators', {})
+            summary_parts: List[str] = []
+
+            rsi_data = data.get('rsi')
+            if rsi_data and rsi_data.get('value') is not None:
+                summary_parts.append(f"RSI {rsi_data['value']}")
+
+            macd_data = data.get('macd')
+            if macd_data and macd_data.get('macd') is not None:
+                summary_parts.append(f"MACD {macd_data['macd']}")
+
+            atr_data = data.get('atr')
+            if atr_data and atr_data.get('value') is not None:
+                summary_parts.append(f"ATR {atr_data['value']}")
+
+            stoch_data = data.get('stochastic_rsi')
+            if stoch_data and stoch_data.get('%K') is not None:
+                summary_parts.append(f"StochRSI %K {stoch_data['%K']}")
+
+            ichimoku_data = data.get('ichimoku')
+            if ichimoku_data and ichimoku_data.get('tenkan_sen') is not None:
+                summary_parts.append(f"Ichimoku T/K {ichimoku_data['tenkan_sen']}/{ichimoku_data['kijun_sen']}")
+
+            vwap_data = data.get('vwap')
+            if vwap_data and vwap_data.get('value') is not None:
+                summary_parts.append(f"VWAP {vwap_data['value']}")
+
+            if not summary_parts:
+                continue
+
+            interval = payload.get('interval', 'n/d')
+            lines.append(f"- {symbol} ({interval}): {', '.join(summary_parts)}")
+
+        if len(lines) == 2:
+            return ai_response
+
+        return ai_response + "\n".join(lines)
 
     def extract_symbols(self, message: str) -> list:
         """Extraer símbolos de activos del mensaje"""
