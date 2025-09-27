@@ -31,6 +31,7 @@ class ForexService:
         self.cache = cache_client or CacheClient("forex-quotes", ttl=60)
         self._session_factory = session_factory
         self._timeout = ClientTimeout(total=10)
+        # Orden de fallback: Twelve Data → Alpha Vantage → Yahoo Finance
         self.apis = (
             {
                 "name": "Twelve Data",
