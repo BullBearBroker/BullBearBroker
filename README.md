@@ -1,6 +1,6 @@
 ## BullBearBroker
 
-### Requisitos previos mirar
+### Requisitos previos 
 
 - [Docker](https://docs.docker.com/get-docker/)
 - [Docker Compose](https://docs.docker.com/compose/) (Docker Desktop ya lo incluye)
