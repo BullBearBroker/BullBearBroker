@@ -1,7 +1,7 @@
-import type { Config } from "jest";
-import path from "path";
+const path = require("path");
 
-const config: Config = {
+/** @type {import('jest').Config} */
+module.exports = {
   rootDir: path.resolve(__dirname),
 
   testEnvironment: "jsdom",
@@ -25,18 +25,11 @@ const config: Config = {
       "<rootDir>/node_modules/@mswjs/interceptors/lib/node/interceptors/$1/index.js",
   },
 
-  // ✅ Forzar a Jest a usar Babel en tests y TS/JSX
+  // 👇 aquí está la clave: le pasamos configFile explícito
   transform: {
     "^.+\\.(js|jsx|ts|tsx)$": [
       "babel-jest",
-      {
-        presets: [
-          "next/babel",
-          "@babel/preset-env",
-          "@babel/preset-react",
-          "@babel/preset-typescript",
-        ],
-      },
+      { configFile: path.resolve(__dirname, "babel.config.cjs") },
     ],
   },
 
@@ -74,5 +67,3 @@ const config: Config = {
     },
   },
 };
-
-export default config;

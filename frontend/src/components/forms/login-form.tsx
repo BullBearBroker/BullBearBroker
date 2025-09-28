@@ -1,89 +1,56 @@
-"use client";
-
-import { useState } from "react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { useRouter } from "next/navigation";
+import { LoginForm } from "../login-form";
 
-import { useAuth } from "@/components/providers/auth-provider";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+// ✅ Mock Router
+const mockPush = jest.fn();
+jest.mock("next/navigation", () => ({
+  useRouter: jest.fn(),
+}));
 
-export function LoginForm() {
-  const { loginUser } = useAuth();
-  const router = useRouter();
-
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const validate = (): string | null => {
-    if (!email.match(/^[^@]+@[^@]+\.[^@]+$/)) {
-      return "Debe ingresar un correo válido";
-    }
-    if (password.length < 6) {
-      return "La contraseña debe tener al menos 6 caracteres";
-    }
-    return null;
+// ✅ Mock Auth Provider
+const mockLoginUser = jest.fn();
+jest.mock("@/components/providers/auth-provider", () => {
+  return {
+    useAuth: () => ({
+      loginUser: mockLoginUser,
+    }),
+    __esModule: true,
   };
+});
 
-  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
+describe("LoginForm", () => {
+  beforeEach(() => {
+    (useRouter as jest.Mock).mockReturnValue({ push: mockPush });
+    jest.clearAllMocks();
+  });
 
-    const validationError = validate();
-    if (validationError) {
-      setError(validationError);
-      return;
-    }
+  it("muestra error si el email no es válido", async () => {
+    render(<LoginForm />);
+    fireEvent.change(screen.getByPlaceholderText("Correo electrónico"), {
+      target: { value: "invalido" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Contraseña"), {
+      target: { value: "123456" },
+    });
+    fireEvent.submit(screen.getByRole("button", { name: "Iniciar Sesión" }));
 
-    setLoading(true);
-    setError(null);
+    expect(
+      await screen.findByText("Debe ingresar un correo válido")
+    ).toBeInTheDocument();
+  });
 
-    try {
-      await loginUser(email, password);
-      router.push("/dashboard"); // 🔄 redirección clara al panel
-    } catch (err) {
-      console.error(err);
-      setError(err instanceof Error ? err.message : "Error al iniciar sesión");
-    } finally {
-      setLoading(false);
-    }
-  };
+  it("redirige al dashboard tras login exitoso", async () => {
+    mockLoginUser.mockResolvedValueOnce({});
+    render(<LoginForm />);
+    fireEvent.change(screen.getByPlaceholderText("Correo electrónico"), {
+      target: { value: "test@example.com" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Contraseña"), {
+      target: { value: "123456" },
+    });
+    fireEvent.submit(screen.getByRole("button", { name: "Iniciar Sesión" }));
 
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div>
-        <label htmlFor="email" className="block text-sm font-medium">
-          Correo electrónico
-        </label>
-        <Input
-          id="email"
-          type="email"
-          placeholder="Correo electrónico"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          required
-        />
-      </div>
-
-      <div>
-        <label htmlFor="password" className="block text-sm font-medium">
-          Contraseña
-        </label>
-        <Input
-          id="password"
-          type="password"
-          placeholder="Contraseña"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          required
-        />
-      </div>
-
-      {error && <p className="text-sm text-destructive">{error}</p>}
-
-      <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? "Ingresando..." : "Iniciar Sesión"}
-      </Button>
-    </form>
-  );
-}
+    await waitFor(() => expect(mockPush).toHaveBeenCalledWith("/dashboard"));
+  });
+});
