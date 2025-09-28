@@ -1,12 +1,9 @@
 import type { Config } from "jest";
 
 const config: Config = {
-  // ✅ Usa ts-jest con babel-jest para soportar TSX y JSX
-  preset: "ts-jest/presets/js-with-babel",
-
+  // ✅ Simula entorno navegador
   testEnvironment: "jsdom",
 
-  // Opciones extra para simular un navegador
   testEnvironmentOptions: {
     url: "http://localhost",
   },
@@ -29,13 +26,12 @@ const config: Config = {
       "<rootDir>/node_modules/@mswjs/interceptors/lib/node/interceptors/$1/index.js",
   },
 
-  // ✅ Transforma TS/JS con Babel
+  // ✅ Transforma TS/JS con Babel (usando tu babel.config.js en ESM)
   transform: {
     "^.+\\.(t|j)sx?$": [
       "babel-jest",
       {
-        rootMode: "upward",
-        configFile: "./babel.config.cjs", // fuerza a usar el config correcto
+        configFile: "<rootDir>/babel.config.js",
       },
     ],
   },
@@ -45,7 +41,7 @@ const config: Config = {
     "/node_modules/(?!(recharts|d3-|msw|@mswjs|until-async|strict-event-emitter|outvariant|headers-polyfill)/)",
   ],
 
-  // ✅ Extensiones que Jest debe reconocer
+  // ✅ Extensiones soportadas
   moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json", "node"],
 
   // ✅ Localización de tests
