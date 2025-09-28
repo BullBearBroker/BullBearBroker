@@ -1,50 +1,54 @@
 import type { Config } from "jest";
 
 const config: Config = {
-  // ✅ Usa ts-jest para compilar TS/TSX en tests
-  preset: "ts-jest",
+  // ✅ Usa ts-jest con babel-jest para soportar TSX y JSX
+  preset: "ts-jest/presets/js-with-babel",
 
   testEnvironment: "jsdom",
 
-  // Útil para algunas APIs que esperan un origin válido
+  // Opciones extra para simular un navegador
   testEnvironmentOptions: {
     url: "http://localhost",
   },
 
+  // ✅ Archivos que se cargan antes de cada test
   setupFilesAfterEnv: [
     "<rootDir>/jest.setup.ts",
-    "<rootDir>/src/tests/msw/setup.ts"
+    "<rootDir>/src/tests/msw/setup.ts",
   ],
 
+  // ✅ Mapear imports no soportados
   moduleNameMapper: {
     "^.+\\.(css|less|scss|sass)$": "identity-obj-proxy",
     "^@/styles/globals\\.css$": "identity-obj-proxy",
     "^@/(.*)$": "<rootDir>/src/$1",
     "^msw/node$": "<rootDir>/node_modules/msw/lib/node/index.js",
-    "^@mswjs/interceptors/WebSocket$": "<rootDir>/src/tests/msw/websocket-interceptor.ts",
-    "^@mswjs/interceptors/(.*)$": "<rootDir>/node_modules/@mswjs/interceptors/lib/node/interceptors/$1/index.js",
-    // Si luego agregas mocks de assets, puedes mapear imágenes/SVG a un mock:
-    // "\\.(jpg|jpeg|png|gif|webp|avif|svg)$": "<rootDir>/__mocks__/fileMock.js",
+    "^@mswjs/interceptors/WebSocket$":
+      "<rootDir>/src/tests/msw/websocket-interceptor.ts",
+    "^@mswjs/interceptors/(.*)$":
+      "<rootDir>/node_modules/@mswjs/interceptors/lib/node/interceptors/$1/index.js",
   },
 
+  // ✅ Transforma TS/JS con Babel
   transform: {
     "^.+\\.(t|j)sx?$": [
-      "ts-jest",
+      "babel-jest",
       {
-        tsconfig: "<rootDir>/tsconfig.jest.json",
+        rootMode: "upward",
+        configFile: "./babel.config.cjs", // fuerza a usar el config correcto
       },
     ],
   },
 
-  // ⚠️ Transpila ciertos módulos ESM dentro de node_modules (como recharts y d3-*)
+  // ⚠️ Incluye librerías ESM que Jest no procesa por defecto
   transformIgnorePatterns: [
-    "/node_modules/(?!(recharts|d3-array|d3-scale|d3-time|d3-format|d3-color|delaunator|robust-predicates|internmap|msw|@mswjs|until-async|strict-event-emitter|outvariant|headers-polyfill)/)",
+    "/node_modules/(?!(recharts|d3-|msw|@mswjs|until-async|strict-event-emitter|outvariant|headers-polyfill)/)",
   ],
 
-  // Para que Jest resuelva correctamente extensiones más comunes del proyecto
+  // ✅ Extensiones que Jest debe reconocer
   moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json", "node"],
 
-  // Dónde buscar tests (puedes ajustarlo si prefieres __tests__)
+  // ✅ Localización de tests
   testMatch: [
     "<rootDir>/src/**/*.test.(ts|tsx|js|jsx)",
     "<rootDir>/src/**/__tests__/**/*.(ts|tsx|js|jsx)",
@@ -52,9 +56,9 @@ const config: Config = {
 
   testPathIgnorePatterns: ["<rootDir>/.next/", "<rootDir>/node_modules/"],
 
-  // Calidad de vida
   clearMocks: true,
-  // verbose: true,
+
+  // ✅ Cobertura
   collectCoverage: true,
   collectCoverageFrom: [
     "<rootDir>/src/**/*.{ts,tsx}",
@@ -64,15 +68,8 @@ const config: Config = {
     "!<rootDir>/src/**/__tests__/**",
     "!<rootDir>/src/**/stories/**",
     "!<rootDir>/src/app/**",
-    "!<rootDir>/src/components/alerts/**",
-    "!<rootDir>/src/components/chat/**",
-    "!<rootDir>/src/components/dashboard/**",
-    "!<rootDir>/src/components/indicators/**",
-    "!<rootDir>/src/components/providers/**",
-    "!<rootDir>/src/components/ui/**",
-    "!<rootDir>/src/context/**",
-    "!<rootDir>/src/lib/**"
   ],
+
   coverageThreshold: {
     global: {
       branches: 85,
@@ -81,7 +78,6 @@ const config: Config = {
       statements: 90,
     },
   },
-
 };
 
 export default config;

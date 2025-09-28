@@ -45,6 +45,16 @@ export function AlertsPanel({ token }: AlertsPanelProps) {
   const [suggestError, setSuggestError] = useState<string | null>(null); // [Codex] nuevo
   const [suggestNote, setSuggestNote] = useState<string | null>(null); // [Codex] nuevo
 
+  const quickConditionPresets: { label: string; value: string }[] = [
+    { label: "Menor que", value: "<" },
+    { label: "Mayor que", value: ">" },
+    { label: "Igual a", value: "==" },
+  ];
+
+  const handleQuickCondition = useCallback((presetValue: string) => {
+    setCondition((prev) => (prev.trim().length === 0 ? presetValue : prev));
+  }, []);
+
   // Crear alerta nueva
   const handleCreate = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
@@ -244,17 +254,22 @@ export function AlertsPanel({ token }: AlertsPanelProps) {
             onChange={(event) => setCondition(event.target.value)}
             disabled={!token || submitting}
           />
-          <select
-            value={condition}
-            onChange={(event) => setCondition(event.target.value as "<" | ">" | "==")}
-            disabled={!token || submitting}
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm"
-          >
-            <option value="">Selecciona condición</option>
-            <option value="<">Menor que (&lt;)</option>
-            <option value=">">Mayor que (&gt;)</option>
-            <option value="==">Igual a (==)</option>
-          </select>
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span>Atajos:</span>
+            {quickConditionPresets.map((preset) => (
+              <Button
+                key={preset.value}
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled={!token || submitting || Boolean(condition.trim())}
+                onClick={() => handleQuickCondition(preset.value)}
+              >
+                {preset.label}
+                <span className="ml-1 font-mono">{preset.value}</span>
+              </Button>
+            ))}
+          </div>
           <Input
             type="number"
             placeholder="Valor (ej. 30)"
