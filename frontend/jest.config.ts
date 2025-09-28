@@ -30,12 +30,14 @@ const config: Config = {
     "^.+\\.(js|jsx|ts|tsx)$": [
       "babel-jest",
       {
+
         presets: [
           "next/babel",
           "@babel/preset-env",
           "@babel/preset-react",
           "@babel/preset-typescript",
         ],
+
       },
     ],
   },
