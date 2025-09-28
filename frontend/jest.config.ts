@@ -31,7 +31,7 @@ const config: Config = {
     "^.+\\.(t|j)sx?$": [
       "babel-jest",
       {
-        configFile: "<rootDir>/babel.config.js",
+        configFile: "<rootDir>/babel.config.cjs",
       },
     ],
   },
