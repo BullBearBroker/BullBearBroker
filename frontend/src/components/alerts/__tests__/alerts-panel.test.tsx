@@ -20,10 +20,16 @@ jest.mock("@/lib/api", () => ({
   suggestAlertCondition: jest.fn(),
 }));
 
+<<<<<<< HEAD
 // ✅ sin sintaxis TS, para que Jest no falle
 const mockedUseSWR = useSWR;
 const mockedCreateAlert = createAlert;
 const mockedUpdateAlert = updateAlert;
+=======
+const mockedUseSWR = useSWR as jest.MockedFunction<typeof useSWR>;
+const mockedCreateAlert = createAlert as jest.MockedFunction<typeof createAlert>;
+const mockedUpdateAlert = updateAlert as jest.MockedFunction<typeof updateAlert>;
+>>>>>>> eb492e4f4b05bec477b7c5dc839dc3f323e7f1b5
 
 describe("AlertsPanel", () => {
   beforeEach(() => {
