@@ -20,16 +20,10 @@ jest.mock("@/lib/api", () => ({
   suggestAlertCondition: jest.fn(),
 }));
 
-<<<<<<< HEAD
-// ✅ sin sintaxis TS, para que Jest no falle
-const mockedUseSWR = useSWR;
-const mockedCreateAlert = createAlert;
-const mockedUpdateAlert = updateAlert;
-=======
+// ✅ Mockeos con tipado para evitar errores en TS
 const mockedUseSWR = useSWR as jest.MockedFunction<typeof useSWR>;
 const mockedCreateAlert = createAlert as jest.MockedFunction<typeof createAlert>;
 const mockedUpdateAlert = updateAlert as jest.MockedFunction<typeof updateAlert>;
->>>>>>> eb492e4f4b05bec477b7c5dc839dc3f323e7f1b5
 
 describe("AlertsPanel", () => {
   beforeEach(() => {
@@ -76,10 +70,7 @@ describe("AlertsPanel", () => {
         screen.getByPlaceholderText("Condición (ej. BTC > 50,000 USD)"),
         "Precio cruza los 50k"
       );
-      await user.type(
-        screen.getByPlaceholderText("Valor (ej. 30)"),
-        "50000"
-      );
+      await user.type(screen.getByPlaceholderText("Valor (ej. 30)"), "50000");
     });
 
     await act(async () => {
@@ -115,10 +106,7 @@ describe("AlertsPanel", () => {
         screen.getByPlaceholderText("Condición (ej. BTC > 50,000 USD)"),
         "ETH supera los 3000"
       );
-      await user.type(
-        screen.getByPlaceholderText("Valor (ej. 30)"),
-        "3000"
-      );
+      await user.type(screen.getByPlaceholderText("Valor (ej. 30)"), "3000");
       await user.click(screen.getByRole("button", { name: /crear alerta/i }));
     });
 
@@ -175,7 +163,9 @@ describe("AlertsPanel", () => {
     const user = userEvent.setup();
     render(<AlertsPanel token="demo-token" />);
 
-    const textarea = screen.getByPlaceholderText(/condición/i) as HTMLTextAreaElement;
+    const textarea = screen.getByPlaceholderText(
+      /condición/i
+    ) as HTMLTextAreaElement;
     const helperButton = screen.getByRole("button", { name: /menor que/i });
 
     expect(textarea).toHaveValue("");
@@ -193,7 +183,9 @@ describe("AlertsPanel", () => {
     const user = userEvent.setup();
     render(<AlertsPanel token="demo-token" />);
 
-    const textarea = screen.getByPlaceholderText(/condición/i) as HTMLTextAreaElement;
+    const textarea = screen.getByPlaceholderText(
+      /condición/i
+    ) as HTMLTextAreaElement;
     const helperButton = screen.getByRole("button", { name: /menor que/i });
 
     await act(async () => {

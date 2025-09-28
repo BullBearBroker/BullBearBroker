@@ -10,16 +10,19 @@ import { Input } from "@/components/ui/input";
 export function LoginForm() {
   const { loginUser } = useAuth();
   const router = useRouter();
+
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const validate = () => {
-    if (!email.match(/^[^@]+@[^@]+\.[^@]+$/))
+  const validate = (): string | null => {
+    if (!email.match(/^[^@]+@[^@]+\.[^@]+$/)) {
       return "Debe ingresar un correo válido";
-    if (password.length < 6)
+    }
+    if (password.length < 6) {
       return "La contraseña debe tener al menos 6 caracteres";
+    }
     return null;
   };
 
@@ -34,9 +37,10 @@ export function LoginForm() {
 
     setLoading(true);
     setError(null);
+
     try {
       await loginUser(email, password);
-      router.push("/");
+      router.push("/dashboard"); // 🔄 redirección clara al panel
     } catch (err) {
       console.error(err);
       setError(err instanceof Error ? err.message : "Error al iniciar sesión");
@@ -53,10 +57,11 @@ export function LoginForm() {
         </label>
         <Input
           id="email"
-          placeholder="Correo electrónico"
           type="email"
+          placeholder="Correo electrónico"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
+          required
         />
       </div>
 
@@ -66,10 +71,11 @@ export function LoginForm() {
         </label>
         <Input
           id="password"
-          placeholder="Contraseña"
           type="password"
+          placeholder="Contraseña"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
+          required
         />
       </div>
 

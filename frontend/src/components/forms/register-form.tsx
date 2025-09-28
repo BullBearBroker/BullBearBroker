@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 export function RegisterForm() {
   const { registerUser } = useAuth();
   const router = useRouter();
+
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -20,13 +21,17 @@ export function RegisterForm() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const validate = () => {
+  const validate = (): string | null => {
     if (!name) return "El nombre es obligatorio";
-    if (!email.match(/^[^@]+@[^@]+\.[^@]+$/))
+    if (!email.match(/^[^@]+@[^@]+\.[^@]+$/)) {
       return "Debe ingresar un correo válido";
-    if (password.length < 6)
+    }
+    if (password.length < 6) {
       return "La contraseña debe tener al menos 6 caracteres";
-    if (password !== confirmPassword) return "Las contraseñas no coinciden";
+    }
+    if (password !== confirmPassword) {
+      return "Las contraseñas no coinciden";
+    }
     return null;
   };
 
@@ -41,9 +46,10 @@ export function RegisterForm() {
 
     setLoading(true);
     setError(null);
+
     try {
       await registerUser(email, password, name || undefined, riskProfile);
-      router.push("/");
+      router.push("/login"); // 🔄 tras registro, va al login
     } catch (err) {
       console.error(err);
       setError(
@@ -65,6 +71,7 @@ export function RegisterForm() {
           placeholder="Nombre"
           value={name}
           onChange={(event) => setName(event.target.value)}
+          required
         />
       </div>
 
@@ -78,6 +85,7 @@ export function RegisterForm() {
           placeholder="Correo electrónico"
           value={email}
           onChange={(event) => setEmail(event.target.value)}
+          required
         />
       </div>
 
@@ -91,6 +99,7 @@ export function RegisterForm() {
           placeholder="Contraseña"
           value={password}
           onChange={(event) => setPassword(event.target.value)}
+          required
         />
       </div>
 
@@ -104,6 +113,7 @@ export function RegisterForm() {
           placeholder="Confirmar contraseña"
           value={confirmPassword}
           onChange={(event) => setConfirmPassword(event.target.value)}
+          required
         />
       </div>
 
