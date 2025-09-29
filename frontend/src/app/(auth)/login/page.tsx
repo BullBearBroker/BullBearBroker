@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { LoginForm } from "@/components/forms/login-form";
+import LoginForm from "@/components/forms/login-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function LoginPage() {
