@@ -4,27 +4,24 @@ import { RegisterForm } from "../register-form";
 
 // Mock de useAuth
 jest.mock("@/components/providers/auth-provider", () => {
-  const registerUserMock = jest.fn().mockResolvedValue(undefined);
+  (globalThis as any).registerUserMock = jest
+    .fn()
+    .mockResolvedValue(undefined);
 
   return {
     __esModule: true,
     useAuth: () => ({
-      registerUser: registerUserMock,
+      registerUser: (globalThis as any).registerUserMock,
     }),
-    registerUserMock,
+    registerUserMock: (globalThis as any).registerUserMock,
   };
 });
 
-const { registerUserMock } =
-  jest.requireMock("@/components/providers/auth-provider") as {
-    registerUserMock: jest.Mock;
-  };
-
-const pushMock = jest.fn();
+(globalThis as any).pushMock = jest.fn();
 
 jest.mock("next/navigation", () => ({
   useRouter: () => ({
-    push: pushMock,
+    push: (globalThis as any).pushMock,
     replace: jest.fn(),
     refresh: jest.fn(),
     prefetch: jest.fn(),
@@ -34,8 +31,8 @@ jest.mock("next/navigation", () => ({
 
 describe("RegisterForm", () => {
   beforeEach(() => {
-    registerUserMock.mockClear();
-    pushMock.mockClear();
+    (globalThis as any).registerUserMock.mockClear();
+    (globalThis as any).pushMock.mockClear();
   });
 
   it("valida campos obligatorios", async () => {
@@ -49,7 +46,7 @@ describe("RegisterForm", () => {
     expect(
       await screen.findByText(/el nombre es obligatorio/i)
     ).toBeInTheDocument();
-    expect(registerUserMock).not.toHaveBeenCalled();
+    expect((globalThis as any).registerUserMock).not.toHaveBeenCalled();
   });
 
   it("muestra error cuando el correo tiene formato inválido", async () => {
@@ -78,7 +75,7 @@ describe("RegisterForm", () => {
         screen.getByText(/debe ingresar un correo válido/i)
       ).toBeInTheDocument();
     });
-    expect(registerUserMock).not.toHaveBeenCalled();
+    expect((globalThis as any).registerUserMock).not.toHaveBeenCalled();
   });
 
   it("muestra error cuando las contraseñas no coinciden", () => {
@@ -134,18 +131,20 @@ describe("RegisterForm", () => {
     fireEvent.submit(form!);
 
     await waitFor(() =>
-      expect(registerUserMock).toHaveBeenCalledWith(
+      expect((globalThis as any).registerUserMock).toHaveBeenCalledWith(
         "user@example.com",
         "secret123",
         "Jane",
         "agresivo"
       )
     );
-    expect(pushMock).toHaveBeenCalledWith("/");
+    expect((globalThis as any).pushMock).toHaveBeenCalledWith("/");
   });
 
   it("muestra mensaje de error cuando el registro falla", async () => {
-    registerUserMock.mockRejectedValueOnce(new Error("Duplicado"));
+    (globalThis as any).registerUserMock.mockRejectedValueOnce(
+      new Error("Duplicado")
+    );
 
     render(<RegisterForm />);
 
@@ -168,6 +167,6 @@ describe("RegisterForm", () => {
     fireEvent.submit(form!);
 
     expect(await screen.findByText(/duplicado/i)).toBeInTheDocument();
-    expect(pushMock).not.toHaveBeenCalled();
+    expect((globalThis as any).pushMock).not.toHaveBeenCalled();
   });
 });
