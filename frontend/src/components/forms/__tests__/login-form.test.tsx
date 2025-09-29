@@ -4,12 +4,22 @@ import { axe } from "jest-axe";
 import { LoginForm } from "../login-form";
 
 // Mock de useAuth
-const loginUserMock = jest.fn().mockResolvedValue(undefined);
-jest.mock("@/components/providers/auth-provider", () => ({
-  useAuth: () => ({
-    loginUser: loginUserMock,
-  }),
-}));
+jest.mock("@/components/providers/auth-provider", () => {
+  const loginUserMock = jest.fn().mockResolvedValue(undefined);
+
+  return {
+    __esModule: true,
+    useAuth: () => ({
+      loginUser: loginUserMock,
+    }),
+    loginUserMock,
+  };
+});
+
+const { loginUserMock } =
+  jest.requireMock("@/components/providers/auth-provider") as {
+    loginUserMock: jest.Mock;
+  };
 
 const pushMock = jest.fn();
 
