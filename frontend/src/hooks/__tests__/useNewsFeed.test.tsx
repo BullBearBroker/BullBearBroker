@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { SWRConfig } from "swr";
 
 import { useNewsFeed } from "../useNewsFeed";
@@ -81,7 +81,9 @@ describe("useNewsFeed", () => {
       )
     );
 
-    await result.current.refresh();
+    await act(async () => {
+      await result.current.refresh();
+    });
 
     await waitFor(() => expect(result.current.data?.[0]?.title).toBe("Noticia B"));
   });
