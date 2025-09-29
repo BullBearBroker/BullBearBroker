@@ -1,4 +1,6 @@
-import { act, render, screen } from "@testing-library/react";
+import type { ReactNode } from "react";
+
+import { act, render, screen, within } from "@testing-library/react";
 import { axe } from "jest-axe";
 
 jest.mock("@/components/providers/auth-provider", () => ({
@@ -16,9 +18,10 @@ jest.mock("next/navigation", () => ({
 
 jest.mock("@/components/sidebar/market-sidebar", () => ({
   MarketSidebar: () => (
-    <aside>
+    <div>
       <h2>BullBearBroker</h2>
-    </aside>
+      <button>Cerrar sesión</button>
+    </div>
   ),
 }));
 
@@ -36,6 +39,13 @@ jest.mock("@/components/chat/chat-panel", () => ({
 
 jest.mock("@/components/indicators/IndicatorsChart", () => ({
   IndicatorsChart: () => <div>chart</div>,
+}));
+
+jest.mock("@/components/ui/card", () => ({
+  Card: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  CardContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  CardHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  CardTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
 }));
 
 jest.mock("@/lib/api", () => ({
@@ -56,10 +66,15 @@ describe("DashboardPage accesibilidad", () => {
   it("no tiene violaciones básicas", async () => {
     let utils: ReturnType<typeof render> | undefined;
 
-    await act(async () => {
+    act(() => {
       utils = render(<DashboardPage />);
-      await screen.findByRole("heading", { name: /BullBearBroker/i });
     });
+
+    const sidebarHeading = await screen.findByText(/BullBearBroker/i);
+    within(sidebarHeading.parentElement as HTMLElement).getByRole("button", {
+      name: /Cerrar sesión/i,
+    });
+    await act(async () => {});
 
     const { container } = utils!;
     expect(await axe(container)).toHaveNoViolations();
