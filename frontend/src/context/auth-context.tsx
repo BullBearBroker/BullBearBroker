@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { login as apiLogin, refreshToken, getProfile, AuthResponse, UserProfile } from "@/lib/api";
 
-interface AuthContextType {
+export interface AuthContextType {
   user: UserProfile | null;
   accessToken: string | null;
   refreshToken: string | null;
@@ -12,7 +12,7 @@ interface AuthContextType {
   loading: boolean;
 }
 
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
