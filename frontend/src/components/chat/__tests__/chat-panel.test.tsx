@@ -4,6 +4,21 @@ import { act, render, screen } from "@testing-library/react";
 import { ChatPanel } from "../chat-panel";
 import { sendChatMessage } from "@/lib/api";
 
+// Mock de Radix ScrollArea porque JSDOM no implementa addEventListener como espera la lib
+jest.mock("@radix-ui/react-scroll-area", () => {
+  const React = require("react");
+  return {
+    __esModule: true,
+    Root: ({ children, ...props }: any) =>
+      React.createElement("div", props, children),
+    Viewport: ({ children, ...props }: any) =>
+      React.createElement("div", props, children),
+    Scrollbar: ({ children, ...props }: any) =>
+      React.createElement("div", props, children),
+    Thumb: (props: any) => React.createElement("div", props),
+  };
+});
+
 jest.mock("@/lib/api", () => ({
   sendChatMessage: jest.fn().mockResolvedValue({
     messages: [],
