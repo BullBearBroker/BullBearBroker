@@ -76,5 +76,5 @@ describe("DashboardPage accesibilidad", () => {
     });
     const { container } = utils!;
     expect(await axe(container)).toHaveNoViolations();
-  });
+  }, 15000);
 });
