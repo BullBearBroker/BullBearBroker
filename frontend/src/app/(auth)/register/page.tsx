@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { RegisterForm } from "@/components/forms/register-form";
+import RegisterForm from "@/components/forms/register-form";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default function RegisterPage() {
