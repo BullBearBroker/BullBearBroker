@@ -3,19 +3,30 @@ import { axe } from "jest-axe";
 
 import { Navbar } from "../navbar";
 
-const mockUseAuth = jest.fn();
+declare global {
+  // eslint-disable-next-line no-var
+  var mockUseAuth: jest.Mock;
+}
 
-jest.mock("@/components/providers/auth-provider", () => ({
-  useAuth: () => mockUseAuth(),
-}));
+jest.mock("@/components/providers/auth-provider", () => {
+  (globalThis as any).mockUseAuth = jest.fn();
+
+  return {
+    useAuth: () => globalThis.mockUseAuth(),
+  };
+});
 
 describe("Navbar", () => {
   beforeEach(() => {
-    mockUseAuth.mockReset();
+    globalThis.mockUseAuth.mockReset();
   });
 
   it("muestra enlace de ingreso cuando no hay sesión", async () => {
-    mockUseAuth.mockReturnValue({ user: null, loading: false, logout: jest.fn() });
+    globalThis.mockUseAuth.mockReturnValue({
+      user: null,
+      loading: false,
+      logout: jest.fn(),
+    });
 
     render(<Navbar />);
 
@@ -26,7 +37,7 @@ describe("Navbar", () => {
 
   it("muestra información del usuario y permite cerrar sesión", async () => {
     const logout = jest.fn();
-    mockUseAuth.mockReturnValue({
+    globalThis.mockUseAuth.mockReturnValue({
       user: { email: "user@example.com", name: "Jane" },
       loading: false,
       logout,
@@ -40,7 +51,11 @@ describe("Navbar", () => {
   });
 
   it("muestra estado de carga mientras se verifica la sesión", () => {
-    mockUseAuth.mockReturnValue({ user: null, loading: true, logout: jest.fn() });
+    globalThis.mockUseAuth.mockReturnValue({
+      user: null,
+      loading: true,
+      logout: jest.fn(),
+    });
 
     render(<Navbar />);
 
@@ -48,7 +63,11 @@ describe("Navbar", () => {
   });
 
   it("cumple reglas básicas de accesibilidad", async () => {
-    mockUseAuth.mockReturnValue({ user: null, loading: false, logout: jest.fn() });
+    globalThis.mockUseAuth.mockReturnValue({
+      user: null,
+      loading: false,
+      logout: jest.fn(),
+    });
 
     const { container } = render(<Navbar />);
     expect(await axe(container)).toHaveNoViolations();
