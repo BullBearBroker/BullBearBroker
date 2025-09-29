@@ -4,35 +4,38 @@ import { RegisterForm } from "../register-form";
 
 // Mock de useAuth
 jest.mock("@/components/providers/auth-provider", () => {
-  (globalThis as any).registerUserMock = jest
+  (global as any).registerUserMock = jest
     .fn()
     .mockResolvedValue(undefined);
 
   return {
     __esModule: true,
     useAuth: () => ({
-      registerUser: (globalThis as any).registerUserMock,
+      registerUser: (global as any).registerUserMock,
     }),
-    registerUserMock: (globalThis as any).registerUserMock,
+    registerUser: (global as any).registerUserMock,
+    registerUserMock: (global as any).registerUserMock,
   };
 });
 
-(globalThis as any).pushMock = jest.fn();
+jest.mock("next/navigation", () => {
+  (global as any).pushMock = jest.fn();
 
-jest.mock("next/navigation", () => ({
-  useRouter: () => ({
-    push: (globalThis as any).pushMock,
-    replace: jest.fn(),
-    refresh: jest.fn(),
-    prefetch: jest.fn(),
-    back: jest.fn(),
-  }),
-})); // [Codex] nuevo - mock de router de Next
+  return {
+    useRouter: () => ({
+      push: (global as any).pushMock,
+      replace: jest.fn(),
+      refresh: jest.fn(),
+      prefetch: jest.fn(),
+      back: jest.fn(),
+    }),
+  };
+}); // [Codex] nuevo - mock de router de Next
 
 describe("RegisterForm", () => {
   beforeEach(() => {
-    (globalThis as any).registerUserMock.mockClear();
-    (globalThis as any).pushMock.mockClear();
+    (global as any).registerUserMock.mockClear();
+    (global as any).pushMock.mockClear();
   });
 
   it("valida campos obligatorios", async () => {
@@ -46,7 +49,7 @@ describe("RegisterForm", () => {
     expect(
       await screen.findByText(/el nombre es obligatorio/i)
     ).toBeInTheDocument();
-    expect((globalThis as any).registerUserMock).not.toHaveBeenCalled();
+    expect((global as any).registerUserMock).not.toHaveBeenCalled();
   });
 
   it("muestra error cuando el correo tiene formato inválido", async () => {
@@ -75,7 +78,7 @@ describe("RegisterForm", () => {
         screen.getByText(/debe ingresar un correo válido/i)
       ).toBeInTheDocument();
     });
-    expect((globalThis as any).registerUserMock).not.toHaveBeenCalled();
+    expect((global as any).registerUserMock).not.toHaveBeenCalled();
   });
 
   it("muestra error cuando las contraseñas no coinciden", () => {
@@ -131,18 +134,18 @@ describe("RegisterForm", () => {
     fireEvent.submit(form!);
 
     await waitFor(() =>
-      expect((globalThis as any).registerUserMock).toHaveBeenCalledWith(
+      expect((global as any).registerUserMock).toHaveBeenCalledWith(
         "user@example.com",
         "secret123",
         "Jane",
         "agresivo"
       )
     );
-    expect((globalThis as any).pushMock).toHaveBeenCalledWith("/");
+    expect((global as any).pushMock).toHaveBeenCalledWith("/");
   });
 
   it("muestra mensaje de error cuando el registro falla", async () => {
-    (globalThis as any).registerUserMock.mockRejectedValueOnce(
+    (global as any).registerUserMock.mockRejectedValueOnce(
       new Error("Duplicado")
     );
 
@@ -167,6 +170,6 @@ describe("RegisterForm", () => {
     fireEvent.submit(form!);
 
     expect(await screen.findByText(/duplicado/i)).toBeInTheDocument();
-    expect((globalThis as any).pushMock).not.toHaveBeenCalled();
+    expect((global as any).pushMock).not.toHaveBeenCalled();
   });
 });
