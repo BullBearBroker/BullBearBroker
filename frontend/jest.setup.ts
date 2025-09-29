@@ -72,3 +72,52 @@ jest.mock("next/link", () => {
       ),
   };
 });
+// [Codex] nuevo - Mock de Radix ScrollArea para entorno de pruebas
+jest.mock("@radix-ui/react-scroll-area", () => {
+  const React = require("react");
+
+  const Root = ({ children, ...props }: any) =>
+    React.createElement("div", { ...props }, children);
+  Root.displayName = "ScrollAreaRoot";
+
+  const Viewport = ({ children, ...props }: any) =>
+    React.createElement("div", { ...props }, children);
+  Viewport.displayName = "ScrollAreaViewport";
+
+  const ScrollArea = ({ children, ...props }: any) =>
+    React.createElement("div", { ...props }, children);
+  ScrollArea.displayName = "ScrollArea";
+
+  const ScrollAreaViewport = Viewport;
+
+  const ScrollAreaScrollbar = ({ children, ...props }: any) =>
+    React.createElement("div", { ...props }, children);
+  ScrollAreaScrollbar.displayName = "ScrollAreaScrollbar";
+
+  const Scrollbar = ScrollAreaScrollbar;
+
+  const ScrollAreaThumb = (props: any) =>
+    React.createElement("div", { ...props });
+  ScrollAreaThumb.displayName = "ScrollAreaThumb";
+
+  const Thumb = ScrollAreaThumb;
+
+  const Corner = (props: any) => React.createElement("div", { ...props });
+  Corner.displayName = "ScrollAreaCorner";
+
+  const ScrollAreaCorner = Corner;
+
+  return {
+    __esModule: true,
+    Root,
+    Viewport,
+    ScrollArea,
+    ScrollAreaViewport,
+    ScrollAreaScrollbar,
+    Scrollbar,
+    ScrollAreaThumb,
+    Thumb,
+    Corner,
+    ScrollAreaCorner,
+  };
+});

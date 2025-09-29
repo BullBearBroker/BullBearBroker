@@ -7,15 +7,41 @@ import { sendChatMessage } from "@/lib/api";
 // Mock de Radix ScrollArea porque JSDOM no implementa addEventListener como espera la lib
 jest.mock("@radix-ui/react-scroll-area", () => {
   const React = require("react");
+
+  const Root = ({ children, ...props }: any) =>
+    React.createElement("div", props, children);
+  Root.displayName = "ScrollAreaRoot";
+
+  const Viewport = ({ children, ...props }: any) =>
+    React.createElement("div", props, children);
+  Viewport.displayName = "ScrollAreaViewport";
+
+  const Scrollbar = ({ children, ...props }: any) =>
+    React.createElement("div", props, children);
+  Scrollbar.displayName = "ScrollAreaScrollbar";
+
+  const ScrollAreaScrollbar = Scrollbar;
+
+  const Thumb = (props: any) => React.createElement("div", props);
+  Thumb.displayName = "ScrollAreaThumb";
+
+  const ScrollAreaThumb = Thumb;
+
+  const Corner = (props: any) => React.createElement("div", props);
+  Corner.displayName = "ScrollAreaCorner";
+
+  const ScrollAreaCorner = Corner;
+
   return {
     __esModule: true,
-    Root: ({ children, ...props }: any) =>
-      React.createElement("div", props, children),
-    Viewport: ({ children, ...props }: any) =>
-      React.createElement("div", props, children),
-    Scrollbar: ({ children, ...props }: any) =>
-      React.createElement("div", props, children),
-    Thumb: (props: any) => React.createElement("div", props),
+    Root,
+    Viewport,
+    Scrollbar,
+    ScrollAreaScrollbar,
+    Thumb,
+    ScrollAreaThumb,
+    Corner,
+    ScrollAreaCorner,
   };
 });
 
