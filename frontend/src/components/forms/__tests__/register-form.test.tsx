@@ -1,31 +1,41 @@
 // [Codex] nuevo - Tests ajustados a placeholders y flujo de useAuth
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { RegisterForm } from "../register-form";
+import RegisterForm from "../register-form";
 
 // Mock de useAuth
-const registerUserMock = jest.fn().mockResolvedValue(undefined);
-jest.mock("@/components/providers/auth-provider", () => ({
-  useAuth: () => ({
-    registerUser: registerUserMock,
-  }),
-}));
+jest.mock("@/components/providers/auth-provider", () => {
+  (global as any).registerUserMock = jest
+    .fn()
+    .mockResolvedValue(undefined);
 
-const pushMock = jest.fn();
+  return {
+    __esModule: true,
+    useAuth: () => ({
+      registerUser: (global as any).registerUserMock,
+    }),
+    registerUser: (global as any).registerUserMock,
+    registerUserMock: (global as any).registerUserMock,
+  };
+});
 
-jest.mock("next/navigation", () => ({
-  useRouter: () => ({
-    push: pushMock,
-    replace: jest.fn(),
-    refresh: jest.fn(),
-    prefetch: jest.fn(),
-    back: jest.fn(),
-  }),
-})); // [Codex] nuevo - mock de router de Next
+jest.mock("next/navigation", () => {
+  (global as any).pushMock = jest.fn();
+
+  return {
+    useRouter: () => ({
+      push: (global as any).pushMock,
+      replace: jest.fn(),
+      refresh: jest.fn(),
+      prefetch: jest.fn(),
+      back: jest.fn(),
+    }),
+  };
+}); // [Codex] nuevo - mock de router de Next
 
 describe("RegisterForm", () => {
   beforeEach(() => {
-    registerUserMock.mockClear();
-    pushMock.mockClear();
+    (global as any).registerUserMock.mockClear();
+    (global as any).pushMock.mockClear();
   });
 
   it("valida campos obligatorios", async () => {
@@ -39,7 +49,7 @@ describe("RegisterForm", () => {
     expect(
       await screen.findByText(/el nombre es obligatorio/i)
     ).toBeInTheDocument();
-    expect(registerUserMock).not.toHaveBeenCalled();
+    expect((global as any).registerUserMock).not.toHaveBeenCalled();
   });
 
   it("muestra error cuando el correo tiene formato inválido", async () => {
@@ -68,7 +78,7 @@ describe("RegisterForm", () => {
         screen.getByText(/debe ingresar un correo válido/i)
       ).toBeInTheDocument();
     });
-    expect(registerUserMock).not.toHaveBeenCalled();
+    expect((global as any).registerUserMock).not.toHaveBeenCalled();
   });
 
   it("muestra error cuando las contraseñas no coinciden", () => {
@@ -124,18 +134,20 @@ describe("RegisterForm", () => {
     fireEvent.submit(form!);
 
     await waitFor(() =>
-      expect(registerUserMock).toHaveBeenCalledWith(
+      expect((global as any).registerUserMock).toHaveBeenCalledWith(
         "user@example.com",
         "secret123",
         "Jane",
         "agresivo"
       )
     );
-    expect(pushMock).toHaveBeenCalledWith("/");
+    expect((global as any).pushMock).toHaveBeenCalledWith("/");
   });
 
   it("muestra mensaje de error cuando el registro falla", async () => {
-    registerUserMock.mockRejectedValueOnce(new Error("Duplicado"));
+    (global as any).registerUserMock.mockRejectedValueOnce(
+      new Error("Duplicado")
+    );
 
     render(<RegisterForm />);
 
@@ -158,6 +170,6 @@ describe("RegisterForm", () => {
     fireEvent.submit(form!);
 
     expect(await screen.findByText(/duplicado/i)).toBeInTheDocument();
-    expect(pushMock).not.toHaveBeenCalled();
+    expect((global as any).pushMock).not.toHaveBeenCalled();
   });
 });

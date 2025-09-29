@@ -1,28 +1,7 @@
-import type { Config } from "jest";
+import "@testing-library/jest-dom";
+import "jest-axe/extend-expect";
 
-const config: Config = {
-  testEnvironment: "jsdom",
-  setupFilesAfterEnv: ["<rootDir>/jest.setup.ts"],
-  moduleNameMapper: {
-    "^@/(.*)$": "<rootDir>/src/$1",
-    "\\.(css|less|scss|sass)$": "identity-obj-proxy"
-  },
-  transform: {
-    "^.+\\.(ts|tsx)$": "ts-jest"
-  },
-  testPathIgnorePatterns: ["/node_modules/", "/.next/"],
-  collectCoverageFrom: [
-    "src/**/*.{ts,tsx}",
-    "!src/**/*.d.ts"
-  ]
-};
-
-export default config;
-
-import "@testing-library/jest-dom"; // [Codex] nuevo
-import "jest-axe/extend-expect"; // [Codex] nuevo
-
-// [Codex] nuevo - Polyfills requeridos por MSW en entorno de pruebas
+// Polyfills requeridos por MSW en entorno de pruebas
 import { TextDecoder, TextEncoder } from "util";
 import { ReadableStream, WritableStream, TransformStream } from "stream/web";
 
@@ -53,7 +32,6 @@ if (!globalThis.WritableStream) {
 
 if (!globalThis.BroadcastChannel) {
   class MockBroadcastChannel {
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     constructor(_name: string) {}
     close() {}
     postMessage(_value: unknown) {}
@@ -72,6 +50,10 @@ jest.mock("next/link", () => {
   return {
     __esModule: true,
     default: ({ children, href, ...props }: any) =>
-      React.createElement("a", { href: href ?? props?.href ?? "#", ...props }, children),
+      React.createElement(
+        "a",
+        { href: href ?? props?.href ?? "#", ...props },
+        children
+      ),
   };
 });

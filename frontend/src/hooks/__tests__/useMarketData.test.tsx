@@ -1,4 +1,4 @@
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { SWRConfig } from "swr";
 import { http, HttpResponse } from "msw";
 
@@ -72,7 +72,9 @@ describe("useMarketData", () => {
     await waitFor(() => expect(result.current.data?.price).toBe(50_000));
 
     server.use(makeMarketQuoteHandler("crypto", { price: 51_000 }));
-    await result.current.refresh();
+    await act(async () => {
+      await result.current.refresh();
+    });
 
     await waitFor(() => expect(result.current.data?.price).toBe(51_000));
   });
