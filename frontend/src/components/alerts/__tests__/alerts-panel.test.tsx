@@ -2,7 +2,12 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import useSWR from "swr";
 
-import { createAlert, updateAlert } from "@/lib/api";
+import {
+  createAlert,
+  updateAlert,
+  sendAlertNotification,
+  suggestAlertCondition,
+} from "@/lib/api";
 import { AlertsPanel } from "../alerts-panel";
 
 jest.mock("swr", () => ({
@@ -24,6 +29,10 @@ jest.mock("@/lib/api", () => ({
 const mockedUseSWR = useSWR as jest.MockedFunction<typeof useSWR>;
 const mockedCreateAlert = createAlert as jest.MockedFunction<typeof createAlert>;
 const mockedUpdateAlert = updateAlert as jest.MockedFunction<typeof updateAlert>;
+const mockedSendAlertNotification =
+  sendAlertNotification as jest.MockedFunction<typeof sendAlertNotification>;
+const mockedSuggestAlertCondition =
+  suggestAlertCondition as jest.MockedFunction<typeof suggestAlertCondition>;
 
 describe("AlertsPanel", () => {
   beforeEach(() => {
@@ -213,5 +222,187 @@ describe("AlertsPanel", () => {
     });
 
     expect(textarea).toHaveValue("<");
+  });
+
+  it("muestra el estado de carga cuando SWR está cargando", () => {
+    mockedUseSWR.mockReturnValue({
+      data: undefined,
+      error: undefined,
+      mutate: jest.fn().mockResolvedValue(undefined),
+      isLoading: true,
+    });
+
+    render(<AlertsPanel token="token" />);
+
+    expect(screen.getByText("Cargando alertas...")).toBeInTheDocument();
+  });
+
+  it("muestra un mensaje de error cuando la carga falla", () => {
+    mockedUseSWR.mockReturnValue({
+      data: undefined,
+      error: new Error("Fallo en SWR"),
+      mutate: jest.fn().mockResolvedValue(undefined),
+      isLoading: false,
+    });
+
+    render(<AlertsPanel token="token" />);
+
+    expect(screen.getByText(/fallo en swr/i)).toBeInTheDocument();
+  });
+
+  it("indica cuando no hay alertas disponibles", () => {
+    mockedUseSWR.mockReturnValue({
+      data: [],
+      error: undefined,
+      mutate: jest.fn().mockResolvedValue(undefined),
+      isLoading: false,
+    });
+
+    render(<AlertsPanel token="token" />);
+
+    expect(
+      screen.getByText("Aún no tienes alertas. Crea una para recibir notificaciones.")
+    ).toBeInTheDocument();
+  });
+
+  it("renderiza la lista con múltiples alertas", () => {
+    mockedUseSWR.mockReturnValue({
+      data: [
+        {
+          id: "a-1",
+          title: "Alerta 1",
+          asset: "BTCUSDT",
+          condition: "Precio > 50k",
+          value: 50000,
+          active: true,
+        },
+        {
+          id: "a-2",
+          title: "Alerta 2",
+          asset: "ETHUSDT",
+          condition: "Precio < 2k",
+          value: 2000,
+          active: false,
+        },
+      ],
+      error: undefined,
+      mutate: jest.fn().mockResolvedValue(undefined),
+      isLoading: false,
+    });
+
+    render(<AlertsPanel token="token" />);
+
+    expect(screen.getByText("Alerta 1")).toBeInTheDocument();
+    expect(screen.getByText("Alerta 2")).toBeInTheDocument();
+    expect(screen.getAllByText("Activa")).toHaveLength(1);
+    expect(screen.getAllByText("Pausada")).toHaveLength(1);
+  });
+
+  it("obtiene una sugerencia de condición y muestra la nota", async () => {
+    mockedSuggestAlertCondition.mockResolvedValue({
+      suggestion: "BTC > 45000",
+      notes: "Basado en indicadores",
+    });
+    const user = userEvent.setup();
+
+    render(<AlertsPanel token="secure-token" />);
+
+    await act(async () => {
+      await user.type(
+        screen.getByPlaceholderText("Activo (ej. BTCUSDT, AAPL)"),
+        "btc"
+      );
+      await user.click(screen.getByRole("button", { name: /sugerir alerta/i }));
+    });
+
+    expect(mockedSuggestAlertCondition).toHaveBeenCalledWith(
+      "secure-token",
+      expect.objectContaining({ asset: "btc", interval: "1h" })
+    );
+    expect(screen.getByPlaceholderText(/condición/i)).toHaveValue("BTC > 45000");
+    expect(screen.getByText("Basado en indicadores")).toBeInTheDocument();
+  });
+
+  it("muestra un error si se solicita sugerencia sin activo", async () => {
+    const user = userEvent.setup();
+    render(<AlertsPanel token="secure-token" />);
+
+    await act(async () => {
+      await user.click(screen.getByRole("button", { name: /sugerir alerta/i }));
+    });
+
+    expect(
+      screen.getByText("Completa el campo de activo antes de pedir sugerencias.")
+    ).toBeInTheDocument();
+    expect(mockedSuggestAlertCondition).not.toHaveBeenCalled();
+  });
+
+  it("envía una notificación manual y muestra el resumen", async () => {
+    mockedSendAlertNotification.mockResolvedValue({
+      telegram: { status: "sent", target: "123" },
+      discord: { status: "queued", target: "999" },
+    });
+    const user = userEvent.setup();
+
+    render(<AlertsPanel token="secure-token" />);
+
+    await act(async () => {
+      await user.type(
+        screen.getByPlaceholderText("Mensaje para Telegram/Discord"),
+        "Comprar BTC"
+      );
+      await user.type(
+        screen.getByPlaceholderText("Chat ID de Telegram (opcional)"),
+        "123"
+      );
+      await user.type(
+        screen.getByPlaceholderText("Canal de Discord (opcional)"),
+        "999"
+      );
+      await user.click(screen.getByRole("button", { name: /enviar notificación/i }));
+    });
+
+    await waitFor(() => {
+      expect(mockedSendAlertNotification).toHaveBeenCalledWith(
+        "secure-token",
+        expect.objectContaining({ message: "Comprar BTC" })
+      );
+      expect(
+        screen.getByText(/Notificación enviada \(telegram: sent \| discord: queued\)/i)
+      ).toBeInTheDocument();
+    });
+  });
+
+  it("muestra un error de validación al intentar enviar una notificación vacía", async () => {
+    const user = userEvent.setup();
+    render(<AlertsPanel token="secure-token" />);
+
+    await act(async () => {
+      await user.click(screen.getByRole("button", { name: /enviar notificación/i }));
+    });
+
+    expect(
+      screen.getByText("Escribe un mensaje para enviar la alerta.")
+    ).toBeInTheDocument();
+    expect(mockedSendAlertNotification).not.toHaveBeenCalled();
+  });
+
+  it("gestiona un error del API al enviar la notificación", async () => {
+    mockedSendAlertNotification.mockRejectedValue(new Error("Servicio caído"));
+    const user = userEvent.setup();
+
+    render(<AlertsPanel token="secure-token" />);
+
+    await act(async () => {
+      await user.type(
+        screen.getByPlaceholderText("Mensaje para Telegram/Discord"),
+        "Probar"
+      );
+      await user.click(screen.getByRole("button", { name: /enviar notificación/i }));
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Servicio caído")).toBeInTheDocument();
+    });
   });
 });
