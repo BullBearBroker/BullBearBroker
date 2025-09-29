@@ -26,14 +26,14 @@ import RootLayout from "../layout";
 
 describe("RootLayout", () => {
   it("envuelve el contenido con proveedores globales", () => {
-    render(
-      <RootLayout>
-        <span>Contenido</span>
-      </RootLayout>
-    );
+    const layout = RootLayout({ children: <span>Contenido</span> });
 
-    const html = document.querySelector("html");
-    expect(html).toHaveAttribute("lang", "es");
+    expect(layout.props.lang).toBe("es");
+
+    const body = layout.props.children as React.ReactElement;
+
+    render(body.props.children);
+
     expect(screen.getByTestId("theme-provider")).toBeInTheDocument();
     expect(screen.getByTestId("auth-provider")).toBeInTheDocument();
     expect(screen.getByTestId("app-chrome")).toHaveTextContent("Contenido");
