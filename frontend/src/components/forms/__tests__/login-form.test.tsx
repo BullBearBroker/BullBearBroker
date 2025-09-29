@@ -1,7 +1,7 @@
 // [Codex] nuevo - Ajustes para los placeholders y mock de Auth
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { axe } from "jest-axe";
-import { LoginForm } from "../login-form";
+import LoginForm from "../login-form";
 
 // Mock de useAuth
 jest.mock("@/components/providers/auth-provider", () => {
