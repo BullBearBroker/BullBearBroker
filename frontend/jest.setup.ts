@@ -44,6 +44,21 @@ if (!globalThis.BroadcastChannel) {
   globalThis.BroadcastChannel = MockBroadcastChannel;
 }
 
+if (typeof window !== "undefined" && window.HTMLElement) {
+  const descriptor = Object.getOwnPropertyDescriptor(
+    window.HTMLElement.prototype,
+    "scrollIntoView"
+  );
+
+  if (!descriptor || descriptor.value === undefined) {
+    Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      writable: true,
+      value: jest.fn(),
+    });
+  }
+}
+
 // Mock global de next/link para tests
 jest.mock("next/link", () => {
   const React = require("react");
