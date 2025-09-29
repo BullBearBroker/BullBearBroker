@@ -3,12 +3,22 @@ import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { RegisterForm } from "../register-form";
 
 // Mock de useAuth
-const registerUserMock = jest.fn().mockResolvedValue(undefined);
-jest.mock("@/components/providers/auth-provider", () => ({
-  useAuth: () => ({
-    registerUser: registerUserMock,
-  }),
-}));
+jest.mock("@/components/providers/auth-provider", () => {
+  const registerUserMock = jest.fn().mockResolvedValue(undefined);
+
+  return {
+    __esModule: true,
+    useAuth: () => ({
+      registerUser: registerUserMock,
+    }),
+    registerUserMock,
+  };
+});
+
+const { registerUserMock } =
+  jest.requireMock("@/components/providers/auth-provider") as {
+    registerUserMock: jest.Mock;
+  };
 
 const pushMock = jest.fn();
 
