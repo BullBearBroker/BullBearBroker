@@ -66,7 +66,7 @@ describe("DashboardPage accesibilidad", () => {
   it("no tiene violaciones básicas", async () => {
     let utils: ReturnType<typeof render> | undefined;
 
-    act(() => {
+    await act(async () => {
       utils = render(<DashboardPage />);
     });
 
@@ -74,8 +74,6 @@ describe("DashboardPage accesibilidad", () => {
     within(sidebarHeading.parentElement as HTMLElement).getByRole("button", {
       name: /Cerrar sesión/i,
     });
-    await act(async () => {});
-
     const { container } = utils!;
     expect(await axe(container)).toHaveNoViolations();
   });
