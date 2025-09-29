@@ -1,25 +1,45 @@
 import React from "react";
-import { render, screen, waitFor, act } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 
 import { AuthProvider, useAuth } from "../auth-provider";
-import { getProfile, refreshToken } from "@/lib/api";
+import * as AuthProviderModule from "../auth-provider";
+import { getProfile, login, refreshToken, register } from "@/lib/api";
+
+const MOCK_REFRESH_RESPONSE = {
+  access_token: "refreshed-access-token",
+  refresh_token: "next-refresh-token",
+};
+
+const MOCK_PROFILE = {
+  id: "user-1",
+  email: "user@example.com",
+  name: "User",
+};
+
+const MOCK_AUTH_RESPONSE = {
+  access_token: "auth-access-token",
+  refresh_token: "auth-refresh-token",
+};
 
 jest.mock("@/lib/api", () => ({
-  login: jest.fn(),
-  register: jest.fn(),
   refreshToken: jest.fn(),
   getProfile: jest.fn(),
+  login: jest.fn(),
+  register: jest.fn(),
 }));
 
 describe("AuthProvider", () => {
+  const mockedRefreshToken = refreshToken as jest.MockedFunction<typeof refreshToken>;
+  const mockedGetProfile = getProfile as jest.MockedFunction<typeof getProfile>;
+  const mockedLogin = login as jest.MockedFunction<typeof login>;
+  const mockedRegister = register as jest.MockedFunction<typeof register>;
+
   const createLocalStorageMock = () => {
     let store: Record<string, string> = {};
 
     return {
       getItem: jest.fn((key: string) => {
-        return Object.prototype.hasOwnProperty.call(store, key)
-          ? store[key]
-          : null;
+        return Object.prototype.hasOwnProperty.call(store, key) ? store[key] : null;
       }),
       setItem: jest.fn((key: string, value: string) => {
         store[key] = value;
@@ -30,79 +50,91 @@ describe("AuthProvider", () => {
       clear: jest.fn(() => {
         store = {};
       }),
-    };
+      key: jest.fn((index: number) => Object.keys(store)[index] ?? null),
+      get length() {
+        return Object.keys(store).length;
+      },
+    } as unknown as Storage;
   };
 
   let localStorageMock: ReturnType<typeof createLocalStorageMock>;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    localStorageMock = createLocalStorageMock();
 
+    localStorageMock = createLocalStorageMock();
     Object.defineProperty(window, "localStorage", {
       configurable: true,
       value: localStorageMock,
     });
+
+    mockedRefreshToken.mockResolvedValue(MOCK_REFRESH_RESPONSE);
+    mockedGetProfile.mockResolvedValue(MOCK_PROFILE);
+    mockedLogin.mockResolvedValue(MOCK_AUTH_RESPONSE);
+    mockedRegister.mockResolvedValue(MOCK_AUTH_RESPONSE);
   });
 
-  it("provides the auth context to children", async () => {
-    const profile = { id: "user-1", email: "user@example.com" };
-    const refreshResponse = {
-      access_token: "access-token",
-      refresh_token: "refresh-token-2",
-    };
+  afterEach(() => {
+    localStorageMock.clear();
+    delete (window as Partial<typeof window>).localStorage;
+    jest.restoreAllMocks();
+  });
 
-    const mockedRefreshToken = refreshToken as jest.MockedFunction<
-      typeof refreshToken
-    >;
-    const mockedGetProfile = getProfile as jest.MockedFunction<typeof getProfile>;
+  it("hydrates the session from an existing refresh token", async () => {
+    window.localStorage.setItem("refresh_token", "stored-refresh-token");
 
-    mockedRefreshToken.mockImplementation(
-      () =>
-        new Promise((resolve) =>
-          setTimeout(() => resolve(refreshResponse), 10)
-        )
-    );
-    mockedGetProfile.mockResolvedValue(profile);
-
-    window.localStorage.setItem("refresh_token", "refresh-token-1");
-
-    const ChildComponent = () => {
+    const Consumer = () => {
       const { loading, user } = useAuth();
 
       return (
         <div>
-          <span>{loading ? "loading" : "loaded"}</span>
-          <span>{user?.email ?? "no-user"}</span>
+          <span data-testid="loading-state">{loading ? "loading" : "loaded"}</span>
+          <span data-testid="user-email">{user?.email ?? "no-user"}</span>
         </div>
       );
     };
 
+    render(
+      <AuthProvider>
+        <Consumer />
+      </AuthProvider>
+    );
+
+    expect(screen.getByTestId("loading-state")).toHaveTextContent("loading");
+
     await act(async () => {
-      render(
-        <AuthProvider>
-          <ChildComponent />
-        </AuthProvider>
-      );
+      await Promise.resolve();
     });
 
-    expect(screen.getByText("loading")).toBeInTheDocument();
+    expect(mockedRefreshToken).toHaveBeenCalledWith("stored-refresh-token");
 
-    await waitFor(() => {
-      expect(mockedRefreshToken).toHaveBeenCalledWith("refresh-token-1");
-    });
+    expect(await screen.findByTestId("user-email")).toHaveTextContent(MOCK_PROFILE.email);
+    expect(screen.getByTestId("loading-state")).toHaveTextContent("loaded");
+    expect(localStorageMock.setItem).toHaveBeenCalledWith("refresh_token", MOCK_REFRESH_RESPONSE.refresh_token);
+  });
 
-    expect(await screen.findByText(profile.email)).toBeInTheDocument();
+  it("allows downstream consumers to mock useAuth outside the provider", () => {
+    const fixture = {
+      user: MOCK_PROFILE,
+      token: MOCK_AUTH_RESPONSE.access_token,
+      loading: false,
+      loginUser: jest.fn(),
+      registerUser: jest.fn(),
+      logout: jest.fn(),
+    } satisfies ReturnType<typeof useAuth>;
 
-    await waitFor(() => {
-      expect(screen.getByText("loaded")).toBeInTheDocument();
-    });
+    const spy = jest
+      .spyOn(AuthProviderModule, "useAuth")
+      .mockReturnValue(fixture);
 
-    await waitFor(() => {
-      expect(localStorageMock.setItem).toHaveBeenCalledWith(
-        "refresh_token",
-        refreshResponse.refresh_token
-      );
-    });
+    const Consumer = () => {
+      const { user } = AuthProviderModule.useAuth();
+      return <span>{user?.email}</span>;
+    };
+
+    expect(() => render(<Consumer />)).not.toThrow();
+    expect(screen.getByText(MOCK_PROFILE.email)).toBeInTheDocument();
+
+    spy.mockRestore();
   });
 });
