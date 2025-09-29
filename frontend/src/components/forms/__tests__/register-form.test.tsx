@@ -1,6 +1,6 @@
 // [Codex] nuevo - Tests ajustados a placeholders y flujo de useAuth
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import { RegisterForm } from "../register-form";
+import RegisterForm from "../register-form";
 
 // Mock de useAuth
 jest.mock("@/components/providers/auth-provider", () => {
