@@ -15,7 +15,11 @@ jest.mock("next/navigation", () => ({
 }));
 
 jest.mock("@/components/sidebar/market-sidebar", () => ({
-  MarketSidebar: () => <aside>sidebar</aside>,
+  MarketSidebar: () => (
+    <aside>
+      <h2>BullBearBroker</h2>
+    </aside>
+  ),
 }));
 
 jest.mock("@/components/news/news-panel", () => ({
@@ -54,7 +58,7 @@ describe("DashboardPage accesibilidad", () => {
 
     await act(async () => {
       utils = render(<DashboardPage />);
-      await screen.findByText("sidebar");
+      await screen.findByRole("heading", { name: /BullBearBroker/i });
     });
 
     const { container } = utils!;
