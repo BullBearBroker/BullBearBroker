@@ -18,6 +18,12 @@ describe("ChatPanel", () => {
     sendChatMessage as jest.MockedFunction<typeof sendChatMessage>;
 
   beforeAll(() => {
+    if (!window.HTMLElement.prototype.scrollIntoView) {
+      Object.defineProperty(window.HTMLElement.prototype, "scrollIntoView", {
+        value: jest.fn(),
+        configurable: true,
+      });
+    }
     scrollSpy = jest
       .spyOn(window.HTMLElement.prototype, "scrollIntoView")
       .mockImplementation(() => {});
