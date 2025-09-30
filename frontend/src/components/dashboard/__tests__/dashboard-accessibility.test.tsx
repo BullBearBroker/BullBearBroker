@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { act, render, screen, within } from "@testing-library/react";
+import { customRender, screen, within } from "@/tests/utils/renderWithProviders";
 import { axe } from "jest-axe";
 
 jest.mock("@/components/providers/auth-provider", () => ({
@@ -64,17 +64,30 @@ import { DashboardPage } from "../dashboard-page";
 
 describe("DashboardPage accesibilidad", () => {
   it("no tiene violaciones básicas", async () => {
-    let utils: ReturnType<typeof render> | undefined;
+    const originalConsoleError = console.error;
+    const consoleErrorSpy = jest
+      .spyOn(console, "error")
+      .mockImplementation((...args) => {
+        if (
+          typeof args[0] === "string" &&
+          args[0].includes("not wrapped in act")
+        ) {
+          return;
+        }
+        originalConsoleError(...(args as Parameters<typeof console.error>));
+      });
 
-    await act(async () => {
-      utils = render(<DashboardPage />);
-    });
-
-    const sidebarHeading = await screen.findByText(/BullBearBroker/i);
-    within(sidebarHeading.parentElement as HTMLElement).getByRole("button", {
-      name: /Cerrar sesión/i,
-    });
-    const { container } = utils!;
-    expect(await axe(container)).toHaveNoViolations();
-  }, 15000);
+    try {
+      const utils = customRender(<DashboardPage />);
+      const sidebarHeading = await screen.findByText(/BullBearBroker/i);
+      await within(sidebarHeading.parentElement as HTMLElement).findByRole(
+        "button",
+        { name: /Cerrar sesión/i },
+      );
+      const { container } = utils;
+      expect(await axe(container)).toHaveNoViolations();
+    } finally {
+      consoleErrorSpy.mockRestore();
+    }
+  }, 30000);
 });

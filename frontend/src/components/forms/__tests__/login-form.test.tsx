@@ -1,5 +1,5 @@
 // [Codex] nuevo - Ajustes para los placeholders y mock de Auth
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { customRender, screen, fireEvent, waitFor } from "@/tests/utils/renderWithProviders";
 import { axe } from "jest-axe";
 import LoginForm from "../login-form";
 
@@ -36,7 +36,7 @@ describe("LoginForm", () => {
   });
 
   it("muestra mensajes de validación cuando el formulario está vacío", async () => {
-    render(<LoginForm />);
+    customRender(<LoginForm />);
 
     fireEvent.click(screen.getByRole("button", { name: /iniciar sesión/i }));
 
@@ -47,7 +47,7 @@ describe("LoginForm", () => {
   });
 
   it("valida longitud mínima de la contraseña", async () => {
-    render(<LoginForm />);
+    customRender(<LoginForm />);
 
     fireEvent.input(screen.getByPlaceholderText(/correo electrónico/i), {
       target: { value: "user@example.com" },
@@ -65,7 +65,7 @@ describe("LoginForm", () => {
   });
 
   it("envía los datos correctamente", async () => {
-    render(<LoginForm />);
+    customRender(<LoginForm />);
 
     fireEvent.input(screen.getByPlaceholderText(/correo electrónico/i), {
       target: { value: "user@example.com" },
@@ -95,7 +95,7 @@ describe("LoginForm", () => {
       new Error("Credenciales inválidas")
     );
 
-    render(<LoginForm />);
+    customRender(<LoginForm />);
 
     fireEvent.input(screen.getByPlaceholderText(/correo electrónico/i), {
       target: { value: "user@example.com" },
@@ -113,7 +113,7 @@ describe("LoginForm", () => {
   });
 
   it("no presenta violaciones de accesibilidad básicas", async () => {
-    const { container } = render(<LoginForm />);
+    const { container } = customRender(<LoginForm />);
 
     expect(await axe(container)).toHaveNoViolations();
   });

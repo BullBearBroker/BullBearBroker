@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useRef, useState } from "react";
+import React, { FormEvent, useRef, useState } from "react";
 import { SendHorizontal } from "lucide-react";
 
 import {
@@ -24,7 +24,7 @@ const SOURCE_LABELS: Record<string, string> = {
 };
 
 export function ChatPanel({ token }: ChatPanelProps) {
-  const [messages, setMessages] = useState<MessagePayload[]>([
+  const [messages, setMessages] = React.useState<MessagePayload[]>([
     {
       role: "assistant",
       content:

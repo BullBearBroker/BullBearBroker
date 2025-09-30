@@ -1,22 +1,38 @@
-import { render, screen } from "@testing-library/react";
+import { customRender, screen } from "@/tests/utils/renderWithProviders";
 
 import { IndicatorsChart } from "../IndicatorsChart";
 
 jest.mock("recharts", () => {
-  const Passthrough = ({ children }: any) => <div>{children}</div>;
+  const Container = ({ children, "data-testid": testId }: any) => (
+    <div data-testid={testId}>{children}</div>
+  );
+
+  const Line = ({ dataKey, name }: any) => (
+    <div data-testid={`line-${dataKey}`}>{name}</div>
+  );
+
+  const Legend = ({ children }: any) => (
+    <div data-testid="legend">{children}</div>
+  );
+
+  const ReferenceLine = ({ y }: any) => <div data-testid={`reference-${y}`} />;
+
+  const Bar = ({ dataKey, name }: any) => (
+    <div data-testid={`bar-${dataKey}`}>{name}</div>
+  );
 
   return {
-    ResponsiveContainer: Passthrough,
-    LineChart: Passthrough,
-    Line: Passthrough,
-    XAxis: Passthrough,
-    YAxis: Passthrough,
-    Tooltip: Passthrough,
-    Legend: Passthrough,
-    CartesianGrid: Passthrough,
-    ReferenceLine: Passthrough,
-    BarChart: Passthrough,
-    Bar: Passthrough,
+    ResponsiveContainer: Container,
+    LineChart: Container,
+    Line,
+    XAxis: Container,
+    YAxis: Container,
+    Tooltip: Container,
+    Legend,
+    CartesianGrid: Container,
+    ReferenceLine,
+    BarChart: Container,
+    Bar,
   };
 });
 
@@ -60,17 +76,17 @@ describe("IndicatorsChart", () => {
     },
   };
 
-  it("renders the header, indicator summaries, and insight list", () => {
+  it("renderiza el gráfico con variaciones de timeframe y leyendas", () => {
     const insights = [
       "Tendencia alcista moderada",
       "Vigilar posibles divergencias",
       "Considerar stop-loss ajustado",
     ].join("\n");
 
-    render(
+    customRender(
       <IndicatorsChart
         symbol="AAPL"
-        interval="1d"
+        interval="4h"
         indicators={baseIndicators}
         series={{ closes: [145.6, 146.2, 147.5] }}
         insights={insights}
@@ -78,9 +94,15 @@ describe("IndicatorsChart", () => {
     );
 
     expect(
-      screen.getByRole("heading", { name: "AAPL · 1D" })
+      screen.getByRole("heading", { name: "AAPL · 4H" })
     ).toBeInTheDocument();
     expect(screen.getByText("Último cierre: 145.67")).toBeInTheDocument();
+
+    expect(screen.getByTestId("line-close")).toHaveTextContent("Precio");
+    expect(screen.getByTestId("line-ema20")).toHaveTextContent("EMA 20");
+    expect(screen.getByTestId("line-ema50")).toHaveTextContent("EMA 50");
+    expect(screen.getByTestId("line-upper")).toHaveTextContent("BB Upper");
+    expect(screen.getAllByTestId("legend").length).toBeGreaterThan(0);
 
     expect(screen.getByText("ATR (Periodo 14)")).toBeInTheDocument();
     expect(screen.getByText("2.5")).toBeInTheDocument();
@@ -99,8 +121,25 @@ describe("IndicatorsChart", () => {
     ).toBeInTheDocument();
   });
 
-  it("shows fallback messages when loading or error states are provided", () => {
-    const { rerender } = render(
+  it("maneja datos incompletos mostrando valores por defecto", () => {
+    customRender(
+      <IndicatorsChart
+        symbol="ETH"
+        interval="1d"
+        indicators={{ last_close: 2000 }}
+        insights={null}
+      />
+    );
+
+    expect(screen.getByRole("heading", { name: "ETH · 1D" })).toBeInTheDocument();
+    expect(screen.getByText("Último cierre: 2000")).toBeInTheDocument();
+    expect(
+      screen.getByText("Aún no hay comentarios generados.")
+    ).toBeInTheDocument();
+  });
+
+  it("muestra mensajes de carga y error en el panel de insights", () => {
+    const { rerender } = customRender(
       <IndicatorsChart
         symbol="AAPL"
         interval="1d"

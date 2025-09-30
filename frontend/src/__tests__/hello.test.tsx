@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { customRender, screen } from "@/tests/utils/renderWithProviders";
 
 function HelloWorld() {
   return <h1>Hola BullBearBroker 🚀</h1>;
@@ -6,7 +6,7 @@ function HelloWorld() {
 
 describe("HelloWorld component", () => {
   it("renderiza el texto correctamente", () => {
-    render(<HelloWorld />);
+    customRender(<HelloWorld />);
     expect(
       screen.getByText("Hola BullBearBroker 🚀")
     ).toBeInTheDocument();
