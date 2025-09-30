@@ -46,6 +46,7 @@ jest.mock("@/components/ui/card", () => ({
   CardContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   CardHeader: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   CardTitle: ({ children }: { children: ReactNode }) => <h2>{children}</h2>,
+  CardDescription: ({ children }: { children: ReactNode }) => <p>{children}</p>,
 }));
 
 jest.mock("@/lib/api", () => ({

@@ -1,15 +1,21 @@
 COMPOSE ?= docker compose
 
-.PHONY: up down logs build clean test
+.PHONY: up down logs build clean test up-staging down-staging
 
 up:
-	$(COMPOSE) up -d
+        $(COMPOSE) up -d
+
+up-staging:
+        APP_ENV=staging $(COMPOSE) --profile staging up -d
 
 build:
 	$(COMPOSE) up --build
 
 down:
-	$(COMPOSE) down
+        $(COMPOSE) down
+
+down-staging:
+        $(COMPOSE) --profile staging down
 
 clean:
 	$(COMPOSE) down -v --remove-orphans

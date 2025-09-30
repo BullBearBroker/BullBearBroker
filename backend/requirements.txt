@@ -46,8 +46,8 @@ python-telegram-bot==21.6
 discord.py==2.4.0           # ✅ Para integrar el bot de Discord en el futuro
 
 # Logging
-loguru==0.7.2
 structlog==24.1.0
+prometheus-client==0.21.0
 
 # Testing
 pytest==8.3.5

@@ -33,6 +33,8 @@ const MARKET_ENDPOINTS: Record<MarketKind, string> = {
   forex: "*/api/markets/forex/rates",
 };
 
+const MARKET_HISTORY_PATH = "*/api/markets/history/:symbol";
+
 const DEFAULT_QUOTES: Record<MarketKind, Quote> = {
   crypto: {
     symbol: "BTCUSDT",
@@ -79,6 +81,25 @@ export const handlers = [
   http.get(MARKET_ENDPOINTS.forex, () =>
     HttpResponse.json({ quotes: [DEFAULT_QUOTES.forex] })
   ),
+  http.get(MARKET_HISTORY_PATH, ({ params }) => {
+    const { symbol } = params as { symbol?: string };
+    const now = new Date("2024-01-01T00:00:00Z");
+    return HttpResponse.json({
+      symbol: (symbol as string) ?? "BTCUSDT",
+      interval: "1h",
+      source: "MockSource",
+      values: [
+        {
+          timestamp: now.toISOString(),
+          open: 1,
+          high: 1.2,
+          low: 0.9,
+          close: 1.1,
+          volume: 100,
+        },
+      ],
+    });
+  }),
   ...createMockPortfolioHandlers(),
 ];
 
@@ -122,6 +143,12 @@ export const makeMarketRateLimitHandler = (kind: MarketKind) =>
     MARKET_ENDPOINTS[kind],
     () => new HttpResponse(null, { status: 429 })
   );
+
+export const makeHistoricalDataHandler = (response: Record<string, unknown>) =>
+  http.get(MARKET_HISTORY_PATH, () => HttpResponse.json(response));
+
+export const makeHistoricalDataErrorHandler = (status = 500) =>
+  http.get(MARKET_HISTORY_PATH, () => new HttpResponse(null, { status }));
 
 export function createMockPortfolioHandlers(
   options: PortfolioHandlersOptions = {}

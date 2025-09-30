@@ -1,9 +1,46 @@
-from loguru import logger
+from __future__ import annotations
+
+import logging
+import os
 import sys
+from functools import lru_cache
+from typing import Any
 
-logger.remove()
-logger.add(sys.stdout, format="{time} {level} {message}", serialize=True)
+import structlog
+
+LOG_LEVEL = os.getenv("BULLBEAR_LOG_LEVEL", "INFO").upper()
 
 
-def get_logger():
+@lru_cache(maxsize=1)
+def _base_logger() -> structlog.stdlib.BoundLogger:
+    logging.basicConfig(
+        format="%(message)s",
+        stream=sys.stdout,
+        level=getattr(logging, LOG_LEVEL, logging.INFO),
+    )
+
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog.processors.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso", utc=True),
+            structlog.processors.StackInfoRenderer(),
+            structlog.processors.format_exc_info,
+            structlog.processors.JSONRenderer(),
+        ],
+        context_class=dict,
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.stdlib.BoundLogger,
+        cache_logger_on_first_use=True,
+    )
+
+    return structlog.get_logger("bullbearbroker")
+
+
+def get_logger(**initial_context: Any) -> structlog.stdlib.BoundLogger:
+    """Return a configured structured logger, optionally binding context."""
+
+    logger = _base_logger()
+    if initial_context:
+        return logger.bind(**initial_context)
     return logger

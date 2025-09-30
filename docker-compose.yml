@@ -1,7 +1,32 @@
 version: "3.9"
 
+x-backend-base: &backend-base
+  build:
+    context: .
+    dockerfile: Dockerfile
+  env_file:
+    - .env
+  environment:
+    DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://bullbear:bullbear@db:5432/bullbear}
+    REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+    BULLBEAR_DEFAULT_USER: ${BULLBEAR_DEFAULT_USER:-test@bullbear.ai}
+    BULLBEAR_DEFAULT_PASSWORD: ${BULLBEAR_DEFAULT_PASSWORD:-Test1234!}
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_started
+
+x-frontend-base: &frontend-base
+  build:
+    context: ./frontend
+    dockerfile: Dockerfile
+  env_file:
+    - .env
+
 services:
   db:
+    profiles: ["default", "staging"]
     image: postgres:15-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-bullbear}
@@ -18,46 +43,50 @@ services:
       retries: 5
 
   redis:
+    profiles: ["default", "staging"]
     image: redis:7-alpine
     ports:
       - "6379:6379"
 
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    <<: *backend-base
+    profiles: ["default"]
+    command: uvicorn main:app --reload --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://bullbear:bullbear@db:5432/bullbear}
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-      BULLBEAR_DEFAULT_USER: ${BULLBEAR_DEFAULT_USER:-test@bullbear.ai}
-      BULLBEAR_DEFAULT_PASSWORD: ${BULLBEAR_DEFAULT_PASSWORD:-Test1234!}
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_started
+
+  backend-staging:
+    <<: *backend-base
+    profiles: ["staging"]
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
+    <<: *frontend-base
+    profiles: ["default"]
     command: npm run dev -- --hostname 0.0.0.0 --port 3000
-    ports:
-      - "3000:3000"
-    env_file:
-      - .env
     environment:
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://backend:8000}
     depends_on:
       backend:
         condition: service_started
+    ports:
+      - "3000:3000"
+
+  frontend-staging:
+    <<: *frontend-base
+    profiles: ["staging"]
+    command: npm start
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://backend-staging:8000}
+    depends_on:
+      backend-staging:
+        condition: service_started
+    ports:
+      - "3000:3000"
 
 volumes:
   postgres_data:

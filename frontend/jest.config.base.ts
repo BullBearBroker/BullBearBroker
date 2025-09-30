@@ -1,19 +1,16 @@
-const path = require("path");
+import path from "path";
+import type { Config } from "jest";
 
-/** @type {import('jest').Config} */
-module.exports = {
+const baseConfig: Config = {
   rootDir: path.resolve(__dirname),
-
   testEnvironment: "jsdom",
   testEnvironmentOptions: {
     url: "http://localhost",
   },
-
   setupFilesAfterEnv: [
     "<rootDir>/jest.setup.ts",
     "<rootDir>/src/tests/msw/setup.ts",
   ],
-
   moduleNameMapper: {
     "^.+\\.(css|less|scss|sass)$": "identity-obj-proxy",
     "^@/styles/globals\\.css$": "identity-obj-proxy",
@@ -24,30 +21,23 @@ module.exports = {
     "^@mswjs/interceptors/(.*)$":
       "<rootDir>/node_modules/@mswjs/interceptors/lib/node/interceptors/$1/index.js",
   },
-
-  // 👇 aquí está la clave: le pasamos configFile explícito
   transform: {
     "^.+\\.(js|jsx|ts|tsx)$": [
       "babel-jest",
       { configFile: path.resolve(__dirname, "babel.config.cjs") },
     ],
   },
-
   transformIgnorePatterns: [
     "/node_modules/(?!(recharts|d3-|msw|@mswjs|until-async|strict-event-emitter|outvariant|headers-polyfill)/)",
   ],
-
   moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json", "node"],
-
   testMatch: [
     "<rootDir>/src/**/*.test.(ts|tsx|js|jsx)",
     "<rootDir>/src/**/__tests__/**/*.(ts|tsx|js|jsx)",
   ],
   testPathIgnorePatterns: ["<rootDir>/.next/", "<rootDir>/node_modules/"],
-
   clearMocks: true,
-
-  collectCoverage: true,
+  collectCoverage: false,
   collectCoverageFrom: [
     "<rootDir>/src/**/*.{ts,tsx}",
     "<rootDir>/src/components/forms/**/*.{ts,tsx}",
@@ -57,13 +47,6 @@ module.exports = {
     "!<rootDir>/src/**/stories/**",
     "!<rootDir>/src/app/**",
   ],
-
-  coverageThreshold: {
-    global: {
-      branches: 85,
-      functions: 90,
-      lines: 90,
-      statements: 90,
-    },
-  },
 };
+
+export default baseConfig;

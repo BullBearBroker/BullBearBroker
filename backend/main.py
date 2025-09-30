@@ -10,6 +10,7 @@ import redis.asyncio as redis
 
 from backend.core.logging_config import get_logger
 from backend.core.http_logging import RequestLogMiddleware
+from backend.core.metrics import MetricsMiddleware, metrics_router
 
 # Routers de la app
 from backend.routers import alerts, markets, news, auth, ai, portfolio, push
@@ -24,8 +25,8 @@ except Exception:  # pragma: no cover - entorno sin servicio de usuarios
     user_service = None  # type: ignore[assignment]
     InvalidTokenError = Exception  # type: ignore[assignment]
 
-logger = get_logger()
-logger.info("Backend iniciado correctamente 🚀")
+logger = get_logger(service="backend")
+logger.info("backend_started")
 
 # ========================
 # Lifespan (startup/shutdown)
@@ -48,29 +49,29 @@ async def lifespan(app: FastAPI):
             redis_client = None
             raise RuntimeError("Redis no disponible") from exc
         await FastAPILimiter.init(redis_client)
-        logger.info("FastAPILimiter inicializado")
+        logger.info("fastapi_limiter_initialized")
     except Exception as exc:  # pragma: no cover - redis opcional en tests
-        logger.warning(f"FastAPILimiter no inicializado: {exc}")
+        logger.warning("fastapi_limiter_unavailable", error=str(exc))
 
     try:
         from backend.database import Base, engine
         from backend.services.user_service import user_service
 
         Base.metadata.create_all(bind=engine)
-        logger.info("Tablas de base de datos verificadas/creadas correctamente")
+        logger.info("database_ready")
 
         default_email = os.getenv("BULLBEAR_DEFAULT_USER", "test@bullbear.ai")
         default_password = os.getenv("BULLBEAR_DEFAULT_PASSWORD", "Test1234!")
         user_service.ensure_user(default_email, default_password)
-        logger.info("Usuario por defecto verificado (%s)", default_email)
+        logger.info("default_user_ready", email=default_email)
     except Exception as exc:  # pragma: no cover - evita fallas en despliegues sin DB
-        logger.error("Error creando tablas en la base de datos: %s", exc)
+        logger.error("database_setup_error", error=str(exc))
 
     try:
         # Informe de integraciones para confirmar que usamos APIs reales.
         await log_api_integration_report()
     except Exception as exc:  # pragma: no cover - logging defensivo
-        logger.warning("No se pudo generar el reporte de integraciones: %s", exc)
+        logger.warning("integration_report_failed", error=str(exc))
 
     yield  # ⬅️ Aquí FastAPI empieza a servir requests
 
@@ -79,9 +80,9 @@ async def lifespan(app: FastAPI):
     try:
         if "redis_client" in locals() and redis_client:
             await redis_client.close()
-            logger.info("Redis cerrado correctamente")
+            logger.info("redis_closed")
     except Exception as exc:
-        logger.warning(f"Error cerrando Redis: {exc}")
+        logger.warning("redis_close_error", error=str(exc))
 
 
 # ========================
@@ -104,6 +105,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(MetricsMiddleware)
 app.add_middleware(RequestLogMiddleware)
 
 # Endpoint raíz (health básico de la API)
@@ -113,6 +115,7 @@ def read_root():
 
 
 # ✅ Routers registrados con prefijo global /api
+app.include_router(metrics_router)
 app.include_router(health.router, prefix="/api/health", tags=["health"])
 app.include_router(alerts.router, prefix="/api/alerts", tags=["alerts"])
 app.include_router(markets.router, prefix="/api/markets", tags=["markets"])
@@ -141,7 +144,7 @@ async def alerts_websocket(
             await websocket.close(code=1008, reason="Token inválido")
             return
         except Exception as exc:  # pragma: no cover - logging defensivo
-            logger.warning("WebSocket authentication error: %s", exc)
+            logger.warning("websocket_auth_error", error=str(exc))
             await websocket.close(code=1011, reason="Error autenticando usuario")
             return
 
@@ -173,6 +176,6 @@ async def alerts_websocket(
     except WebSocketDisconnect:
         pass
     except Exception as exc:  # pragma: no cover - resiliencia ante errores inesperados
-        logger.warning("WebSocket connection error: %s", exc)
+        logger.warning("websocket_connection_error", error=str(exc))
     finally:
         await alerts_ws_manager.disconnect(websocket)

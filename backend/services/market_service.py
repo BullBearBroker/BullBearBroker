@@ -1,7 +1,6 @@
 import asyncio
 import base64
 import html
-import logging
 import re
 import time
 import xml.etree.ElementTree as ET
@@ -12,6 +11,7 @@ from urllib.parse import urlparse
 
 import aiohttp
 from aiohttp import ClientError
+from backend.core.logging_config import get_logger
 # Plotly puede no estar disponible en entornos de prueba sin dependencias opcionales.
 try:  # pragma: no cover - depende del entorno
     import plotly.graph_objects as go
@@ -29,7 +29,7 @@ except ImportError:  # pragma: no cover
     from backend.utils.cache import CacheClient  # type: ignore[no-redef]
     from backend.utils.config import Config  # type: ignore[no-redef]
 
-LOGGER = logging.getLogger(__name__)
+LOGGER = get_logger(module="market_service")
 CLIENT_TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 
@@ -45,6 +45,7 @@ class MarketService:
         self.stock_service = stock_service or StockService()
         self.news_cache = news_cache or CacheClient("market-news", ttl=180)
         self.chart_cache = CacheClient("market-chart", ttl=300)
+        self.history_cache = CacheClient("market-history", ttl=600)
         self.binance_cache: Dict[str, Dict[str, Any]] = {}
         self.cache_timeout = 2  # segundos (más rápido para datos en tiempo real)
         self.base_urls = {
@@ -113,6 +114,189 @@ class MarketService:
         }
         await self.chart_cache.set(cache_key, history)
         return history
+
+    async def get_historical_ohlc(
+        self,
+        symbol: str,
+        *,
+        interval: str = "1h",
+        limit: int = 300,
+        market: str = "auto",
+    ) -> Dict[str, Any]:
+        """Obtener velas OHLC usando proveedores gratuitos y cachearlas."""
+
+        limit = max(10, min(limit, 1000))
+        cache_key = f"{symbol}:{interval}:{limit}:{market}".lower()
+        cached = await self.history_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        symbol_up = symbol.upper()
+        market_mode = market.lower()
+        data: Optional[Dict[str, Any]] = None
+        errors: List[str] = []
+
+        if market_mode in {"auto", "crypto"} and self._looks_like_crypto(symbol_up):
+            try:
+                data = await self._fetch_binance_history(symbol_up, interval, limit)
+            except Exception as exc:  # pragma: no cover - fallback defensivo
+                LOGGER.warning(
+                    "binance_history_unavailable", symbol=symbol_up, error=str(exc)
+                )
+                errors.append(f"Binance: {exc}")
+                if market_mode == "crypto":
+                    raise
+
+        if data is None and market_mode in {"auto", "stock", "equity", "forex"}:
+            try:
+                data = await self._fetch_yahoo_history(symbol_up, interval, limit)
+            except Exception as exc:
+                LOGGER.warning(
+                    "yahoo_history_unavailable", symbol=symbol_up, error=str(exc)
+                )
+                errors.append(f"Yahoo: {exc}")
+
+        if data is None:
+            detail = "; ".join(errors) if errors else "proveedores sin datos"
+            raise ValueError(f"No se encontraron datos históricos para {symbol_up} ({detail})")
+
+        await self.history_cache.set(cache_key, data)
+        return data
+
+    async def _fetch_binance_history(
+        self, symbol: str, interval: str, limit: int
+    ) -> Dict[str, Any]:
+        allowed = {
+            "1m",
+            "3m",
+            "5m",
+            "15m",
+            "30m",
+            "1h",
+            "2h",
+            "4h",
+            "6h",
+            "8h",
+            "12h",
+            "1d",
+            "3d",
+            "1w",
+            "1M",
+        }
+        if interval not in allowed:
+            raise ValueError(f"Intervalo no soportado por Binance: {interval}")
+
+        params = {"symbol": symbol, "interval": interval, "limit": str(limit)}
+        url = f"{self.base_urls['binance']}/klines"
+
+        async with aiohttp.ClientSession(timeout=CLIENT_TIMEOUT) as session:
+            async with session.get(url, params=params) as response:
+                if response.status != 200:
+                    text = await response.text()
+                    raise ClientError(
+                        f"Binance devolvió {response.status} para {symbol}: {text[:120]}"
+                    )
+                payload = await response.json()
+
+        candles: List[Dict[str, Any]] = []
+        for entry in payload:
+            try:
+                open_time = int(entry[0]) / 1000
+                candles.append(
+                    {
+                        "timestamp": datetime.fromtimestamp(open_time, tz=timezone.utc).isoformat(),
+                        "open": float(entry[1]),
+                        "high": float(entry[2]),
+                        "low": float(entry[3]),
+                        "close": float(entry[4]),
+                        "volume": float(entry[5]),
+                    }
+                )
+            except (TypeError, ValueError, IndexError) as exc:
+                LOGGER.debug("binance_candle_parse_error", error=str(exc), entry=entry)
+                continue
+
+        if not candles:
+            raise ValueError(f"Binance no devolvió datos para {symbol}")
+
+        return {
+            "symbol": symbol,
+            "interval": interval,
+            "source": "Binance",
+            "values": candles[-limit:],
+        }
+
+    async def _fetch_yahoo_history(
+        self, symbol: str, interval: str, limit: int
+    ) -> Dict[str, Any]:
+        yahoo_symbol = self._format_symbol_for_yahoo(symbol)
+        range_map = {
+            "1m": "7d",
+            "5m": "1mo",
+            "15m": "2mo",
+            "30m": "3mo",
+            "1h": "3mo",
+            "2h": "6mo",
+            "4h": "6mo",
+            "1d": "max",
+            "1w": "max",
+            "1mo": "max",
+        }
+        params = {"interval": interval, "range": range_map.get(interval, "1y")}
+        url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol}"
+
+        async with aiohttp.ClientSession(timeout=CLIENT_TIMEOUT) as session:
+            async with session.get(url, params=params) as response:
+                if response.status != 200:
+                    raise ClientError(
+                        f"Yahoo Finance devolvió estado {response.status} para {symbol}"
+                    )
+                payload = await response.json()
+
+        try:
+            result = payload["chart"]["result"][0]
+            timestamps = result.get("timestamp") or []
+            quote = result["indicators"]["quote"][0]
+            opens = quote.get("open") or []
+            highs = quote.get("high") or []
+            lows = quote.get("low") or []
+            closes = quote.get("close") or []
+            volumes = quote.get("volume") or []
+        except (KeyError, IndexError, TypeError) as exc:
+            raise ValueError(f"Datos históricos no disponibles para {symbol}") from exc
+
+        candles: List[Dict[str, Any]] = []
+        for ts, open_, high, low, close, volume in zip(
+            timestamps, opens, highs, lows, closes, volumes
+        ):
+            if None in (open_, high, low, close):
+                continue
+            dt = datetime.fromtimestamp(ts, tz=timezone.utc)
+            candles.append(
+                {
+                    "timestamp": dt.isoformat(),
+                    "open": float(open_),
+                    "high": float(high),
+                    "low": float(low),
+                    "close": float(close),
+                    "volume": float(volume or 0.0),
+                }
+            )
+
+        if not candles:
+            raise ValueError(f"Sin datos históricos para {symbol}")
+
+        return {
+            "symbol": symbol,
+            "interval": interval,
+            "source": "Yahoo Finance",
+            "values": candles[-limit:],
+        }
+
+    def _looks_like_crypto(self, symbol: str) -> bool:
+        if "/" in symbol:
+            symbol = symbol.replace("/", "")
+        return any(symbol.endswith(suffix) for suffix in ("USDT", "USDC", "BTC", "ETH"))
 
     async def get_chart_image(
         self,

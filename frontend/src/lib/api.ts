@@ -116,6 +116,22 @@ export interface NewsItem {
   summary?: string;
 }
 
+export interface HistoricalCandle {
+  timestamp: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume?: number;
+}
+
+export interface HistoricalDataResponse {
+  symbol: string;
+  interval: string;
+  source?: string;
+  values: HistoricalCandle[];
+}
+
 /* ===========
    CORE REQUEST
    =========== */
@@ -196,6 +212,36 @@ export function refreshToken(refresh_token: string) {
     method: "POST",
     body: JSON.stringify({ refresh_token }),
   });
+}
+
+export interface HistoricalQuery {
+  interval?: string;
+  limit?: number;
+  market?: "auto" | "crypto" | "stock" | "equity" | "forex";
+}
+
+export function getHistoricalData(
+  symbol: string,
+  params: HistoricalQuery = {},
+  token?: string | null
+) {
+  const searchParams = new URLSearchParams();
+  if (params.interval) {
+    searchParams.set("interval", params.interval);
+  }
+  if (typeof params.limit === "number") {
+    searchParams.set("limit", params.limit.toString());
+  }
+  if (params.market) {
+    searchParams.set("market", params.market);
+  }
+
+  const query = searchParams.toString();
+  const path = `/api/markets/history/${encodeURIComponent(symbol)}${
+    query ? `?${query}` : ""
+  }`;
+
+  return request<HistoricalDataResponse>(path, {}, token ?? undefined);
 }
 
 export function getProfile(token: string) {

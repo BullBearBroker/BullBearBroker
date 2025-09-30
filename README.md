@@ -108,6 +108,24 @@ Campos destacados:
 Asegúrate de tener PostgreSQL y Redis ejecutándose en tu entorno local y que las
 variables de entorno apunten a esas instancias.
 
+### Perfil staging con Docker Compose
+
+El `docker-compose.yml` define dos perfiles:
+
+- `default`: entorno de desarrollo con recarga en caliente (`make up`).
+- `staging`: entorno de pruebas realistas con builds optimizados.
+
+Para levantar el perfil staging:
+
+```bash
+make up-staging       # Levanta backend, frontend, db y redis en modo staging
+make down-staging     # Detiene únicamente los servicios del perfil staging
+```
+
+En staging el frontend ejecuta `npm start` (Next.js compilado) y el backend
+utiliza Uvicorn sin `--reload`, reutilizando los contenedores de PostgreSQL y
+Redis con volúmenes persistentes.
+
 ## Pruebas automatizadas
 
 Ejecuta toda la suite (backend + frontend) con un solo comando:
@@ -117,12 +135,21 @@ make test
 ```
 
 - Backend: `python -m pytest backend/tests`
-- Frontend: `npm --prefix frontend test -- --watch=false`
+- Frontend: `npm --prefix frontend run test:dev`
 
-> ℹ️ **Cobertura en Jest**: los tests del frontend usan umbrales de cobertura
-> globales. Ejecutar suites individuales puede fallar aun cuando las pruebas
-> pasen si no se calcula cobertura sobre todo el código. Usa `pnpm test` sin
-> filtros para validar una ejecución completa.
+- Cobertura en CI: `npm --prefix frontend run test:ci`
+
+> ℹ️ **Cobertura en Jest**: los tests del frontend mantienen umbrales globales.
+> Usa `npm --prefix frontend run test:ci` para validar cobertura estricta en CI.
+> Durante el desarrollo utiliza `npm --prefix frontend run test:dev` para
+> ejecutar suites filtradas sin fallos por cobertura.
+
+## Observabilidad (logs y métricas)
+
+- **Logging estructurado**: el backend utiliza `structlog` con salida JSON. Ajusta
+  el nivel con `BULLBEAR_LOG_LEVEL` (`INFO`, `DEBUG`, etc.).
+- **Métricas Prometheus**: la API expone `/metrics` con histogramas de latencia y
+  contadores por endpoint listos para ser scrapeados por Prometheus/Grafana.
 
 ## Chat persistente y notificaciones push
 
