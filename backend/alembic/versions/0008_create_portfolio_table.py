@@ -6,7 +6,7 @@ from sqlalchemy.dialects import postgresql
 
 
 revision = "0008_create_portfolio_table"
-down_revision = "0007_add_title_active_to_alerts"
+down_revision = "0007_alerts_title_active"
 branch_labels = None
 depends_on = None
 

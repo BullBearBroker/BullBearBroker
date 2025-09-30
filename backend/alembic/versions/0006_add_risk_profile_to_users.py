@@ -4,8 +4,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0006_add_risk_profile_to_users"
-down_revision = "0005_add_expires_at_to_refresh_tokens"
+revision = "0006_add_user_risk_profile"
+down_revision = "0005_refresh_tokens_expires_at"
 branch_labels = None
 depends_on = None
 

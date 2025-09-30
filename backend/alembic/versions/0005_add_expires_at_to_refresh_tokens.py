@@ -5,7 +5,7 @@ import sqlalchemy as sa
 
 
 # ✅ Usa un string único para esta migración
-revision = "0005_add_expires_at_to_refresh_tokens"
+revision = "0005_refresh_tokens_expires_at"
 down_revision = "0004_create_refresh_tokens"
 branch_labels = None
 depends_on = None

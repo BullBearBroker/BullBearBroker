@@ -11,6 +11,7 @@ import redis.asyncio as redis
 from backend.core.logging_config import get_logger
 from backend.core.http_logging import RequestLogMiddleware
 from backend.core.metrics import MetricsMiddleware, metrics_router
+from backend.utils.config import ENV
 
 # Routers de la app
 from backend.routers import alerts, markets, news, auth, ai, portfolio, push
@@ -57,8 +58,11 @@ async def lifespan(app: FastAPI):
         from backend.database import Base, engine
         from backend.services.user_service import user_service
 
-        Base.metadata.create_all(bind=engine)
-        logger.info("database_ready")
+        if ENV == "local":
+            Base.metadata.create_all(bind=engine)
+            logger.info("database_ready")
+        else:
+            logger.info("database_migrations_required", env=ENV)
 
         default_email = os.environ.get("BULLBEAR_DEFAULT_USER", "test@bullbear.ai")
         default_password = os.environ.get("BULLBEAR_DEFAULT_PASSWORD", "Test1234!")

@@ -24,7 +24,7 @@ const baseConfig: Config = {
   transform: {
     "^.+\\.(js|jsx|ts|tsx)$": [
       "babel-jest",
-      { configFile: path.resolve(__dirname, "babel.config.cjs") },
+      { configFile: path.resolve(__dirname, "babel.config.js") },
     ],
   },
   transformIgnorePatterns: [

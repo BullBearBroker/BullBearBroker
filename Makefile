@@ -1,6 +1,9 @@
 COMPOSE ?= docker compose
 
-.PHONY: up up-local up-supabase up-staging down down-v down-staging clean logs logs-local logs-supabase logs-staging migrate test test-backend test-frontend check-all
+.PHONY: validate up up-local up-supabase up-staging down down-v down-staging clean logs logs-local logs-supabase logs-staging migrate test test-backend test-frontend check-all
+
+validate:
+	$(COMPOSE) -f docker-compose.yml config
 
 # ========================
 # 🚀 UP (Levantar servicios)

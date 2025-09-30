@@ -14,7 +14,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = "0004_create_refresh_tokens"
-down_revision = "0003_make_session_expires_at_not_null"
+down_revision = "0003_session_expires_not_null"
 branch_labels = None
 depends_on = None
 

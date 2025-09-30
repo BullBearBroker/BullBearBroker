@@ -10,6 +10,8 @@ load_dotenv()
 
 LOGGER = logging.getLogger(__name__)
 
+ENV: str = os.environ.get("ENV", "local")
+
 
 def _get_env(name: str, default: Optional[str] = None) -> Optional[str]:
     """Wrapper around :func:`os.environ.get` that trims whitespace."""

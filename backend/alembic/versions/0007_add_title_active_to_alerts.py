@@ -4,8 +4,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0007_add_title_active_to_alerts"
-down_revision = "0006_add_risk_profile_to_users"
+revision = "0007_alerts_title_active"
+down_revision = "0006_add_user_risk_profile"
 branch_labels = None
 depends_on = None
 

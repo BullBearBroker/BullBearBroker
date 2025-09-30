@@ -1,9 +1,5 @@
 import { render, screen } from "@testing-library/react";
 
-jest.mock("next/font/google", () => ({
-  Inter: () => ({ className: "mock-font" }),
-}));
-
 jest.mock("@/components/providers/auth-provider", () => ({
   AuthProvider: ({ children }: { children: React.ReactNode }) => (
     <div data-testid="auth-provider">{children}</div>

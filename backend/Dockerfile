@@ -8,7 +8,7 @@ WORKDIR /app
 
 # Instalamos dependencias del sistema necesarias para construir dependencias de Python
 RUN apt-get update \
-    && apt-get install --no-install-recommends -y build-essential libpq-dev \
+    && apt-get install --no-install-recommends -y build-essential libpq-dev curl \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt ./requirements.txt

@@ -126,6 +126,21 @@ En staging el frontend ejecuta `npm start` (Next.js compilado) y el backend
 utiliza Uvicorn sin `--reload`, reutilizando los contenedores de PostgreSQL y
 Redis con volúmenes persistentes.
 
+## Entornos de ejecución
+
+| Variable `ENV` | Comportamiento | Cómo levantar |
+| -------------- | -------------- | ------------- |
+| `local`        | El backend crea las tablas automáticamente (`Base.metadata.create_all`) y siembra el usuario por defecto. Ideal para desarrollo rápido. | `make up-local` (equivalente a `docker compose --env-file .env.local up -d --build`). |
+| `staging` / `prod` | La base de datos **no** se crea automáticamente: se espera que las migraciones de Alembic estén aplicadas. | `make up-staging` (staging) o configura tus variables y ejecuta `docker compose --profile staging up -d`. |
+
+Cuando trabajes fuera de `local` debes aplicar las migraciones manualmente:
+
+```bash
+make migrate          # docker compose exec backend alembic upgrade head
+```
+
+💡 Recomendación: tras cada despliegue en staging/prod ejecuta `make migrate` (o el comando equivalente en tu pipeline) antes de exponer la API. Esto garantiza que el esquema coincida con la última versión del código.
+
 ## Pruebas automatizadas
 
 Ejecuta toda la suite (backend + frontend) con un solo comando:

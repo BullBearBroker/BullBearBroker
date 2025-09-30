@@ -7,7 +7,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 
-revision = "0009_create_chat_and_push_tables"
+revision = "0009_chat_push_tables"
 down_revision = "0008_create_portfolio_table"
 branch_labels = None
 depends_on = None
