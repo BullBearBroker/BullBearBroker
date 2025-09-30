@@ -24,6 +24,7 @@ aioredis==2.0.1
 celery==5.4.0
 APScheduler==3.10.4
 redis==5.0.1
+pywebpush==1.14.0
 
 # Modelado y validación
 pydantic==2.9.2

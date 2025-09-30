@@ -28,6 +28,13 @@ const mockIndicatorsChart = jest.fn((props) => (
   <div data-testid="indicators-chart">{props.symbol}</div>
 ));
 
+const mockUsePushNotifications = jest.fn(() => ({
+  enabled: false,
+  error: null,
+  permission: "default" as NotificationPermission,
+  loading: false,
+}));
+
 jest.mock("@/components/sidebar/market-sidebar", () => ({
   MarketSidebar: (props: any) => mockMarketSidebar(props),
 }));
@@ -54,6 +61,10 @@ jest.mock("@/components/indicators/IndicatorsChart", () => ({
 
 jest.mock("@/components/dashboard/theme-toggle", () => ({
   ThemeToggle: () => <button type="button">Tema</button>,
+}));
+
+jest.mock("@/hooks/usePushNotifications", () => ({
+  usePushNotifications: (token: string | undefined) => mockUsePushNotifications(token),
 }));
 
 jest.mock("next/navigation", () => ({
@@ -96,6 +107,7 @@ describe("DashboardPage", () => {
     mockNewsPanel.mockClear();
     mockChatPanel.mockClear();
     mockPortfolioPanel.mockClear();
+    mockUsePushNotifications.mockClear();
   });
 
   it("muestra la pantalla de carga mientras la sesión está verificándose", () => {
@@ -151,6 +163,7 @@ describe("DashboardPage", () => {
     expect(mockAlertsPanel).toHaveBeenCalled();
     expect(mockNewsPanel).toHaveBeenCalled();
     expect(mockChatPanel).toHaveBeenCalled();
+    expect(screen.getByText(/Push inactivo/i)).toBeInTheDocument();
 
     await waitFor(() => {
       expect(mockIndicatorsChart).toHaveBeenCalledWith(
@@ -209,6 +222,30 @@ describe("DashboardPage", () => {
     } finally {
       consoleSpy.mockRestore();
     }
+  });
+
+  it("muestra el error de notificaciones push", async () => {
+    mockUsePushNotifications.mockReturnValue({
+      enabled: false,
+      error: "No se pudo registrar push",
+      permission: "denied",
+      loading: false,
+    });
+    mockUseAuth.mockReturnValue({ ...baseAuth, loading: false });
+    mockUseRouter.mockReturnValue({ replace: jest.fn() });
+    mockedGetIndicators.mockResolvedValue({
+      symbol: "BTCUSDT",
+      interval: "1h",
+      indicators: { last_close: 12345 },
+      series: { closes: [1, 2, 3] },
+    });
+    mockedSendChatMessage.mockResolvedValue({ messages: [], sources: [], used_data: false });
+
+    await act(async () => {
+      customRender(<DashboardPage />);
+    });
+
+    expect(await screen.findByText("No se pudo registrar push")).toBeInTheDocument();
   });
 
   it("limpia los insights cuando la IA devuelve un error", async () => {

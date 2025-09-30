@@ -50,6 +50,13 @@ Campos destacados:
 - **BULLBEAR_DEFAULT_USER / PASSWORD**: credenciales sembradas automáticamente para pruebas.
 - **NEXT_PUBLIC_API_BASE_URL**: URL base que consume el frontend (en Docker se
   resuelve a `http://backend:8000`).
+- **PUSH_VAPID_PUBLIC_KEY / PUSH_VAPID_PRIVATE_KEY**: claves VAPID usadas para
+  firmar notificaciones web push desde el backend. Genera un par con
+  `npx web-push generate-vapid-keys` y compártelas con el frontend.
+- **NEXT_PUBLIC_PUSH_VAPID_PUBLIC_KEY**: clave pública expuesta al navegador
+  para registrar la suscripción push mediante el Service Worker.
+- **AI_PROVIDER_KEYS**: configura `MISTRAL_API_KEY` o `HUGGINGFACE_API_KEY` para
+  habilitar respuestas del asistente con persistencia de historial.
 
 ## Puesta en marcha con Docker Compose
 
@@ -111,6 +118,27 @@ make test
 
 - Backend: `python -m pytest backend/tests`
 - Frontend: `npm --prefix frontend test -- --watch=false`
+
+> ℹ️ **Cobertura en Jest**: los tests del frontend usan umbrales de cobertura
+> globales. Ejecutar suites individuales puede fallar aun cuando las pruebas
+> pasen si no se calcula cobertura sobre todo el código. Usa `pnpm test` sin
+> filtros para validar una ejecución completa.
+
+## Chat persistente y notificaciones push
+
+- Las conversaciones del asistente se guardan por usuario y sesión. El endpoint
+  `POST /ai/chat` crea sesiones automáticamente y `GET /ai/history/{session_id}`
+  devuelve el historial para hidratar el chat en el frontend.
+- El frontend conserva el `session_id` en `localStorage` y revalida el historial
+  con SWR al montar el componente de chat, garantizando continuidad tras
+  recargas o nuevos inicios de sesión.
+- El Service Worker (`frontend/public/sw.js`) gestiona la recepción de
+  notificaciones push. El hook `usePushNotifications` registra la suscripción
+  usando la clave VAPID pública y expone el estado al dashboard.
+- Para emitir pruebas de push, usa `POST /push/subscribe` en el backend y la
+  utilidad `backend/services/push_service.py` para despachar mensajes mediante
+  `pywebpush`. Cuando `pywebpush` no está instalado, el servicio degrada de
+  forma segura registrando el intento en logs.
 
 ## Roadmap MVP
 

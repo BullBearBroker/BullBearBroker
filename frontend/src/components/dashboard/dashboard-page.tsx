@@ -13,13 +13,17 @@ import { ThemeToggle } from "@/components/dashboard/theme-toggle";
 import { IndicatorsChart } from "@/components/indicators/IndicatorsChart"; // [Codex] nuevo
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { getIndicators, sendChatMessage } from "@/lib/api"; // [Codex] nuevo
+import { usePushNotifications } from "@/hooks/usePushNotifications";
 
 export function DashboardPage() {
   const { user, loading, token, logout } = useAuth();
   const router = useRouter();
 
   const sidebarToken = useMemo(() => token ?? undefined, [token]);
+
+  const { enabled: pushEnabled, error: pushError } = usePushNotifications(token ?? undefined);
 
   const [indicatorData, setIndicatorData] = useState<any | null>(null); // [Codex] nuevo
   const [indicatorInsights, setIndicatorInsights] = useState<string | null>(null); // [Codex] nuevo
@@ -132,12 +136,20 @@ export function DashboardPage() {
             <h1 className="text-2xl font-semibold">{user.name || user.email}</h1>
           </div>
           <div className="flex items-center gap-3">
+            <Badge variant={pushEnabled ? "outline" : "secondary"} className="hidden md:inline-flex">
+              {pushEnabled ? "Push activo" : "Push inactivo"}
+            </Badge>
             <ThemeToggle />
             <Button variant="outline" onClick={logout}>
               Cerrar sesión
             </Button>
           </div>
         </header>
+        {pushError && (
+          <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+            {pushError}
+          </div>
+        )}
         <section className="grid flex-1 gap-6 lg:grid-cols-2 xl:grid-cols-[2fr_1fr]">
           <div className="grid auto-rows-min gap-6">
             <PortfolioPanel token={token ?? undefined} />

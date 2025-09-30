@@ -68,6 +68,18 @@ export interface ChatResponse {
   provider?: string;
   used_data?: boolean; // [Codex] nuevo - refleja si hubo datos reales
   sources?: string[]; // [Codex] nuevo - fuentes utilizadas por la IA
+  sessionId?: string;
+}
+
+export interface ChatHistoryMessage extends MessagePayload {
+  id: string;
+  created_at: string;
+}
+
+export interface ChatHistory {
+  session_id: string;
+  created_at: string;
+  messages: ChatHistoryMessage[];
 }
 
 export interface Alert {
@@ -239,7 +251,7 @@ export async function sendChatMessage(
   messages: MessagePayload[],
   token?: string,
   onStreamChunk?: (partial: string) => void,
-  options?: { symbol?: string; interval?: "1h" | "4h" | "1d" }
+  options?: { symbol?: string; interval?: "1h" | "4h" | "1d"; sessionId?: string }
 ): Promise<ChatResponse> {
   // 🔹 Obtener indicadores si hay símbolo
   let indicators: any = null;
@@ -256,7 +268,7 @@ export async function sendChatMessage(
     }
   }
 
-  const body = {
+  const body: Record<string, unknown> = {
     prompt: messages[messages.length - 1]?.content ?? "",
     context: {
       history: messages.slice(0, -1),
@@ -264,11 +276,16 @@ export async function sendChatMessage(
     },
   };
 
+  if (options?.sessionId) {
+    body.session_id = options.sessionId;
+  }
+
   const payload = await request<{
     response: string;
     provider?: string;
     used_data?: boolean;
     sources?: string[];
+    session_id?: string;
   }>(
     "/api/ai/chat",
     {
@@ -294,7 +311,12 @@ export async function sendChatMessage(
     provider: payload.provider,
     used_data: payload.used_data,
     sources: payload.sources,
+    sessionId: payload.session_id ?? options?.sessionId,
   };
+}
+
+export function getChatHistory(sessionId: string, token: string) {
+  return request<ChatHistory>(`/api/ai/history/${sessionId}`, { method: "GET" }, token);
 }
 
 /* ===========
@@ -336,6 +358,44 @@ export function updateAlert(
       method: "PUT",
       body: JSON.stringify(payload),
     },
+    token
+  );
+}
+
+/* ===========
+   PUSH NOTIFICATIONS
+   =========== */
+
+export interface PushSubscriptionPayload {
+  endpoint: string;
+  keys: {
+    auth: string;
+    p256dh: string;
+  };
+}
+
+export interface PushSubscriptionResponse {
+  id: string;
+}
+
+export function subscribePush(
+  payload: PushSubscriptionPayload,
+  token: string
+) {
+  return request<PushSubscriptionResponse>(
+    "/api/push/subscribe",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    token
+  );
+}
+
+export function sendTestPush(token: string) {
+  return request<{ delivered: number }>(
+    "/api/push/send-test",
+    { method: "POST" },
     token
   );
 }

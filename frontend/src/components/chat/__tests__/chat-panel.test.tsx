@@ -3,7 +3,7 @@ import { act, customRender, screen, waitFor } from "@/tests/utils/renderWithProv
 import userEvent from "@testing-library/user-event";
 
 import { ChatPanel } from "../chat-panel";
-import { sendChatMessage } from "@/lib/api";
+import { sendChatMessage, getChatHistory } from "@/lib/api";
 
 // Mock de Radix ScrollArea porque JSDOM no implementa addEventListener como espera la lib
 jest.mock("@radix-ui/react-scroll-area", () => {
@@ -52,12 +52,19 @@ jest.mock("@/lib/api", () => ({
     sources: [],
     used_data: false,
   }),
+  getChatHistory: jest.fn().mockResolvedValue({
+    session_id: "",
+    created_at: new Date().toISOString(),
+    messages: [],
+  }),
 }));
 
 describe("ChatPanel", () => {
   let scrollSpy: jest.SpyInstance;
   const mockedSendChatMessage =
     sendChatMessage as jest.MockedFunction<typeof sendChatMessage>;
+  const mockedGetChatHistory =
+    getChatHistory as jest.MockedFunction<typeof getChatHistory>;
 
   beforeAll(() => {
     if (!window.HTMLElement.prototype.scrollIntoView) {
@@ -77,6 +84,8 @@ describe("ChatPanel", () => {
 
   beforeEach(() => {
     mockedSendChatMessage.mockClear();
+    mockedGetChatHistory.mockClear();
+    window.localStorage.clear();
     scrollSpy.mockClear();
   });
 
@@ -92,34 +101,10 @@ describe("ChatPanel", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("IA")).toBeInTheDocument();
     expect(mockedSendChatMessage).not.toHaveBeenCalled();
+    expect(mockedGetChatHistory).not.toHaveBeenCalled();
   });
 
-  it("muestra el mensaje de usuario cuando hay una conversación con un mensaje", () => {
-    const userMessage = {
-      role: "user" as const,
-      content: "Mensaje inicial del usuario",
-    };
-
-    const useStateSpy = jest.spyOn(React, "useState");
-    useStateSpy.mockImplementationOnce(<S>(initialState: S | (() => S)) => {
-      void initialState;
-      const state = ([userMessage] as unknown) as S;
-      const setState = (() => {}) as React.Dispatch<React.SetStateAction<S>>;
-      return [state, setState];
-    });
-
-    try {
-      act(() => {
-        customRender(<ChatPanel token={undefined} />);
-      });
-
-      expect(screen.getByText(userMessage.content)).toBeInTheDocument();
-    } finally {
-      useStateSpy.mockRestore();
-    }
-  });
-
-  it("gestiona una conversación con múltiples mensajes", async () => {
+  it("gestiona una conversación con múltiples mensajes y persiste la sesión", async () => {
     const user = userEvent.setup();
     mockedSendChatMessage.mockResolvedValueOnce({
       messages: [
@@ -130,7 +115,18 @@ describe("ChatPanel", () => {
       ],
       sources: ["news"],
       used_data: true,
+      sessionId: "session-123",
     });
+    mockedGetChatHistory.mockResolvedValueOnce({
+      session_id: "session-123",
+      created_at: new Date().toISOString(),
+      messages: [
+        { id: "a", role: "assistant", content: "Saludo inicial", created_at: new Date().toISOString() },
+        { id: "b", role: "user", content: "Hola", created_at: new Date().toISOString() },
+        { id: "c", role: "assistant", content: "Respuesta 1", created_at: new Date().toISOString() },
+        { id: "d", role: "assistant", content: "Respuesta 2", created_at: new Date().toISOString() },
+      ],
+    } as any);
 
     customRender(<ChatPanel token="demo" />);
 
@@ -144,12 +140,13 @@ describe("ChatPanel", () => {
       await user.click(screen.getByRole("button", { name: /enviar/i }));
     });
 
-    await waitFor(() => {
-      expect(screen.getByText("Respuesta 1")).toBeInTheDocument();
-      expect(screen.getByText("Respuesta 2")).toBeInTheDocument();
-    });
+    await waitFor(() => expect(mockedGetChatHistory).toHaveBeenCalled());
+
+    expect(screen.getByText("Respuesta 1")).toBeInTheDocument();
+    expect(screen.getByText("Respuesta 2")).toBeInTheDocument();
 
     expect(screen.getByText(/Respuesta con datos reales/i)).toBeInTheDocument();
+    expect(window.localStorage.getItem("chat_session_id")).toBe("session-123");
   });
 
   it("ignora envíos vacíos sin llamar a la API", async () => {
@@ -196,6 +193,27 @@ describe("ChatPanel", () => {
     } finally {
       consoleSpy.mockRestore();
     }
+  });
+
+  it("recupera el historial cuando existe una sesión guardada", async () => {
+    window.localStorage.setItem("chat_session_id", "existing-session");
+    mockedGetChatHistory.mockResolvedValueOnce({
+      session_id: "existing-session",
+      created_at: new Date().toISOString(),
+      messages: [
+        { id: "1", role: "assistant", content: "Historial previo", created_at: new Date().toISOString() },
+      ],
+    } as any);
+
+    await act(async () => {
+      customRender(<ChatPanel token="demo" />);
+    });
+
+    await waitFor(() => {
+      expect(mockedGetChatHistory).toHaveBeenCalledWith("existing-session", "demo");
+    });
+
+    expect(screen.getByText("Historial previo")).toBeInTheDocument();
   });
 
   it("desplaza la vista al último mensaje tras enviar", async () => {
