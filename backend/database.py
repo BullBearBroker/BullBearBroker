@@ -10,7 +10,7 @@ from sqlalchemy.orm import sessionmaker
 
 from backend.models.base import Base
 
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./bullbearbroker.db")
+DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./bullbearbroker.db")
 
 connect_args = {}
 if DATABASE_URL.startswith("sqlite"):
@@ -19,7 +19,7 @@ if DATABASE_URL.startswith("sqlite"):
 engine = create_engine(DATABASE_URL, future=True, echo=False, connect_args=connect_args)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, future=True)
 
-if os.getenv("BULLBEAR_SKIP_AUTOCREATE", "0") != "1":
+if os.environ.get("BULLBEAR_SKIP_AUTOCREATE", "0") != "1":
     try:
         Base.metadata.create_all(bind=engine)
         inspector = inspect(engine)  # [Codex] nuevo - verificación de columnas adicionales

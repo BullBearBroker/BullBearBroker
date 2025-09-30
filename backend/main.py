@@ -34,7 +34,7 @@ logger.info("backend_started")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # 🔹 Startup
-    redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+    redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
     redis_client = None
     try:
         redis_client = await redis.from_url(
@@ -60,8 +60,8 @@ async def lifespan(app: FastAPI):
         Base.metadata.create_all(bind=engine)
         logger.info("database_ready")
 
-        default_email = os.getenv("BULLBEAR_DEFAULT_USER", "test@bullbear.ai")
-        default_password = os.getenv("BULLBEAR_DEFAULT_PASSWORD", "Test1234!")
+        default_email = os.environ.get("BULLBEAR_DEFAULT_USER", "test@bullbear.ai")
+        default_password = os.environ.get("BULLBEAR_DEFAULT_PASSWORD", "Test1234!")
         user_service.ensure_user(default_email, default_password)
         logger.info("default_user_ready", email=default_email)
     except Exception as exc:  # pragma: no cover - evita fallas en despliegues sin DB
@@ -95,8 +95,9 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Configuración de CORS (para el frontend en localhost:3000)
-origins = ["http://localhost:3000"]
+# Configuración de CORS (controlada por variables de entorno)
+raw_origins = os.environ.get("CORS_ALLOW_ORIGINS", "http://localhost:3000")
+origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
 
 app.add_middleware(
     CORSMiddleware,
