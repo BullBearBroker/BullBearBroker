@@ -118,6 +118,21 @@ describe("request", () => {
 
     await expect(request("/demo", { method: "GET" })).rejects.toThrow("Mensaje amigable");
   });
+
+  it("serializa el detalle cuando no es un string", async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: jest.fn().mockResolvedValue({ detail: { code: "duplicated" } }),
+      statusText: "Conflict",
+      text: jest.fn(),
+      headers: new Headers(),
+    });
+
+    await expect(request("/demo", { method: "GET" })).rejects.toThrow(
+      '{"code":"duplicated"}'
+    );
+  });
 });
 
 describe("API wrappers", () => {

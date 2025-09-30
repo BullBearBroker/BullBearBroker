@@ -1,7 +1,9 @@
+import asyncio
+import json
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi_limiter import FastAPILimiter
 import redis.asyncio as redis
@@ -13,6 +15,14 @@ from backend.core.http_logging import RequestLogMiddleware
 from backend.routers import alerts, markets, news, auth, ai, portfolio
 from backend.routers import health  # nuevo router de salud
 from backend.services.integration_reporter import log_api_integration_report
+from backend.services.alert_service import alert_service
+from backend.services.websocket_manager import AlertWebSocketManager
+
+try:  # pragma: no cover - user service puede no estar disponible en algunos tests
+    from backend.services.user_service import InvalidTokenError, user_service
+except Exception:  # pragma: no cover - entorno sin servicio de usuarios
+    user_service = None  # type: ignore[assignment]
+    InvalidTokenError = Exception  # type: ignore[assignment]
 
 logger = get_logger()
 logger.info("Backend iniciado correctamente 🚀")
@@ -24,12 +34,19 @@ logger.info("Backend iniciado correctamente 🚀")
 async def lifespan(app: FastAPI):
     # 🔹 Startup
     redis_url = os.getenv("REDIS_URL", "redis://localhost:6379")
+    redis_client = None
     try:
         redis_client = await redis.from_url(
             redis_url,
             encoding="utf-8",
             decode_responses=True,
         )
+        try:
+            await redis_client.ping()
+        except Exception as exc:  # pragma: no cover - redis puede no existir
+            await redis_client.close()
+            redis_client = None
+            raise RuntimeError("Redis no disponible") from exc
         await FastAPILimiter.init(redis_client)
         logger.info("FastAPILimiter inicializado")
     except Exception as exc:  # pragma: no cover - redis opcional en tests
@@ -103,3 +120,58 @@ app.include_router(news.router, prefix="/api/news", tags=["news"])
 app.include_router(auth.router)
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(portfolio.router, prefix="/api/portfolio", tags=["portfolio"])
+
+
+alerts_ws_manager = AlertWebSocketManager()
+alert_service.register_websocket_manager(alerts_ws_manager)
+app.state.alerts_ws_manager = alerts_ws_manager
+
+
+@app.websocket("/ws/alerts")
+async def alerts_websocket(
+    websocket: WebSocket, token: str | None = Query(default=None, description="Bearer token opcional")
+) -> None:
+    """Canal WebSocket que transmite alertas en tiempo real."""
+
+    if token and user_service is not None:
+        try:
+            await asyncio.to_thread(user_service.get_current_user, token)
+        except InvalidTokenError:
+            await websocket.close(code=1008, reason="Token inválido")
+            return
+        except Exception as exc:  # pragma: no cover - logging defensivo
+            logger.warning("WebSocket authentication error: %s", exc)
+            await websocket.close(code=1011, reason="Error autenticando usuario")
+            return
+
+    await alerts_ws_manager.connect(websocket)
+    try:
+        await websocket.send_json(
+            {
+                "type": "system",
+                "message": "Conectado al canal de alertas en tiempo real",
+            }
+        )
+
+        while True:
+            raw_message = await websocket.receive_text()
+            try:
+                message = json.loads(raw_message)
+            except json.JSONDecodeError:
+                message = {"type": "text", "raw": raw_message}
+
+            if isinstance(message, dict) and message.get("type") == "ping":
+                await websocket.send_json({"type": "pong"})
+            elif isinstance(message, dict):
+                await websocket.send_json(
+                    {
+                        "type": "ack",
+                        "received": message.get("type", "unknown"),
+                    }
+                )
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:  # pragma: no cover - resiliencia ante errores inesperados
+        logger.warning("WebSocket connection error: %s", exc)
+    finally:
+        await alerts_ws_manager.disconnect(websocket)
