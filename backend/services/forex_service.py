@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import aiohttp
 from aiohttp import ClientError, ClientTimeout, ContentTypeError
@@ -63,10 +63,12 @@ class ForexService:
             return cached_value
 
         async with self._session_factory(timeout=self._timeout) as session:
+            attempted_sources: List[str] = []
             for api in self.apis:
                 if api["requires_key"] and not api["api_key"]:
                     continue
 
+                attempted_sources.append(api["name"])
                 result = await self._call_with_retries(
                     api["callable"], session, normalized, api["name"]
                 )
@@ -76,6 +78,7 @@ class ForexService:
                         "price": result["price"],
                         "change": result.get("change"),
                         "source": api["name"],
+                        "sources": attempted_sources.copy(),
                     }
                     await self.cache.set(cache_key, payload)
                     return payload

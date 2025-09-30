@@ -75,6 +75,7 @@ def test_forex_service_prefers_twelvedata(monkeypatch):
         "price": 1.2345,
         "change": 0.5,
         "source": "Twelve Data",
+        "sources": ["Twelve Data"],
     }
 
 
@@ -95,6 +96,7 @@ def test_forex_service_fallback_to_yahoo(monkeypatch):
         "price": 1.1,
         "change": None,
         "source": "Yahoo Finance",
+        "sources": ["Yahoo Finance"],
     }
 
 
@@ -138,4 +140,5 @@ def test_forex_service_uses_alpha_vantage(monkeypatch):
         "price": 1.5,
         "change": 0.2,
         "source": "Alpha Vantage",
+        "sources": ["Alpha Vantage"],
     }

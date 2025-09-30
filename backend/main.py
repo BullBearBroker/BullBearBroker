@@ -83,7 +83,7 @@ async def lifespan(app: FastAPI):
     # Si necesitas liberar recursos (ej: cerrar redis) hazlo aquí
     try:
         if "redis_client" in locals() and redis_client:
-            await redis_client.close()
+            await redis_client.aclose()
             logger.info("redis_closed")
     except Exception as exc:
         logger.warning("redis_close_error", error=str(exc))

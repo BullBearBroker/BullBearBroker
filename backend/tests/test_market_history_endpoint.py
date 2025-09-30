@@ -33,11 +33,23 @@ async def test_history_endpoint_returns_payload(monkeypatch: pytest.MonkeyPatch,
         "symbol": "BTCUSDT",
         "interval": "1h",
         "source": "Binance",
-        "values": [{"timestamp": "2024-01-01T00:00:00+00:00", "open": 1, "high": 2, "low": 0.5, "close": 1.5, "volume": 10}],
+        "values": [
+            {
+                "timestamp": "2024-01-01T00:00:00+00:00",
+                "open": 1.0,
+                "high": 2.0,
+                "low": 0.5,
+                "close": 1.5,
+                "volume": 10.0,
+            }
+        ],
     }
 
     mock_get = AsyncMock(return_value=sample)
     monkeypatch.setattr(market_service, "get_historical_ohlc", mock_get)
+    monkeypatch.setattr(
+        "backend.routers.markets.market_service.get_historical_ohlc", mock_get
+    )
 
     response = await client.get("/api/markets/history/BTCUSDT", params={"interval": "1h", "limit": 50})
 
@@ -50,6 +62,9 @@ async def test_history_endpoint_returns_payload(monkeypatch: pytest.MonkeyPatch,
 async def test_history_endpoint_handles_not_found(monkeypatch: pytest.MonkeyPatch, client: AsyncClient) -> None:
     mock_get = AsyncMock(side_effect=ValueError("sin datos"))
     monkeypatch.setattr(market_service, "get_historical_ohlc", mock_get)
+    monkeypatch.setattr(
+        "backend.routers.markets.market_service.get_historical_ohlc", mock_get
+    )
 
     response = await client.get("/api/markets/history/ETHUSDT")
 
@@ -61,6 +76,9 @@ async def test_history_endpoint_handles_not_found(monkeypatch: pytest.MonkeyPatc
 async def test_history_endpoint_handles_provider_failure(monkeypatch: pytest.MonkeyPatch, client: AsyncClient) -> None:
     mock_get = AsyncMock(side_effect=RuntimeError("binance caido"))
     monkeypatch.setattr(market_service, "get_historical_ohlc", mock_get)
+    monkeypatch.setattr(
+        "backend.routers.markets.market_service.get_historical_ohlc", mock_get
+    )
 
     response = await client.get("/api/markets/history/AAPL")
 

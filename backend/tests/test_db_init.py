@@ -1,4 +1,5 @@
 import importlib
+import os
 import sys
 from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock
@@ -27,7 +28,8 @@ def _reload_database(monkeypatch: pytest.MonkeyPatch, env_value: str):
     monkeypatch.setattr("sqlalchemy.text", text_mock)
 
     package_stub = ModuleType("backend")
-    package_stub.__path__ = ["/app"]
+    backend_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    package_stub.__path__ = [backend_root]
     monkeypatch.setitem(sys.modules, "backend", package_stub)
 
     base_stub = ModuleType("backend.models.base")
