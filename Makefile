@@ -1,9 +1,9 @@
 COMPOSE ?= docker compose
 
-.PHONY: up build down clean logs
+.PHONY: up down logs build clean test
 
 up:
-	$(COMPOSE) up
+	$(COMPOSE) up -d
 
 build:
 	$(COMPOSE) up --build
@@ -16,3 +16,7 @@ clean:
 
 logs:
 	$(COMPOSE) logs -f
+
+test:
+	python -m pytest backend/tests
+	npm --prefix frontend test -- --watch=false

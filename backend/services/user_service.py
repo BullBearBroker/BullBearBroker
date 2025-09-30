@@ -1,7 +1,7 @@
 from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Any, Iterable, Optional, Tuple
+from typing import Any, Dict, Iterable, Optional, Tuple
 from uuid import UUID, uuid4
 
 import logging
@@ -162,7 +162,7 @@ class UserService:
 
     def _compute_expiration(self, expires_in: Optional[timedelta]) -> datetime:
         delta = expires_in or self._default_session_ttl
-        return datetime.utcnow() + delta
+        return _utcnow() + delta
 
     def _encode_token(self, payload: dict[str, Any]) -> str:
         return jwt.encode(payload, self._jwt_secret_key, algorithm=self._jwt_algorithm)
@@ -199,7 +199,7 @@ class UserService:
         self, user: User, expires_in: Optional[timedelta] = None
     ) -> Tuple[str, datetime]:
         expires_in = expires_in or ACCESS_TOKEN_TTL
-        expires_at = datetime.utcnow() + expires_in
+        expires_at = _utcnow() + expires_in
         token = core_create_access_token(sub=str(user.id), extra={"user_id": str(user.id)})
         return token, expires_at
 
@@ -221,12 +221,13 @@ class UserService:
                 token_user_id, token_email = self._extract_identity(payload)
                 if token_user_id != user.id or (token_email is not None and token_email != user.email):
                     raise InvalidTokenError("Token inválido para el usuario especificado")
-                expires_at = self._extract_expiration(payload)
+                extracted_exp = self._extract_expiration(payload)
+                expires_at = _as_aware_utc(extracted_exp) or extracted_exp
 
             session_obj = SessionModel(
                 user_id=user.id,
                 token=token,
-                expires_at=expires_at,
+                expires_at=_as_aware_utc(expires_at) or expires_at,
             )
             session.add(session_obj)
             return token, self._detach_entity(session, session_obj)
@@ -237,7 +238,7 @@ class UserService:
         expires_in: Optional[timedelta] = None,
     ) -> Tuple[str, datetime]:
         expires_in = expires_in or REFRESH_TOKEN_TTL
-        expires_at = datetime.utcnow() + expires_in
+        expires_at = _utcnow() + expires_in
         token_value = core_create_refresh_token(sub=str(user_id))
         self._in_memory_refresh_tokens[token_value] = SimpleNamespace(
             user_id=user_id,
@@ -247,7 +248,7 @@ class UserService:
 
     def get_active_sessions(self, user_id: UUID) -> list[SessionModel]:
         with self._session_scope() as session:
-            now = datetime.utcnow()
+            now = _utcnow()
             sessions = (
                 session.query(SessionModel)
                 .filter(
@@ -270,7 +271,7 @@ class UserService:
                 .filter(
                     SessionModel.token == token,
                     SessionModel.user_id == user_id,
-                    SessionModel.expires_at > datetime.utcnow(),
+                    SessionModel.expires_at > _utcnow(),
                 )
                 .order_by(SessionModel.expires_at.desc())
                 .first()
@@ -406,7 +407,7 @@ class UserService:
                 id=uuid4(),
                 user_id=user_id,
                 token=access_token,
-                expires_at=access_expires,
+                expires_at=_as_aware_utc(access_expires) or access_expires,
             )
             db.add(db_sess)
             db.commit()
