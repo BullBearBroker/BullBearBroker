@@ -11,6 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
     from .refresh_token import RefreshToken
+    from .portfolio import PortfolioItem
 
 try:  # pragma: no cover
     from .base import Base
@@ -56,6 +57,11 @@ class User(Base):
     )
     refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
         "RefreshToken",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    portfolio_items: Mapped[list["PortfolioItem"]] = relationship(
+        "PortfolioItem",
         back_populates="user",
         cascade="all, delete-orphan",
     )
