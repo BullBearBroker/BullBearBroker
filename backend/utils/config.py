@@ -73,6 +73,9 @@ class Config:
     TELEGRAM_DEFAULT_CHAT_ID = _get_env("TELEGRAM_DEFAULT_CHAT_ID")
     DISCORD_BOT_TOKEN = _get_env("DISCORD_BOT_TOKEN")
     DISCORD_APPLICATION_ID = _get_env("DISCORD_APPLICATION_ID")
+    PUSH_VAPID_PUBLIC_KEY = _get_env("PUSH_VAPID_PUBLIC_KEY")
+    PUSH_VAPID_PRIVATE_KEY = _get_env("PUSH_VAPID_PRIVATE_KEY")
+    PUSH_CONTACT_EMAIL = _get_env("PUSH_CONTACT_EMAIL", "support@bullbear.ai")
 
     API_BASE_URL = _get_env("BULLBEAR_API_URL", "http://localhost:8000")  # [Codex] nuevo
 

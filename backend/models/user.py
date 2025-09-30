@@ -12,6 +12,8 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 if TYPE_CHECKING:
     from .refresh_token import RefreshToken
     from .portfolio import PortfolioItem
+    from .chat import ChatSession
+    from .push_subscription import PushSubscription
 
 try:  # pragma: no cover
     from .base import Base
@@ -64,6 +66,12 @@ class User(Base):
         "PortfolioItem",
         back_populates="user",
         cascade="all, delete-orphan",
+    )
+    chat_sessions: Mapped[list["ChatSession"]] = relationship(
+        "ChatSession", back_populates="user", cascade="all, delete-orphan"
+    )
+    push_subscriptions: Mapped[list["PushSubscription"]] = relationship(
+        "PushSubscription", back_populates="user", cascade="all, delete-orphan"
     )
 
     def verify_password(self, password: str) -> bool:

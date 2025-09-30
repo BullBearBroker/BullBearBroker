@@ -12,7 +12,7 @@ from backend.core.logging_config import get_logger
 from backend.core.http_logging import RequestLogMiddleware
 
 # Routers de la app
-from backend.routers import alerts, markets, news, auth, ai, portfolio
+from backend.routers import alerts, markets, news, auth, ai, portfolio, push
 from backend.routers import health  # nuevo router de salud
 from backend.services.integration_reporter import log_api_integration_report
 from backend.services.alert_service import alert_service
@@ -119,6 +119,7 @@ app.include_router(markets.router, prefix="/api/markets", tags=["markets"])
 app.include_router(news.router, prefix="/api/news", tags=["news"])
 app.include_router(auth.router)
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
+app.include_router(push.router, prefix="/api/push", tags=["push"])
 app.include_router(portfolio.router, prefix="/api/portfolio", tags=["portfolio"])
 
 
