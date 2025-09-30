@@ -82,13 +82,21 @@ describe("auth context", () => {
       return null;
     };
 
-    render(
-      <ErrorBoundary fallback={<span>Error capturado</span>}>
-        <WithoutProvider />
-      </ErrorBoundary>
-    );
+    const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
 
-    expect(screen.getByText("Error capturado")).toBeInTheDocument();
+    try {
+      expect(() =>
+        render(
+          <ErrorBoundary fallback={<span>Error capturado</span>}>
+            <WithoutProvider />
+          </ErrorBoundary>
+        )
+      ).not.toThrow();
+
+      expect(screen.getByText("Error capturado")).toBeInTheDocument();
+    } finally {
+      consoleSpy.mockRestore();
+    }
   });
 
   it("permite un login exitoso y persiste los tokens", async () => {

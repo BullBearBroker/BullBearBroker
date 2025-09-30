@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import { render, screen, within } from "@testing-library/react";
+import { customRender, screen, within } from "@/tests/utils/renderWithProviders";
 import { axe } from "jest-axe";
 
 jest.mock("@/components/providers/auth-provider", () => ({
@@ -78,7 +78,7 @@ describe("DashboardPage accesibilidad", () => {
       });
 
     try {
-      const utils = render(<DashboardPage />);
+      const utils = customRender(<DashboardPage />);
       const sidebarHeading = await screen.findByText(/BullBearBroker/i);
       await within(sidebarHeading.parentElement as HTMLElement).findByRole(
         "button",

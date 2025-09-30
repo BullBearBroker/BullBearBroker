@@ -1,57 +1,121 @@
 // [Codex] nuevo - Ajuste de expectativas a textos reales
-import { act, render, screen } from "@testing-library/react";
-import { SWRConfig } from "swr";
+import useSWR from "swr";
+import { customRender, screen, within } from "@/tests/utils/renderWithProviders";
 import { axe } from "jest-axe";
-import { NewsPanel } from "../news-panel";
-import { newsEmptyHandler, newsErrorHandler } from "@/tests/msw/handlers";
-import { server } from "@/tests/msw/server";
 
-async function renderNews() {
-  let utils: ReturnType<typeof render> | undefined;
-  await act(async () => {
-    utils = render(
-      <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
-        <NewsPanel token="token" />
-      </SWRConfig>
-    );
-  });
-  return utils!;
-}
+import { NewsPanel } from "../news-panel";
+
+jest.mock("swr", () => {
+  const actual = jest.requireActual("swr");
+  return {
+    __esModule: true,
+    ...actual,
+    default: jest.fn(),
+  };
+});
+
+const mockedUseSWR = useSWR as jest.MockedFunction<typeof useSWR>;
 
 describe("NewsPanel", () => {
-  it("muestra las noticias recibidas", async () => {
-    await renderNews();
-
-    expect(await screen.findByText(/mercados al alza/i)).toBeInTheDocument();
-    expect(screen.getByText(/ejemplo/i)).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: /leer noticia/i })
-    ).toHaveAttribute("href", "https://example.com/news");
+  beforeEach(() => {
+    mockedUseSWR.mockReset();
   });
 
-  it("muestra estado vacío cuando no hay datos", async () => {
-    server.use(newsEmptyHandler);
+  it("muestra el estado de carga inicial", () => {
+    mockedUseSWR.mockReturnValue({
+      data: undefined,
+      error: undefined,
+      isLoading: true,
+    } as never);
 
-    await renderNews();
+    customRender(<NewsPanel token="token" />);
 
-    expect(
-      await screen.findByText(/no hay noticias disponibles/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText("Cargando noticias...")).toBeInTheDocument();
   });
 
-  it("muestra estado de error ante 500", async () => {
-    server.use(newsErrorHandler);
+  it("muestra las noticias recibidas ordenadas", async () => {
+    mockedUseSWR.mockReturnValue({
+      data: [
+        {
+          id: "2",
+          title: "Mercados al alza",
+          summary: "Ejemplo",
+          url: "https://example.com/news",
+          source: "Ejemplo",
+          published_at: "2024-05-02T10:00:00Z",
+        },
+        {
+          id: "1",
+          title: "Reporte semanal",
+          summary: "Otro",
+          url: "https://example.com/other",
+          source: "Otro",
+          published_at: "2024-05-01T10:00:00Z",
+        },
+      ],
+      error: undefined,
+      isLoading: false,
+    } as never);
 
-    await renderNews();
+    const { container } = customRender(<NewsPanel token="token" />);
 
-    expect(
-      await screen.findByText(/no hay noticias disponibles/i)
-    ).toBeInTheDocument();
-  });
-
-  it("aplica accesibilidad básica", async () => {
-    const { container } = await renderNews();
-
+    const articles = screen.getAllByRole("article");
+    expect(within(articles[0]).getByText("Mercados al alza")).toBeInTheDocument();
+    expect(within(articles[0]).getByRole("link", { name: /leer noticia/i })).toHaveAttribute(
+      "href",
+      "https://example.com/news"
+    );
     expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("muestra estado vacío cuando no hay datos", () => {
+    mockedUseSWR.mockReturnValue({
+      data: [],
+      error: undefined,
+      isLoading: false,
+    } as never);
+
+    customRender(<NewsPanel token="token" />);
+
+    expect(
+      screen.getByText(/no hay noticias disponibles/i)
+    ).toBeInTheDocument();
+  });
+
+  it("muestra estado de error ante fallas en el fetch", () => {
+    mockedUseSWR.mockReturnValue({
+      data: undefined,
+      error: new Error("Fallo en noticias"),
+      isLoading: false,
+    } as never);
+
+    customRender(<NewsPanel token="token" />);
+
+    expect(
+      screen.getByText(/no hay noticias disponibles/i)
+    ).toBeInTheDocument();
+  });
+
+  it("usa texto por defecto cuando faltan la fuente y la fecha", () => {
+    mockedUseSWR.mockReturnValue({
+      data: [
+        {
+          id: "1",
+          title: "Sin fuente",
+          summary: null,
+          url: "https://example.com",
+          source: null,
+          published_at: null,
+        },
+      ],
+      error: undefined,
+      isLoading: false,
+    } as never);
+
+    customRender(<NewsPanel token="token" />);
+
+    expect(screen.getByText("Sin fuente")).toBeInTheDocument();
+    expect(screen.getByText("Fuente desconocida")).toBeInTheDocument();
+    expect(screen.queryByText(/\d{4}/)).not.toBeInTheDocument();
   });
 });

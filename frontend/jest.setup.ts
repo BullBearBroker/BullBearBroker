@@ -59,6 +59,20 @@ if (typeof window !== "undefined" && window.HTMLElement) {
   }
 }
 
+if (typeof window !== "undefined" && !window.matchMedia) {
+  // @ts-expect-error - polyfill para entorno de pruebas
+  window.matchMedia = jest.fn().mockImplementation((query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: jest.fn(),
+    removeListener: jest.fn(),
+    addEventListener: jest.fn(),
+    removeEventListener: jest.fn(),
+    dispatchEvent: jest.fn(),
+  }));
+}
+
 // Mock global de next/link para tests
 jest.mock("next/link", () => {
   const React = require("react");
@@ -70,6 +84,19 @@ jest.mock("next/link", () => {
         { href: href ?? props?.href ?? "#", ...props },
         children
       ),
+  };
+});
+
+jest.mock("next-themes", () => {
+  const React = require("react");
+  return {
+    __esModule: true,
+    ThemeProvider: ({ children }: any) => React.createElement(React.Fragment, null, children),
+    useTheme: () => ({
+      theme: "light",
+      resolvedTheme: "light",
+      setTheme: jest.fn(),
+    }),
   };
 });
 // [Codex] nuevo - Mock de Radix ScrollArea para entorno de pruebas

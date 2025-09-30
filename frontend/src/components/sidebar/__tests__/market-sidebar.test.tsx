@@ -1,6 +1,5 @@
 // [Codex] nuevo - Ajustes de textos reales y estados de SWR
-import { act, render, screen, waitFor } from "@testing-library/react";
-import { SWRConfig } from "swr";
+import { act, customRender, screen, waitFor } from "@/tests/utils/renderWithProviders";
 import { MarketSidebar } from "../market-sidebar";
 import {
   makeMarketEmptyHandler,
@@ -13,17 +12,13 @@ const user = { id: 1, email: "user@example.com" } as const;
 const onLogout = jest.fn();
 
 const renderSidebar = () =>
-  render(
-    <SWRConfig
-      value={{
-        provider: () => new Map(),
-        dedupingInterval: 0,
-        focusThrottleInterval: 0,
-        revalidateOnFocus: false,
-      }}
-    >
-      <MarketSidebar token="token" user={user} onLogout={onLogout} />
-    </SWRConfig>
+  customRender(
+    <MarketSidebar token="token" user={user} onLogout={onLogout} />,
+    {
+      providerProps: {
+        swrConfig: { focusThrottleInterval: 0 },
+      },
+    }
   );
 
 describe("MarketSidebar", () => {
