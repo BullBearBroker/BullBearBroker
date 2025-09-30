@@ -27,6 +27,17 @@ jest.mock("@/components/providers/theme-provider", () => ({
   ThemeProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>,
 }));
 
+jest.mock("@/hooks/useAlertsWebSocket", () => ({
+  __esModule: true,
+  useAlertsWebSocket: jest.fn(() => ({
+    status: "closed",
+    lastMessage: null,
+    error: null,
+    reconnect: jest.fn(),
+    disconnect: jest.fn(),
+  })),
+}));
+
 jest.mock("next/navigation", () => ({
   useRouter: jest.fn(),
 }));

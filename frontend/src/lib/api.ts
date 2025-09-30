@@ -1,6 +1,22 @@
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
+export function resolveWebSocketUrl(path: string): string {
+  const base = new URL(API_BASE_URL);
+  const wsProtocol = base.protocol === "https:" ? "wss:" : "ws:";
+  const wsUrl = new URL(path, base);
+  wsUrl.protocol = wsProtocol;
+  return wsUrl.toString();
+}
+
+export function getAlertsWebSocketUrl(token?: string | null): string {
+  const url = new URL(resolveWebSocketUrl("/ws/alerts"));
+  if (token) {
+    url.searchParams.set("token", token);
+  }
+  return url.toString();
+}
+
 /* ===========
    INTERFACES
    =========== */

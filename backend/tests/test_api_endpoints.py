@@ -34,6 +34,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql+psycopg://user:pass@localhost/
 from backend.main import app  # noqa: E402  (import after path setup)
 from backend.routers import alerts as alerts_router  # noqa: E402
 from backend.routers import auth as auth_router  # noqa: E402
+from backend.routers import markets as markets_router  # noqa: E402
 from backend.services.alert_service import alert_service  # noqa: E402
 from backend.services.market_service import market_service  # noqa: E402
 from backend.services.news_service import news_service  # noqa: E402
@@ -834,3 +835,138 @@ async def test_alerts_list_returns_created_alert(
     assert alerts[0]["active"] is True
     assert "updated_at" in alerts[0]
     assert alerts[0]["updated_at"]
+
+
+@pytest.mark.asyncio
+async def test_indicators_endpoint_exposes_requested_signals(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    closes = [100 + idx * 0.5 for idx in range(120)]
+    highs = [price + 1 for price in closes]
+    lows = [price - 1 for price in closes]
+    volumes = [1000 + idx for idx in range(120)]
+    meta = {
+        "source": "stub",
+        "note": "fixtures",
+        "highs": highs,
+        "lows": lows,
+        "volumes": volumes,
+    }
+
+    monkeypatch.setattr(
+        markets_router,
+        "get_closes",
+        AsyncMock(return_value=(closes, meta)),
+    )
+    monkeypatch.setattr(markets_router, "rsi", lambda values, period: 55.5)
+    monkeypatch.setattr(
+        markets_router,
+        "ema",
+        lambda values, period: round(120 + period * 0.1, 2),
+    )
+    monkeypatch.setattr(
+        markets_router,
+        "macd",
+        lambda values, fast, slow, signal: {
+            "macd": 1.23,
+            "signal": 1.1,
+            "hist": 0.13,
+        },
+    )
+    monkeypatch.setattr(
+        markets_router,
+        "bollinger",
+        lambda values, period, mult: {
+            "middle": 123.4,
+            "upper": 130.0,
+            "lower": 117.0,
+            "bandwidth": 0.1,
+        },
+    )
+    monkeypatch.setattr(
+        markets_router,
+        "average_true_range",
+        lambda highs_, lows_, closes_, period: 2.5,
+    )
+    monkeypatch.setattr(
+        markets_router,
+        "stochastic_rsi",
+        lambda closes_, period, smooth_k, smooth_d: {"%K": 40.0, "%D": 35.0},
+    )
+    monkeypatch.setattr(
+        markets_router,
+        "ichimoku_cloud",
+        lambda highs_, lows_, closes_, conversion_period, base_period, span_b_period: {
+            "tenkan_sen": 110.0,
+            "kijun_sen": 115.0,
+            "senkou_span_a": 112.5,
+            "senkou_span_b": 118.0,
+            "chikou_span": 111.0,
+        },
+    )
+    monkeypatch.setattr(
+        markets_router,
+        "volume_weighted_average_price",
+        lambda highs_, lows_, closes_, volumes_: 125.55,
+    )
+
+    response = await client.get(
+        "/api/markets/indicators",
+        params={
+            "type": "crypto",
+            "symbol": "BTCUSDT",
+            "interval": "1h",
+            "limit": 200,
+            "ema_periods": "20,50",
+            "include_atr": True,
+            "include_stoch_rsi": True,
+            "include_ichimoku": True,
+            "include_vwap": True,
+        },
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["symbol"] == "BTCUSDT"
+    assert payload["indicators"]["rsi"]["value"] == 55.5
+    assert payload["indicators"]["ema"] == [
+        {"period": 20, "value": 122.0},
+        {"period": 50, "value": 125.0},
+    ]
+    assert payload["indicators"]["macd"]["hist"] == 0.13
+    assert payload["indicators"]["bollinger"]["upper"] == 130.0
+    assert payload["indicators"]["atr"]["value"] == 2.5
+    assert payload["indicators"]["stochastic_rsi"]["%K"] == 40.0
+    assert payload["indicators"]["ichimoku"]["tenkan_sen"] == 110.0
+    assert payload["indicators"]["vwap"]["value"] == 125.55
+    assert payload["series"]["closes"] == closes
+    assert payload["series"]["highs"] == highs
+    assert payload["series"]["lows"] == lows
+    assert payload["series"]["volumes"] == volumes
+
+
+@pytest.mark.asyncio
+async def test_indicators_endpoint_validates_minimum_history(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    short_series = [100.0] * 10
+    meta = {"source": "stub", "highs": [], "lows": [], "volumes": []}
+
+    monkeypatch.setattr(
+        markets_router,
+        "get_closes",
+        AsyncMock(return_value=(short_series, meta)),
+    )
+
+    response = await client.get(
+        "/api/markets/indicators",
+        params={
+            "type": "crypto",
+            "symbol": "BTCUSDT",
+            "interval": "1h",
+            "limit": 60,
+        },
+    )
+
+    assert response.status_code == 400
+    assert "No hay suficientes datos" in response.json()["detail"]

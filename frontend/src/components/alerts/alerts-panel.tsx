@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import useSWR from "swr";
 import { AlertTriangle, PlusCircle, Trash2 } from "lucide-react";
 
@@ -18,9 +18,22 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import {
+  useAlertsWebSocket,
+  type AlertWebSocketEvent,
+} from "@/hooks/useAlertsWebSocket";
 
 interface AlertsPanelProps {
   token?: string;
+}
+
+interface LiveAlertEntry {
+  id: string;
+  message: string;
+  symbol?: string;
+  price?: number;
+  target?: number;
+  receivedAt: number;
 }
 
 export function AlertsPanel({ token }: AlertsPanelProps) {
@@ -44,6 +57,78 @@ export function AlertsPanel({ token }: AlertsPanelProps) {
   const [suggesting, setSuggesting] = useState(false); // [Codex] nuevo
   const [suggestError, setSuggestError] = useState<string | null>(null); // [Codex] nuevo
   const [suggestNote, setSuggestNote] = useState<string | null>(null); // [Codex] nuevo
+  const [liveAlerts, setLiveAlerts] = useState<LiveAlertEntry[]>([]);
+  const [wsSystemMessage, setWsSystemMessage] = useState<string | null>(null);
+
+  const handleLiveAlert = useCallback((event: AlertWebSocketEvent) => {
+    setWsSystemMessage(null);
+    setLiveAlerts((prev) => {
+      const entry: LiveAlertEntry = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        message:
+          typeof event.message === "string"
+            ? event.message
+            : "Se recibió una alerta en vivo",
+        symbol: typeof event.symbol === "string" ? event.symbol : undefined,
+        price:
+          typeof event.price === "number"
+            ? event.price
+            : typeof event.price === "string"
+            ? Number(event.price)
+            : undefined,
+        target:
+          typeof event.target === "number"
+            ? event.target
+            : typeof event.target === "string"
+            ? Number(event.target)
+            : undefined,
+        receivedAt: Date.now(),
+      };
+      const next = [entry, ...prev].slice(0, 5);
+      return next;
+    });
+  }, []);
+
+  const handleSystemMessage = useCallback((event: AlertWebSocketEvent) => {
+    if (typeof event.message === "string") {
+      setWsSystemMessage(event.message);
+    }
+  }, []);
+
+  const { status: wsStatus, error: wsError } = useAlertsWebSocket({
+    token,
+    enabled: Boolean(token),
+    onAlert: handleLiveAlert,
+    onSystemMessage: handleSystemMessage,
+  });
+
+  const wsStatusLabel = useMemo(() => {
+    switch (wsStatus) {
+      case "open":
+        return "Conectado";
+      case "connecting":
+        return "Conectando...";
+      case "error":
+        return "Error";
+      case "closed":
+        return "Desconectado";
+      default:
+        return "Inactivo";
+    }
+  }, [wsStatus]);
+
+  const wsStatusTone = useMemo(() => {
+    switch (wsStatus) {
+      case "open":
+        return "text-emerald-600";
+      case "error":
+        return "text-destructive";
+      case "connecting":
+        return "text-amber-600";
+      default:
+        return "text-muted-foreground";
+    }
+  }, [wsStatus]);
 
   const quickConditionPresets: { label: string; value: string }[] = [
     { label: "Menor que", value: "<" },
@@ -234,6 +319,46 @@ export function AlertsPanel({ token }: AlertsPanelProps) {
         </Badge>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="space-y-2 rounded-lg border border-dashed p-3">
+          <div className="flex items-center justify-between text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <span>Canal en vivo</span>
+            <span className={wsStatusTone}>{wsStatusLabel}</span>
+          </div>
+          {wsSystemMessage && (
+            <p className="text-xs text-muted-foreground">{wsSystemMessage}</p>
+          )}
+          {liveAlerts.length > 0 ? (
+            <ul className="space-y-2">
+              {liveAlerts.map((item) => (
+                <li
+                  key={item.id}
+                  className="rounded-md border border-border bg-muted/60 px-3 py-2 text-sm"
+                >
+                  <p className="font-medium">
+                    {item.symbol ?? "Alerta"} · {item.message}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(item.receivedAt).toLocaleTimeString()}
+                    {typeof item.price === "number"
+                      ? ` · Precio ${item.price.toFixed(2)}`
+                      : ""}
+                    {typeof item.target === "number"
+                      ? ` · Objetivo ${item.target.toFixed(2)}`
+                      : ""}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {wsStatus === "open"
+                ? "Aún no hay alertas en vivo."
+                : "Conectando al canal en vivo..."}
+            </p>
+          )}
+          {wsError && <p className="text-xs text-destructive">{wsError}</p>}
+        </div>
+
         {/* Formulario: Crear alerta */}
         <form onSubmit={handleCreate} className="space-y-3">
           <Input
