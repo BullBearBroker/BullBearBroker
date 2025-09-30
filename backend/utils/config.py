@@ -12,9 +12,9 @@ LOGGER = logging.getLogger(__name__)
 
 
 def _get_env(name: str, default: Optional[str] = None) -> Optional[str]:
-    """Wrapper around :func:`os.getenv` that trims whitespace."""
+    """Wrapper around :func:`os.environ.get` that trims whitespace."""
 
-    value = os.getenv(name, default)
+    value = os.environ.get(name, default)
     if isinstance(value, str):
         value = value.strip() or None
     return value

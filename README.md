@@ -48,7 +48,7 @@ Campos destacados:
   Docker Compose (`postgresql+psycopg2://bullbear:bullbear@db:5432/bullbear`).
 - **REDIS_URL**: requerido para rate limiting y futuras colas de tareas.
 - **BULLBEAR_DEFAULT_USER / PASSWORD**: credenciales sembradas automáticamente para pruebas.
-- **NEXT_PUBLIC_API_BASE_URL**: URL base que consume el frontend (en Docker se
+- **NEXT_PUBLIC_API_URL**: URL base que consume el frontend (en Docker se
   resuelve a `http://backend:8000`).
 - **PUSH_VAPID_PUBLIC_KEY / PUSH_VAPID_PRIVATE_KEY**: claves VAPID usadas para
   firmar notificaciones web push desde el backend. Genera un par con

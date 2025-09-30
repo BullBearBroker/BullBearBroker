@@ -1,9 +1,12 @@
 import { act, renderHook } from "@testing-library/react";
 
+process.env.NEXT_PUBLIC_API_URL =
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
 import { useAlertsWebSocket } from "../useAlertsWebSocket";
 import * as api from "@/lib/api";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
 
 class MockWebSocket {
   static instances: MockWebSocket[] = [];
@@ -64,7 +67,7 @@ declare global {
 
 describe("useAlertsWebSocket", () => {
   beforeEach(() => {
-    process.env.NEXT_PUBLIC_API_BASE_URL = "http://localhost:8000";
+    process.env.NEXT_PUBLIC_API_URL = "http://localhost:8000";
     (global as any).WebSocket = MockWebSocket as unknown as typeof WebSocket;
     jest.useFakeTimers();
     MockWebSocket.reset();
@@ -74,7 +77,7 @@ describe("useAlertsWebSocket", () => {
     jest.runOnlyPendingTimers();
     jest.useRealTimers();
     MockWebSocket.reset();
-    process.env.NEXT_PUBLIC_API_BASE_URL = API_BASE_URL;
+    process.env.NEXT_PUBLIC_API_URL = API_BASE_URL;
   });
 
   it("establece la conexión y procesa mensajes de alerta", () => {
