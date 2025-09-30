@@ -11,6 +11,10 @@ import {
   listAlerts,
 } from "@/lib/api";
 import { AlertsPanel } from "../alerts-panel";
+import { useAlertsWebSocket } from "@/hooks/useAlertsWebSocket";
+
+const mockedUseAlertsWebSocket =
+  useAlertsWebSocket as jest.MockedFunction<typeof useAlertsWebSocket>;
 
 jest.mock("swr", () => {
   const actual = jest.requireActual("swr");
@@ -21,6 +25,17 @@ jest.mock("swr", () => {
     SWRConfig: actual.SWRConfig,
   };
 });
+
+jest.mock("@/hooks/useAlertsWebSocket", () => ({
+  __esModule: true,
+  useAlertsWebSocket: jest.fn(() => ({
+    status: "closed",
+    lastMessage: null,
+    error: null,
+    reconnect: jest.fn(),
+    disconnect: jest.fn(),
+  })),
+}));
 
 jest.mock("@/lib/api", () => ({
   __esModule: true,
@@ -46,12 +61,23 @@ const mockedListAlerts = listAlerts as jest.MockedFunction<typeof listAlerts>;
 describe("AlertsPanel", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockedUseAlertsWebSocket.mockImplementation(() => ({
+      status: "closed",
+      lastMessage: null,
+      error: null,
+      reconnect: jest.fn(),
+      disconnect: jest.fn(),
+    }));
     mockedUseSWR.mockReturnValue({
       data: [],
       error: undefined,
       mutate: jest.fn().mockResolvedValue(undefined),
       isLoading: false,
     });
+  });
+
+  afterEach(() => {
+    mockedUseAlertsWebSocket.mockReset();
   });
 
   it("no consulta alertas cuando falta el token", () => {
@@ -372,6 +398,116 @@ describe("AlertsPanel", () => {
     expect(screen.getByText("Basado en indicadores")).toBeInTheDocument();
   });
 
+  it("muestra el estado y mensaje del websocket cuando no hay alertas", () => {
+    mockedUseAlertsWebSocket.mockImplementation(() => ({
+      status: "open",
+      lastMessage: null,
+      error: null,
+      reconnect: jest.fn(),
+      disconnect: jest.fn(),
+    }));
+
+    customRender(<AlertsPanel token="token" />);
+
+    expect(screen.getByText("Conectado")).toBeInTheDocument();
+    expect(
+      screen.getByText("Aún no hay alertas en vivo.")
+    ).toBeInTheDocument();
+  });
+
+  it("muestra mensajes del sistema y errores del websocket", () => {
+    let capturedCallbacks: Parameters<typeof mockedUseAlertsWebSocket>[0] | undefined;
+    mockedUseAlertsWebSocket.mockImplementation((options) => {
+      capturedCallbacks = options;
+      return {
+        status: "error",
+        lastMessage: null,
+        error: "Canal inestable",
+        reconnect: jest.fn(),
+        disconnect: jest.fn(),
+      };
+    });
+
+    customRender(<AlertsPanel token="token" />);
+
+    act(() => {
+      capturedCallbacks?.onSystemMessage?.({
+        type: "system",
+        message: "Reconectando",
+      });
+    });
+
+    expect(screen.getByText("Error")).toBeInTheDocument();
+    expect(screen.getByText("Reconectando")).toBeInTheDocument();
+    expect(screen.getByText("Canal inestable")).toBeInTheDocument();
+  });
+
+  it("renderiza alertas en vivo recibidas por websocket", () => {
+    const fakeNow = 1700000000000;
+    const dateSpy = jest.spyOn(Date, "now").mockReturnValue(fakeNow);
+    let capturedCallbacks: Parameters<typeof mockedUseAlertsWebSocket>[0] | undefined;
+    mockedUseAlertsWebSocket.mockImplementation((options) => {
+      capturedCallbacks = options;
+      return {
+        status: "open",
+        lastMessage: null,
+        error: null,
+        reconnect: jest.fn(),
+        disconnect: jest.fn(),
+      };
+    });
+
+    try {
+      customRender(<AlertsPanel token="token" />);
+
+      act(() => {
+        capturedCallbacks?.onAlert?.({
+          type: "alert",
+          message: "Precio objetivo alcanzado",
+          symbol: "ETHUSDT",
+          price: "2345.5",
+          target: 2500,
+        });
+      });
+
+      expect(screen.getByText(/ETHUSDT · Precio objetivo alcanzado/)).toBeInTheDocument();
+      expect(
+        screen.getByText(/Precio 2345.50 · Objetivo 2500.00/)
+      ).toBeInTheDocument();
+    } finally {
+      dateSpy.mockRestore();
+    }
+  });
+
+  it("usa valores por defecto cuando el evento carece de información", () => {
+    let capturedCallbacks: Parameters<typeof mockedUseAlertsWebSocket>[0] | undefined;
+    mockedUseAlertsWebSocket.mockImplementation((options) => {
+      capturedCallbacks = options;
+      return {
+        status: "open",
+        lastMessage: null,
+        error: null,
+        reconnect: jest.fn(),
+        disconnect: jest.fn(),
+      };
+    });
+
+    customRender(<AlertsPanel token="token" />);
+
+    act(() => {
+      capturedCallbacks?.onAlert?.({
+        type: "alert",
+        message: 123,
+        price: null,
+        target: undefined,
+      } as any);
+    });
+
+    expect(
+      screen.getByText(/Alerta · Se recibió una alerta en vivo/)
+    ).toBeInTheDocument();
+  });
+
   it("muestra un error si se solicita sugerencia sin activo", async () => {
     const user = userEvent.setup();
     customRender(<AlertsPanel token="secure-token" />);
@@ -420,6 +556,39 @@ describe("AlertsPanel", () => {
         screen.getByText(/Notificación enviada \(telegram: sent \| discord: queued\)/i)
       ).toBeInTheDocument();
     });
+  });
+
+  it("mapea estados visuales para conexiones no abiertas", () => {
+    mockedUseAlertsWebSocket.mockImplementation(() => ({
+      status: "connecting",
+      lastMessage: null,
+      error: null,
+      reconnect: jest.fn(),
+      disconnect: jest.fn(),
+    }));
+
+    customRender(<AlertsPanel token="token" />);
+
+    expect(screen.getByText("Conectando...")).toBeInTheDocument();
+    expect(
+      screen.getByText("Conectando al canal en vivo...")
+    ).toBeInTheDocument();
+  });
+
+  it("muestra el estado inactivo cuando el websocket no ha iniciado", () => {
+    mockedUseAlertsWebSocket.mockImplementation(() => ({
+      status: "idle",
+      lastMessage: null,
+      error: null,
+      reconnect: jest.fn(),
+      disconnect: jest.fn(),
+    }));
+
+    customRender(<AlertsPanel token="token" />);
+
+    const statusChip = screen.getByText("Inactivo");
+    expect(statusChip).toBeInTheDocument();
+    expect(statusChip).toHaveClass("text-muted-foreground");
   });
 
   it("muestra un error de validación al intentar enviar una notificación vacía", async () => {

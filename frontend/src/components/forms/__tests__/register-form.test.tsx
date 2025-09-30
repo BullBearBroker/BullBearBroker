@@ -172,4 +172,104 @@ describe("RegisterForm", () => {
     expect(await screen.findByText(/duplicado/i)).toBeInTheDocument();
     expect((global as any).pushMock).not.toHaveBeenCalled();
   });
+
+  it("limpia los errores de validación al modificar los campos", async () => {
+    customRender(<RegisterForm />);
+
+    fireEvent.input(screen.getByPlaceholderText(/nombre/i), {
+      target: { value: "Jane" },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/correo electrónico/i), {
+      target: { value: "user@example.com" },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/^contraseña$/i), {
+      target: { value: "secret123" },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/confirmar contraseña/i), {
+      target: { value: "otra" },
+    });
+
+    fireEvent.submit(screen.getByRole("button", { name: /registrarse/i }).closest("form")!);
+
+    expect(
+      await screen.findByText(/las contraseñas no coinciden/i)
+    ).toBeInTheDocument();
+
+    fireEvent.input(screen.getByPlaceholderText(/confirmar contraseña/i), {
+      target: { value: "secret123" },
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.queryByText(/las contraseñas no coinciden/i)
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("normaliza espacios y utiliza mensaje genérico si el backend falla", async () => {
+    (global as any).registerUserMock.mockRejectedValueOnce("falló");
+
+    customRender(<RegisterForm />);
+
+    fireEvent.input(screen.getByPlaceholderText(/nombre/i), {
+      target: { value: "  Jane Doe  " },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/correo electrónico/i), {
+      target: { value: "  user@example.com  " },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/^contraseña$/i), {
+      target: { value: "  secret123  " },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/confirmar contraseña/i), {
+      target: { value: "  secret123  " },
+    });
+
+    fireEvent.submit(screen.getByRole("button", { name: /registrarse/i }).closest("form")!);
+
+    await waitFor(() => {
+      expect((global as any).registerUserMock).toHaveBeenCalledWith(
+        "user@example.com",
+        "secret123",
+        "Jane Doe",
+        "moderado"
+      );
+    });
+
+    expect(
+      await screen.findByText(/error al registrar la cuenta/i)
+    ).toBeInTheDocument();
+  });
+
+  it("deshabilita el botón mientras se registra al usuario", async () => {
+    let resolvePromise: () => void = () => undefined;
+    const pending = new Promise<void>((resolve) => {
+      resolvePromise = resolve;
+    });
+    (global as any).registerUserMock.mockReturnValueOnce(pending);
+
+    customRender(<RegisterForm />);
+
+    fireEvent.input(screen.getByPlaceholderText(/nombre/i), {
+      target: { value: "Jane" },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/correo electrónico/i), {
+      target: { value: "user@example.com" },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/^contraseña$/i), {
+      target: { value: "secret123" },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/confirmar contraseña/i), {
+      target: { value: "secret123" },
+    });
+
+    fireEvent.submit(screen.getByRole("button", { name: /registrarse/i }).closest("form")!);
+
+    expect(screen.getByRole("button", { name: /registrando/i })).toBeDisabled();
+
+    resolvePromise();
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /registrarse/i })).toBeEnabled()
+    );
+  });
 });

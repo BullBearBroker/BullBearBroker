@@ -135,6 +135,26 @@ async def get_crypto(symbol: str) -> Dict[str, Any]:
     return response
 
 
+@router.get("/history/{symbol}")
+async def get_history(
+    symbol: str,
+    interval: str = Query("1h"),
+    limit: int = Query(300, ge=10, le=1000),
+    market: str = Query("auto", pattern="^(auto|crypto|stock|equity|forex)$"),
+) -> Dict[str, Any]:
+    try:
+        return await market_service.get_historical_ohlc(
+            symbol, interval=interval, limit=limit, market=market
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:  # pragma: no cover - fallback controlado
+        raise HTTPException(
+            status_code=502,
+            detail=f"No se pudieron obtener datos históricos para {symbol}: {exc}",
+        ) from exc
+
+
 @router.get("/stock/{symbol}")
 async def get_stock(symbol: str) -> Dict[str, Any]:
     """Retrieve stock pricing information delegating to the StockService cascade."""

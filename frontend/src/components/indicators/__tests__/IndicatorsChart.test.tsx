@@ -1,38 +1,40 @@
+import type { ReactNode } from "react";
+
 import { customRender, screen } from "@/tests/utils/renderWithProviders";
 
 import { IndicatorsChart } from "../IndicatorsChart";
 
+type MockProps = { children?: ReactNode; [key: string]: any };
+
 jest.mock("recharts", () => {
-  const Container = ({ children, "data-testid": testId }: any) => (
+  const Container = ({ children, "data-testid": testId }: MockProps) => (
     <div data-testid={testId}>{children}</div>
   );
 
-  const Line = ({ dataKey, name }: any) => (
-    <div data-testid={`line-${dataKey}`}>{name}</div>
-  );
-
-  const Legend = ({ children }: any) => (
-    <div data-testid="legend">{children}</div>
-  );
-
-  const ReferenceLine = ({ y }: any) => <div data-testid={`reference-${y}`} />;
-
-  const Bar = ({ dataKey, name }: any) => (
-    <div data-testid={`bar-${dataKey}`}>{name}</div>
+  const Element = ({ "data-testid": testId, dataKey, name, children }: MockProps) => (
+    <div data-testid={testId ?? dataKey ?? name}>{children}</div>
   );
 
   return {
     ResponsiveContainer: Container,
     LineChart: Container,
-    Line,
-    XAxis: Container,
-    YAxis: Container,
-    Tooltip: Container,
-    Legend,
-    CartesianGrid: Container,
-    ReferenceLine,
-    BarChart: Container,
-    Bar,
+    AreaChart: Container,
+    ComposedChart: Container,
+    CartesianGrid: Element,
+    XAxis: Element,
+    YAxis: Element,
+    Tooltip: Element,
+    Legend: Container,
+    ReferenceLine: Element,
+    Line: ({ dataKey, name }: MockProps) => (
+      <div data-testid={`line-${dataKey}`}>{name}</div>
+    ),
+    Area: ({ dataKey, name }: MockProps) => (
+      <div data-testid={`area-${dataKey}`}>{name}</div>
+    ),
+    Bar: ({ dataKey, name }: MockProps) => (
+      <div data-testid={`bar-${dataKey}`}>{name}</div>
+    ),
   };
 });
 
@@ -53,8 +55,10 @@ describe("IndicatorsChart", () => {
       value: 55.6,
     },
     macd: {
+      fast: 12,
+      slow: 26,
+      signal: 9,
       macd: 1.2,
-      signal: 0.9,
       hist: 0.3,
     },
     atr: {
@@ -66,6 +70,9 @@ describe("IndicatorsChart", () => {
       "%D": 60,
     },
     ichimoku: {
+      conversion: 9,
+      base: 26,
+      span_b: 52,
       tenkan_sen: 150.1,
       kijun_sen: 148.4,
       senkou_span_a: 149.2,
@@ -76,7 +83,7 @@ describe("IndicatorsChart", () => {
     },
   };
 
-  it("renderiza el gráfico con variaciones de timeframe y leyendas", () => {
+  it("renderiza el análisis técnico completo cuando hay datos", () => {
     const insights = [
       "Tendencia alcista moderada",
       "Vigilar posibles divergencias",
@@ -88,37 +95,58 @@ describe("IndicatorsChart", () => {
         symbol="AAPL"
         interval="4h"
         indicators={baseIndicators}
-        series={{ closes: [145.6, 146.2, 147.5] }}
+        series={{
+          closes: [145.6, 146.2, 147.5, 148.1, 146.8],
+          highs: [146, 147, 148, 149, 147],
+          lows: [145, 145.5, 146.2, 147, 146],
+          volumes: [1200, 1300, 1250, 1400, 1500],
+        }}
         insights={insights}
+        history={{
+          source: "Binance",
+          values: [
+            {
+              timestamp: "2024-01-01T10:00:00Z",
+              open: 145.2,
+              high: 146.4,
+              low: 144.8,
+              close: 145.9,
+              volume: 1200,
+            },
+          ],
+        }}
       />
     );
 
-    expect(
-      screen.getByRole("heading", { name: "AAPL · 4H" })
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "AAPL · 4H" })).toBeInTheDocument();
     expect(screen.getByText("Último cierre: 145.67")).toBeInTheDocument();
+    expect(screen.getByText("Histórico desde: Binance")).toBeInTheDocument();
 
+    expect(screen.getByText("Precio, EMAs y Bandas de Bollinger")).toBeInTheDocument();
     expect(screen.getByTestId("line-close")).toHaveTextContent("Precio");
-    expect(screen.getByTestId("line-ema20")).toHaveTextContent("EMA 20");
-    expect(screen.getByTestId("line-ema50")).toHaveTextContent("EMA 50");
-    expect(screen.getByTestId("line-upper")).toHaveTextContent("BB Upper");
-    expect(screen.getAllByTestId("legend").length).toBeGreaterThan(0);
+    expect(screen.getByTestId("line-emaFast")).toHaveTextContent("EMA 20");
+    expect(screen.getByTestId("line-emaSlow")).toHaveTextContent("EMA 50");
+    expect(screen.getByTestId("line-bollingerUpper")).toHaveTextContent("Bollinger Sup");
+    expect(screen.getByTestId("line-bollingerLower")).toHaveTextContent("Bollinger Inf");
 
-    expect(screen.getByText("ATR (Periodo 14)")).toBeInTheDocument();
-    expect(screen.getByText("2.5")).toBeInTheDocument();
-    expect(screen.getByText("Stochastic RSI")).toBeInTheDocument();
-    expect(screen.getByText("%K 65 · %D 60")).toBeInTheDocument();
+    expect(screen.getByText("Índice de Fuerza Relativa (RSI)")).toBeInTheDocument();
+    expect(screen.getByTestId("line-value")).toHaveTextContent("RSI 14");
 
-    expect(screen.getByText("🧠 Insights de la IA")).toBeInTheDocument();
-    expect(
-      screen.getByText("Tendencia alcista moderada")
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("Vigilar posibles divergencias")
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("Considerar stop-loss ajustado")
-    ).toBeInTheDocument();
+    expect(screen.getByText("Average True Range (ATR)")).toBeInTheDocument();
+    expect(screen.getByTestId("area-value")).toHaveTextContent("ATR 14");
+
+    expect(screen.getByText("Ichimoku")).toBeInTheDocument();
+    expect(screen.getByTestId("line-tenkan")).toHaveTextContent("Tenkan");
+    expect(screen.getByTestId("line-kijun")).toHaveTextContent("Kijun");
+
+    expect(screen.getByRole("heading", { name: "MACD" })).toBeInTheDocument();
+    expect(screen.getByTestId("line-macd")).toHaveTextContent("MACD");
+    expect(screen.getByTestId("bar-histogram")).toHaveTextContent("Histograma");
+
+    expect(screen.getByText("🧠 Insights del asistente")).toBeInTheDocument();
+    expect(screen.getByText("Tendencia alcista moderada")).toBeInTheDocument();
+    expect(screen.getByText("Vigilar posibles divergencias")).toBeInTheDocument();
+    expect(screen.getByText("Considerar stop-loss ajustado")).toBeInTheDocument();
   });
 
   it("maneja datos incompletos mostrando valores por defecto", () => {
@@ -133,9 +161,7 @@ describe("IndicatorsChart", () => {
 
     expect(screen.getByRole("heading", { name: "ETH · 1D" })).toBeInTheDocument();
     expect(screen.getByText("Último cierre: 2000")).toBeInTheDocument();
-    expect(
-      screen.getByText("Aún no hay comentarios generados.")
-    ).toBeInTheDocument();
+    expect(screen.getByText("Aún no hay comentarios generados.")).toBeInTheDocument();
   });
 
   it("muestra mensajes de carga y error en el panel de insights", () => {
@@ -148,9 +174,7 @@ describe("IndicatorsChart", () => {
       />
     );
 
-    expect(
-      screen.getByText("Analizando indicadores...")
-    ).toBeInTheDocument();
+    expect(screen.getByText("Analizando indicadores...")).toBeInTheDocument();
 
     rerender(
       <IndicatorsChart

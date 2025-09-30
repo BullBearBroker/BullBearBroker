@@ -34,6 +34,9 @@ pnpm-debug.log*
 # ========================
 .env
 .env.local
+.env.staging
+.env.supabase
+.env.production
 *.secret
 
 # ========================

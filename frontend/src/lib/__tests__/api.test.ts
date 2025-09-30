@@ -118,6 +118,21 @@ describe("request", () => {
 
     await expect(request("/demo", { method: "GET" })).rejects.toThrow("Mensaje amigable");
   });
+
+  it("serializa el detalle cuando no es un string", async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: jest.fn().mockResolvedValue({ detail: { code: "duplicated" } }),
+      statusText: "Conflict",
+      text: jest.fn(),
+      headers: new Headers(),
+    });
+
+    await expect(request("/demo", { method: "GET" })).rejects.toThrow(
+      '{"code":"duplicated"}'
+    );
+  });
 });
 
 describe("API wrappers", () => {
@@ -254,6 +269,7 @@ describe("API wrappers", () => {
           provider: "openai",
           used_data: true,
           sources: ["prices"],
+          session_id: "chat-1",
         })
       );
     const onChunk = jest.fn();
@@ -271,6 +287,7 @@ describe("API wrappers", () => {
     expect(onChunk).toHaveBeenCalledWith("Respuesta final");
     expect(result.messages).toHaveLength(2);
     expect(result.sources).toEqual(["prices"]);
+    expect(result.sessionId).toBe("chat-1");
   });
 
   it("continúa aunque getIndicators falle", async () => {
@@ -286,7 +303,7 @@ describe("API wrappers", () => {
       ],
       undefined,
       undefined,
-      { symbol: "ETH" }
+      { symbol: "ETH", sessionId: "persisted" }
     );
 
     expect(warnSpy).toHaveBeenCalled();
@@ -294,6 +311,7 @@ describe("API wrappers", () => {
       `${API_BASE_URL}/api/ai/chat`
     );
     expect(result.messages[result.messages.length - 1].content).toBe("Ok");
+    expect(result.sessionId).toBe("persisted");
     warnSpy.mockRestore();
   });
 

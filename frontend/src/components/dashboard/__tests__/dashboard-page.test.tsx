@@ -23,9 +23,28 @@ const mockMarketSidebar = jest.fn(() => <aside data-testid="market-sidebar" />);
 const mockAlertsPanel = jest.fn(() => <section data-testid="alerts-panel" />);
 const mockNewsPanel = jest.fn(() => <section data-testid="news-panel" />);
 const mockChatPanel = jest.fn(() => <section data-testid="chat-panel" />);
+const mockPortfolioPanel = jest.fn(() => <section data-testid="portfolio-panel" />);
 const mockIndicatorsChart = jest.fn((props) => (
   <div data-testid="indicators-chart">{props.symbol}</div>
 ));
+
+const mockHistoricalRefresh = jest.fn();
+const mockUseHistoricalData = jest.fn(() => ({
+  data: { symbol: "BTCUSDT", interval: "1h", source: "Binance", values: [] },
+  error: undefined,
+  isLoading: false,
+  isValidating: false,
+  refresh: mockHistoricalRefresh,
+  mutate: mockHistoricalRefresh,
+  isEmpty: false,
+}));
+
+const mockUsePushNotifications = jest.fn(() => ({
+  enabled: false,
+  error: null,
+  permission: "default" as NotificationPermission,
+  loading: false,
+}));
 
 jest.mock("@/components/sidebar/market-sidebar", () => ({
   MarketSidebar: (props: any) => mockMarketSidebar(props),
@@ -43,12 +62,24 @@ jest.mock("@/components/chat/chat-panel", () => ({
   ChatPanel: (props: any) => mockChatPanel(props),
 }));
 
+jest.mock("@/components/portfolio/PortfolioPanel", () => ({
+  PortfolioPanel: (props: any) => mockPortfolioPanel(props),
+}));
+
 jest.mock("@/components/indicators/IndicatorsChart", () => ({
   IndicatorsChart: (props: any) => mockIndicatorsChart(props),
 }));
 
 jest.mock("@/components/dashboard/theme-toggle", () => ({
   ThemeToggle: () => <button type="button">Tema</button>,
+}));
+
+jest.mock("@/hooks/usePushNotifications", () => ({
+  usePushNotifications: (token: string | undefined) => mockUsePushNotifications(token),
+}));
+
+jest.mock("@/hooks/useHistoricalData", () => ({
+  useHistoricalData: (symbol: string, options: any) => mockUseHistoricalData(symbol, options),
 }));
 
 jest.mock("next/navigation", () => ({
@@ -90,6 +121,20 @@ describe("DashboardPage", () => {
     mockAlertsPanel.mockClear();
     mockNewsPanel.mockClear();
     mockChatPanel.mockClear();
+    mockPortfolioPanel.mockClear();
+    mockUsePushNotifications.mockClear();
+    mockHistoricalRefresh.mockClear();
+    mockHistoricalRefresh.mockResolvedValue(undefined);
+    mockUseHistoricalData.mockClear();
+    mockUseHistoricalData.mockImplementation(() => ({
+      data: { symbol: "BTCUSDT", interval: "1h", source: "Binance", values: [] },
+      error: undefined,
+      isLoading: false,
+      isValidating: false,
+      refresh: mockHistoricalRefresh,
+      mutate: mockHistoricalRefresh,
+      isEmpty: false,
+    }));
   });
 
   it("muestra la pantalla de carga mientras la sesión está verificándose", () => {
@@ -139,16 +184,28 @@ describe("DashboardPage", () => {
     expect(await screen.findByText(/bienvenido de vuelta/i)).toBeInTheDocument();
     expect(screen.getByText(/Ana/i)).toBeInTheDocument();
     expect(mockMarketSidebar).toHaveBeenCalled();
+    expect(mockPortfolioPanel).toHaveBeenCalledWith(
+      expect.objectContaining({ token: baseAuth.token })
+    );
     expect(mockAlertsPanel).toHaveBeenCalled();
     expect(mockNewsPanel).toHaveBeenCalled();
     expect(mockChatPanel).toHaveBeenCalled();
+    expect(screen.getByText(/Push inactivo/i)).toBeInTheDocument();
 
+    const shell = screen.getByTestId("dashboard-shell");
+    expect(shell).toHaveClass("grid");
+    expect(shell.className).toContain("md:grid-cols-[280px_1fr]");
+
+    const modules = screen.getByTestId("dashboard-modules");
+    expect(modules.className).toContain("lg:grid-cols-2");
+  
     await waitFor(() => {
       expect(mockIndicatorsChart).toHaveBeenCalledWith(
         expect.objectContaining({
           symbol: "BTCUSDT",
           interval: "1h",
           indicators: expect.any(Object),
+          history: expect.objectContaining({ symbol: "BTCUSDT" }),
         })
       );
     });
@@ -159,6 +216,12 @@ describe("DashboardPage", () => {
     });
 
     expect(mockedGetIndicators).toHaveBeenCalledTimes(2);
+    expect(mockHistoricalRefresh).toHaveBeenCalled();
+    expect(mockUseHistoricalData).toHaveBeenCalledWith("BTCUSDT", {
+      interval: "1h",
+      market: "auto",
+      limit: 240,
+    });
   });
 
   it("muestra el estado vacío cuando no hay indicadores disponibles", async () => {
@@ -200,6 +263,30 @@ describe("DashboardPage", () => {
     } finally {
       consoleSpy.mockRestore();
     }
+  });
+
+  it("muestra el error de notificaciones push", async () => {
+    mockUsePushNotifications.mockReturnValue({
+      enabled: false,
+      error: "No se pudo registrar push",
+      permission: "denied",
+      loading: false,
+    });
+    mockUseAuth.mockReturnValue({ ...baseAuth, loading: false });
+    mockUseRouter.mockReturnValue({ replace: jest.fn() });
+    mockedGetIndicators.mockResolvedValue({
+      symbol: "BTCUSDT",
+      interval: "1h",
+      indicators: { last_close: 12345 },
+      series: { closes: [1, 2, 3] },
+    });
+    mockedSendChatMessage.mockResolvedValue({ messages: [], sources: [], used_data: false });
+
+    await act(async () => {
+      customRender(<DashboardPage />);
+    });
+
+    expect(await screen.findByText("No se pudo registrar push")).toBeInTheDocument();
   });
 
   it("limpia los insights cuando la IA devuelve un error", async () => {

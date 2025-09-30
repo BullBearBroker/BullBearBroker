@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import useSWR from "swr";
 import { useMemo } from "react";
 import { LineChart, Coins, Wallet } from "lucide-react";
@@ -83,9 +84,17 @@ export function MarketSidebar({ token, user, onLogout }: MarketSidebarProps) {
   return (
     <div className="flex h-full flex-col gap-4 p-4">
       <Card className="border-none bg-transparent shadow-none">
-        <CardContent className="p-0">
-          <h2 className="text-xl font-semibold">BullBearBroker</h2>
-          <p className="text-sm text-muted-foreground">{user.email}</p>
+        <CardContent className="space-y-3 p-0">
+          <div>
+            <h2 className="text-xl font-semibold">BullBearBroker</h2>
+            <p className="text-sm text-muted-foreground">{user.email}</p>
+          </div>
+          <Button variant="secondary" size="sm" className="w-full" asChild>
+            <Link href="/portfolio" className="flex items-center justify-center gap-2">
+              <Wallet className="h-4 w-4" />
+              <span>Ver portafolio</span>
+            </Link>
+          </Button>
         </CardContent>
       </Card>
       <ScrollArea className="flex-1">

@@ -1,207 +1,186 @@
-## BullBearBroker
+# BullBearBroker
 
-### Requisitos previos 
+![Tests](https://github.com/bullbearbroker/bullbearbroker/actions/workflows/tests.yml/badge.svg)
 
-- [Docker](https://docs.docker.com/get-docker/)
-- [Docker Compose](https://docs.docker.com/compose/) (Docker Desktop ya lo incluye)
-- Opcional: `make` si prefieres ejecutar comandos abreviados
-- Python 3.11 si deseas ejecutar el backend sin contenedores. Instala las
-  dependencias con `pip install -r backend/requirements.txt` (incluye Plotly,
-  APScheduler, Celery y python-telegram-bot para gráficos, programación y
-  notificaciones).
+BullBearBroker es una plataforma de análisis financiero asistido por IA. Combina datos de
+mercados tradicionales y cripto con módulos de noticias, alertas y un chatbot
+especializado para acompañar decisiones de trading en tiempo real.
 
-### Variables de entorno
+## Visión del proyecto
 
-Crea un archivo `.env` en la raíz del proyecto para compartirlo entre el backend y el worker de alertas. Como referencia mínima:
+- **Asistente integral** para traders minoristas que quieran monitorear acciones,
+  criptomonedas y pares de divisas desde un único panel.
+- **Alertas inteligentes** con disparadores personalizables y notificaciones en
+  tiempo real (web, Telegram y Discord).
+- **Contexto enriquecido** mediante noticias, análisis de sentimiento y modelos
+  de lenguaje que ayuden a interpretar la información del mercado.
+- **Roadmap abierto** orientado a extender la plataforma con módulos de IA
+  avanzados, nuevas fuentes de datos y experiencias conversacionales.
 
-```env
-# Autenticación y sesiones
-BULLBEARBROKER_SECRET_KEY="coloca_aquí_una_clave_aleatoria_segura"
-# BULLBEARBROKER_JWT_ALGORITHM="HS256"  # opcional
+## Estructura de carpetas
 
-# Base de datos (Supabase)
-DATABASE_URL="postgresql://usuario:password@db.<proyecto>.supabase.co:5432/postgres?sslmode=require"
-
-# Servicios internos
-REDIS_URL="redis://redis:6379/0"
-
-# Claves para proveedores externos (habilitan funcionalidades avanzadas)
-ALPHA_VANTAGE_API_KEY=
-TWELVEDATA_API_KEY=
-COINGECKO_API_KEY=
-COINMARKETCAP_API_KEY=
-NEWSAPI_API_KEY=
-CRYPTOPANIC_API_KEY=
-FINFEED_API_KEY=
-MEDIASTACK_API_KEY=
-HUGGINGFACE_API_KEY=
-HUGGINGFACE_SENTIMENT_MODEL="distilbert-base-uncased-finetuned-sst-2-english"
-MISTRAL_API_KEY=
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_DEFAULT_CHAT_ID=
-# Variables opcionales para inferencia local
-# OLLAMA_HOST=http://localhost:11434
-# OLLAMA_MODEL=llama3
+```text
+.
+├── backend/                # API FastAPI, servicios y modelos SQLAlchemy
+├── frontend/               # Frontend Next.js + Tailwind + SWR
+├── docker-compose.yml      # Orquestación de stack completo (backend, frontend, DB, Redis)
+├── Dockerfile              # Imagen del backend (FastAPI + Uvicorn)
+├── Makefile                # Atajos para Docker Compose y pruebas
+├── .env.sample             # Variables de entorno mínimas
+└── backend/tests/          # Suite de pruebas (autenticación, alertas, servicios...)
 ```
 
-> 💡 Genera una clave segura ejecutando `python -c "import secrets; print(secrets.token_urlsafe(64))"`.
+## Variables de entorno
 
-Si `BULLBEARBROKER_SECRET_KEY` no está definida, el backend generará una clave aleatoria en cada arranque y se invalidarán los tokens previos.
-
-#### Variables destacadas
-
-- **DATABASE_URL**: Debe apuntar al clúster de Supabase (PostgreSQL gestionado). El formato recomendado es el que proporciona Supabase con `sslmode=require` para garantizar conexiones seguras.
-- **Backend y alert-worker**: requieren `BULLBEARBROKER_SECRET_KEY`, `DATABASE_URL` y `REDIS_URL` para operar.
-- **Mercados**: `ALPHA_VANTAGE_API_KEY`, `TWELVEDATA_API_KEY`, `COINGECKO_API_KEY` y `COINMARKETCAP_API_KEY` habilitan los distintos proveedores de precios.
-- **Noticias**: `NEWSAPI_API_KEY`, `CRYPTOPANIC_API_KEY`, `FINFEED_API_KEY` y `MEDIASTACK_API_KEY` enriquecen los listados.
-- **IA y notificaciones**: `HUGGINGFACE_API_KEY`, `HUGGINGFACE_SENTIMENT_MODEL`, `MISTRAL_API_KEY`, `TELEGRAM_BOT_TOKEN` y `TELEGRAM_DEFAULT_CHAT_ID` son usados por los servicios de sentimiento, generación y alertas.
-
-### Ejecución con Docker Compose
-
-1. Construye e inicia los servicios (`backend`, `alert-worker`, `redis` y `frontend`):
-
-   ```bash
-   docker compose up --build
-   ```
-
-   - El backend expone la API en [http://localhost:8000](http://localhost:8000).
-   - El `alert-worker` comparte la imagen del backend y procesa alertas en segundo plano.
-   - `redis` actúa como broker para colas y caché.
-   - El `frontend` estático queda disponible en [http://localhost:3000](http://localhost:3000).
-
-   > ℹ️ Ambos servicios de Python leerán `DATABASE_URL` desde `.env` para conectarse al PostgreSQL gestionado por Supabase. No se despliega una base de datos local en este `docker-compose`.
-
-2. Cuando termines, detén los servicios con:
-
-   ```bash
-   docker compose down
-   ```
-
-   Para limpiar completamente los volúmenes de datos (por ejemplo, reiniciar la base de datos), ejecuta `docker compose down -v`.
-
-#### Atajos con `make`
-
-Si cuentas con `make`, el proyecto incluye un `Makefile` con los siguientes atajos:
-
-- `make build` – equivalente a `docker compose up --build`
-- `make up` – levanta los servicios ya construidos
-- `make down` – detiene los contenedores
-- `make clean` – elimina contenedores, redes y volúmenes asociados
-- `make logs` – muestra los logs combinados de los servicios
-
-### Migraciones de base de datos
-
-El backend utiliza [Alembic](https://alembic.sqlalchemy.org/) para gestionar los cambios de esquema. Cada vez que actualices el código asegúrate de aplicar las migraciones más recientes con:
+El archivo [.env.sample](./.env.sample) lista los valores mínimos para correr el
+stack en local. Copia el archivo y ajusta los secretos antes de iniciar los
+servicios:
 
 ```bash
-docker compose run --rm backend alembic upgrade head
+cp .env.sample .env
 ```
 
-> Si ejecutas el backend fuera de Docker, asegúrate de que `DATABASE_URL` apunte al clúster de Supabase (o a la instancia de PostgreSQL equivalente) antes de lanzar `alembic upgrade head`.
+Campos destacados:
 
-#### Ejemplos de llamadas HTTP
+- **SECRET_KEY / ACCESS_TOKEN_SECRET / REFRESH_TOKEN_SECRET**: claves para firmar
+  JWT y sesiones.
+- **DATABASE_URL**: apunta por defecto al contenedor de PostgreSQL lanzado vía
+  Docker Compose (`postgresql+psycopg2://bullbear:bullbear@db:5432/bullbear`).
+- **REDIS_URL**: requerido para rate limiting y futuras colas de tareas.
+- **BULLBEAR_DEFAULT_USER / PASSWORD**: credenciales sembradas automáticamente para pruebas.
+- **NEXT_PUBLIC_API_BASE_URL**: URL base que consume el frontend (en Docker se
+  resuelve a `http://backend:8000`).
+- **PUSH_VAPID_PUBLIC_KEY / PUSH_VAPID_PRIVATE_KEY**: claves VAPID usadas para
+  firmar notificaciones web push desde el backend. Genera un par con
+  `npx web-push generate-vapid-keys` y compártelas con el frontend.
+- **NEXT_PUBLIC_PUSH_VAPID_PUBLIC_KEY**: clave pública expuesta al navegador
+  para registrar la suscripción push mediante el Service Worker.
+- **AI_PROVIDER_KEYS**: configura `MISTRAL_API_KEY` o `HUGGINGFACE_API_KEY` para
+  habilitar respuestas del asistente con persistencia de historial.
 
-A continuación se muestran ejemplos rápidos usando `curl` con la API levantada en `http://localhost:8000`:
+## Puesta en marcha con Docker Compose
 
-- Registro de usuario:
+1. Genera tu archivo `.env` como se describe arriba.
+2. Construye y levanta los contenedores en segundo plano:
 
-  ```bash
-  curl -X POST http://localhost:8000/api/auth/register \
-    -H "Content-Type: application/json" \
-    -d '{"email":"alice@example.com","password":"secreto123"}'
-  ```
+   ```bash
+   make up           # equivalente a docker compose up -d
+   ```
 
-  Respuesta abreviada:
+   Servicios incluidos:
 
-  ```json
-  {
-    "message": "Usuario registrado exitosamente",
-    "token": "<jwt>",
-    "user": { "id": "...", "email": "alice@example.com" }
-  }
-  ```
+   - **db**: PostgreSQL 15 con persistencia en `postgres_data`.
+   - **redis**: Redis 7 para rate limiting y caching.
+   - **backend**: API FastAPI sirviendo en [http://localhost:8000](http://localhost:8000).
+   - **frontend**: Next.js Dev Server disponible en [http://localhost:3000](http://localhost:3000).
 
-- Precio de Bitcoin:
+3. Sigue los logs combinados cuando lo necesites:
 
-  ```bash
-  curl http://localhost:8000/crypto/BTC
-  ```
+   ```bash
+   make logs
+   ```
 
-  ```json
-  {
-    "symbol": "BTC",
-    "type": "crypto",
-    "price": 62000.42,
-    "source": "CryptoService + Binance"
-  }
-  ```
+4. Detén y limpia los recursos cuando termines:
 
-- Precio de la acción de Apple:
+   ```bash
+   make down         # detiene contenedores
+   make clean        # detiene y borra volúmenes/orphans
+   ```
 
-  ```bash
-  curl http://localhost:8000/stock/AAPL
-  ```
+## Configuración manual (sin Docker)
 
-- Cotización EUR/USD:
+1. **Backend**
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate
+   pip install -r backend/requirements.txt
+   export $(grep -v '^#' .env | xargs)  # o configura variables manualmente
+   uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+   ```
 
-  ```bash
-  curl http://localhost:8000/forex/EURUSD
-  ```
+2. **Frontend**
+   ```bash
+   cd frontend
+   npm install
+   npm run dev -- --hostname 0.0.0.0 --port 3000
+   ```
 
-- Noticias de criptomonedas:
+Asegúrate de tener PostgreSQL y Redis ejecutándose en tu entorno local y que las
+variables de entorno apunten a esas instancias.
 
-  ```bash
-  curl http://localhost:8000/news/crypto
-  ```
+### Perfil staging con Docker Compose
 
-- Listado de alertas (requiere token JWT):
+El `docker-compose.yml` define dos perfiles:
 
-  ```bash
-  curl http://localhost:8000/alerts \
-    -H "Authorization: Bearer <jwt>"
-  ```
+- `default`: entorno de desarrollo con recarga en caliente (`make up`).
+- `staging`: entorno de pruebas realistas con builds optimizados.
 
-  ```json
-  [
-    { "id": "...", "asset": "BTC", "condition": "above", "value": 65000.0 }
-  ]
-  ```
+Para levantar el perfil staging:
 
-### Desarrollo sin Docker
+```bash
+make up-staging       # Levanta backend, frontend, db y redis en modo staging
+make down-staging     # Detiene únicamente los servicios del perfil staging
+```
 
-Los scripts de `npm` siguen disponibles para desarrollo local sin contenedores:
+En staging el frontend ejecuta `npm start` (Next.js compilado) y el backend
+utiliza Uvicorn sin `--reload`, reutilizando los contenedores de PostgreSQL y
+Redis con volúmenes persistentes.
 
-1. Instala las dependencias del frontend con `npm install`.
-2. Levanta el frontend estático con `npm run start` y accede a [http://localhost:8080](http://localhost:8080).
-3. Inicia el backend con `npm run backend` (lanza Uvicorn en [http://localhost:8000](http://localhost:8000)).
+## Pruebas automatizadas
 
-Detén cada proceso con `Ctrl+C` cuando termines.
+Ejecuta toda la suite (backend + frontend) con un solo comando:
 
-### Nuevas capacidades del mercado
+```bash
+make test
+```
 
-- **Pares FX y materias primas**: `forex_service` reutiliza Twelve Data y Yahoo Finance
-  con caché en memoria para entregar cotizaciones rápidas a través de `/forex/{pair}`.
-- **Sentimiento de mercado**: `sentiment_service` fusiona el índice Fear & Greed de Alternative.me
-  con análisis de sentimiento de HuggingFace disponible en `/api/market/sentiment/{symbol}`.
-- **Gráficos dinámicos**: la ruta `/api/market/chart/{symbol}` genera imágenes PNG en base64
-  mediante Plotly y soporta parámetros de intervalo y rango.
-- **Alertas automatizadas**: `alert_service` usa APScheduler para evaluar condiciones de precio y
-  notificar vía WebSocket y Telegram. El worker dedicado corre con Docker Compose (`alert-worker`).
+- Backend: `python -m pytest backend/tests`
+- Frontend: `npm --prefix frontend run test:dev`
 
-### Añadir nuevas fuentes de datos
+- Cobertura en CI: `npm --prefix frontend run test:ci`
 
-Las integraciones de precios y noticias están desacopladas mediante servicios especializados.
-Para conectar una nueva fuente:
+> ℹ️ **Cobertura en Jest**: los tests del frontend mantienen umbrales globales.
+> Usa `npm --prefix frontend run test:ci` para validar cobertura estricta en CI.
+> Durante el desarrollo utiliza `npm --prefix frontend run test:dev` para
+> ejecutar suites filtradas sin fallos por cobertura.
 
-1. **Crea o actualiza un servicio** con un método `get_price` (o equivalente) que devuelva los
-   datos normalizados. Puedes inspirarte en `backend/services/crypto_service.py` y
-   `backend/services/stock_service.py`.
-2. **Inyecta la dependencia** en `MarketService` pasando el servicio en el constructor o
-   registrándolo dentro de la clase si debe ser la fuente por defecto.
-3. **Gestiona la caché** reutilizando `utils.cache.CacheClient` para evitar llamadas repetidas.
-4. **Actualiza los helpers del mercado** (`get_crypto_price`, `get_stock_price`, `get_news`) para que
-   deleguen en la nueva fuente y añade la clave necesaria en `.env`.
+## Observabilidad (logs y métricas)
 
-De forma similar, las nuevas APIs de noticias pueden integrarse creando un método auxiliar que
-devuelva la estructura `{title, url, source, published_at, summary}` y registrándolo como fallback
-antes de la lectura RSS.
+- **Logging estructurado**: el backend utiliza `structlog` con salida JSON. Ajusta
+  el nivel con `BULLBEAR_LOG_LEVEL` (`INFO`, `DEBUG`, etc.).
+- **Métricas Prometheus**: la API expone `/metrics` con histogramas de latencia y
+  contadores por endpoint listos para ser scrapeados por Prometheus/Grafana.
+
+## Chat persistente y notificaciones push
+
+- Las conversaciones del asistente se guardan por usuario y sesión. El endpoint
+  `POST /ai/chat` crea sesiones automáticamente y `GET /ai/history/{session_id}`
+  devuelve el historial para hidratar el chat en el frontend.
+- El frontend conserva el `session_id` en `localStorage` y revalida el historial
+  con SWR al montar el componente de chat, garantizando continuidad tras
+  recargas o nuevos inicios de sesión.
+- El Service Worker (`frontend/public/sw.js`) gestiona la recepción de
+  notificaciones push. El hook `usePushNotifications` registra la suscripción
+  usando la clave VAPID pública y expone el estado al dashboard.
+- Para emitir pruebas de push, usa `POST /push/subscribe` en el backend y la
+  utilidad `backend/services/push_service.py` para despachar mensajes mediante
+  `pywebpush`. Cuando `pywebpush` no está instalado, el servicio degrada de
+  forma segura registrando el intento en logs.
+
+## Roadmap MVP
+
+- [x] **Crypto** – precios en vivo desde proveedores externos.
+- [x] **Forex** – cotizaciones de pares principales con caché.
+- [x] **AI chat básico** – asistente conversacional con contexto de mercado.
+- [x] **News** – agregador de noticias financieras y cripto.
+- [x] **Alertas** – creación, listado, actualización y envío de alertas personalizadas.
+- [ ] **Automatización avanzada** – integración con brokers y ejecución de órdenes.
+
+## Recursos adicionales
+
+- [Documentación FastAPI](https://fastapi.tiangolo.com/)
+- [Documentación Next.js](https://nextjs.org/docs)
+- [SQLAlchemy 2.x](https://docs.sqlalchemy.org/)
+
+¡Sugerencias y contribuciones son bienvenidas! Abre un issue o PR para seguir
+iterando sobre el asistente financiero inteligente de BullBearBroker.

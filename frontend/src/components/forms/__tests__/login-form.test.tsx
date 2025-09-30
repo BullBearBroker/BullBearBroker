@@ -112,6 +112,94 @@ describe("LoginForm", () => {
     expect((global as any).pushMock).not.toHaveBeenCalled();
   });
 
+  it("limpia los errores del formulario al corregir los campos", async () => {
+    (global as any).loginUserMock.mockRejectedValueOnce(
+      new Error("Credenciales inválidas")
+    );
+
+    customRender(<LoginForm />);
+
+    fireEvent.input(screen.getByPlaceholderText(/correo electrónico/i), {
+      target: { value: "user@example.com" },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/contraseña/i), {
+      target: { value: "secret123" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /iniciar sesión/i }));
+
+    expect(
+      await screen.findByText(/credenciales inválidas/i)
+    ).toBeInTheDocument();
+
+    fireEvent.input(screen.getByPlaceholderText(/correo electrónico/i), {
+      target: { value: "nuevo@example.com" },
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.queryByText(/credenciales inválidas/i)
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("usa credenciales normalizadas y muestra mensaje genérico por defecto", async () => {
+    (global as any).loginUserMock.mockRejectedValueOnce("falló");
+
+    customRender(<LoginForm />);
+
+    fireEvent.input(screen.getByPlaceholderText(/correo electrónico/i), {
+      target: { value: "  user@example.com  " },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/contraseña/i), {
+      target: { value: "  secret123  " },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /iniciar sesión/i }));
+
+    await waitFor(() => {
+      expect((global as any).loginUserMock).toHaveBeenCalledWith(
+        "user@example.com",
+        "secret123"
+      );
+    });
+
+    expect(
+      await screen.findByText(/error al iniciar sesión/i)
+    ).toBeInTheDocument();
+  });
+
+  it("deshabilita el botón mientras se envían las credenciales", async () => {
+    let resolvePromise: () => void = () => undefined;
+    const pendingPromise = new Promise<void>((resolve) => {
+      resolvePromise = resolve;
+    });
+    (global as any).loginUserMock.mockReturnValueOnce(pendingPromise);
+
+    customRender(<LoginForm />);
+
+    fireEvent.input(screen.getByPlaceholderText(/correo electrónico/i), {
+      target: { value: "user@example.com" },
+    });
+    fireEvent.input(screen.getByPlaceholderText(/contraseña/i), {
+      target: { value: "secret123" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /iniciar sesión/i }));
+
+    expect(
+      screen.getByRole("button", { name: /iniciando/i })
+    ).toBeDisabled();
+
+    resolvePromise();
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /iniciar sesión/i })
+      ).toBeEnabled()
+    );
+  });
+
   it("no presenta violaciones de accesibilidad básicas", async () => {
     const { container } = customRender(<LoginForm />);
 

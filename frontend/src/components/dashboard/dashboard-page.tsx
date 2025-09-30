@@ -7,12 +7,16 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { ChatPanel } from "@/components/chat/chat-panel";
 import { AlertsPanel } from "@/components/alerts/alerts-panel";
 import { NewsPanel } from "@/components/news/news-panel";
+import { PortfolioPanel } from "@/components/portfolio/PortfolioPanel";
 import { MarketSidebar } from "@/components/sidebar/market-sidebar";
 import { ThemeToggle } from "@/components/dashboard/theme-toggle";
 import { IndicatorsChart } from "@/components/indicators/IndicatorsChart"; // [Codex] nuevo
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { getIndicators, sendChatMessage } from "@/lib/api"; // [Codex] nuevo
+import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { useHistoricalData } from "@/hooks/useHistoricalData"; // [Codex] nuevo
 
 export function DashboardPage() {
   const { user, loading, token, logout } = useAuth();
@@ -20,7 +24,10 @@ export function DashboardPage() {
 
   const sidebarToken = useMemo(() => token ?? undefined, [token]);
 
+  const { enabled: pushEnabled, error: pushError } = usePushNotifications(token ?? undefined);
+
   const [indicatorData, setIndicatorData] = useState<any | null>(null); // [Codex] nuevo
+  const [indicatorSymbol, setIndicatorSymbol] = useState("BTCUSDT"); // [Codex] nuevo
   const [indicatorInsights, setIndicatorInsights] = useState<string | null>(null); // [Codex] nuevo
   const [indicatorLoading, setIndicatorLoading] = useState(false); // [Codex] nuevo
   const [indicatorError, setIndicatorError] = useState<string | null>(null); // [Codex] nuevo
@@ -43,12 +50,15 @@ export function DashboardPage() {
       try {
         const payload = await getIndicators(
           "crypto",
-          "BTCUSDT",
+          indicatorSymbol,
           "1h",
           token ?? undefined,
         );
         if (isCancelled()) return;
         setIndicatorData(payload);
+        if (payload?.symbol) {
+          setIndicatorSymbol(payload.symbol);
+        }
 
         try {
           const indicatorsSummary = JSON.stringify(payload.indicators).slice(0, 1800);
@@ -86,7 +96,7 @@ export function DashboardPage() {
         }
       }
     },
-    [token, user]
+    [indicatorSymbol, token, user]
   );
 
   useEffect(() => {
@@ -99,9 +109,25 @@ export function DashboardPage() {
     };
   }, [loadIndicators, user]);
 
+  const historicalInterval = indicatorData?.interval ?? "1h"; // [Codex] nuevo
+  const historicalMarket = (indicatorData?.type as "auto" | "crypto" | "stock" | "equity" | "forex" | undefined) ?? "auto"; // [Codex] nuevo
+
+  const {
+    data: historicalData,
+    error: historicalError,
+    isLoading: historicalLoading,
+    isValidating: historicalValidating,
+    refresh: refreshHistorical,
+  } = useHistoricalData(indicatorSymbol, {
+    interval: historicalInterval,
+    market: historicalMarket,
+    limit: 240,
+  }); // [Codex] nuevo
+
   const handleRefreshIndicators = useCallback(() => {
     loadIndicators();
-  }, [loadIndicators]); // [Codex] nuevo
+    refreshHistorical();
+  }, [loadIndicators, refreshHistorical]); // [Codex] nuevo
 
   if (loading) {
     return (
@@ -120,38 +146,55 @@ export function DashboardPage() {
   }
 
   return (
-    <div className="grid min-h-screen bg-background text-foreground md:grid-cols-[300px_1fr]">
+    <div
+      className="grid min-h-screen bg-background text-foreground md:grid-cols-[280px_1fr]"
+      data-testid="dashboard-shell"
+    >
       <aside className="border-r bg-card/50">
         <MarketSidebar token={sidebarToken} user={user} onLogout={logout} />
       </aside>
-      <main className="flex flex-col gap-6 p-6">
+      <main className="flex flex-col gap-6 p-4 lg:p-6" data-testid="dashboard-content">
         <header className="flex flex-col gap-4 rounded-lg border bg-card p-4 shadow-sm md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-sm text-muted-foreground">Bienvenido de vuelta</p>
             <h1 className="text-2xl font-semibold">{user.name || user.email}</h1>
           </div>
           <div className="flex items-center gap-3">
+            <Badge variant={pushEnabled ? "outline" : "secondary"} className="hidden md:inline-flex">
+              {pushEnabled ? "Push activo" : "Push inactivo"}
+            </Badge>
             <ThemeToggle />
             <Button variant="outline" onClick={logout}>
               Cerrar sesión
             </Button>
           </div>
         </header>
-        <section className="grid flex-1 gap-6 xl:grid-cols-[2fr_1fr]">
-          <div className="flex flex-col gap-6">
+        {pushError && (
+          <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+            {pushError}
+          </div>
+        )}
+        <section
+          className="grid flex-1 gap-6 lg:grid-cols-2 xl:grid-cols-[2fr_1fr]"
+          data-testid="dashboard-modules"
+        >
+          <div className="grid auto-rows-min gap-6">
+            <PortfolioPanel token={token ?? undefined} />
             {/* [Codex] nuevo - tarjeta de indicadores con insights AI */}
-            <Card className="flex flex-col">
+            <Card className="flex flex-col" data-testid="dashboard-indicators">
               <CardHeader className="flex items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-lg font-medium">
-                  Indicadores clave (BTCUSDT)
+                  Indicadores clave ({indicatorSymbol})
                 </CardTitle>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={handleRefreshIndicators}
-                  disabled={indicatorLoading}
+                  disabled={indicatorLoading || historicalLoading || historicalValidating}
                 >
-                  {indicatorLoading ? "Actualizando..." : "Actualizar"}
+                  {indicatorLoading || historicalLoading || historicalValidating
+                    ? "Actualizando..."
+                    : "Actualizar"}
                 </Button>
               </CardHeader>
               <CardContent className="pt-4">
@@ -167,6 +210,9 @@ export function DashboardPage() {
                     insights={indicatorInsights}
                     loading={indicatorLoading}
                     error={indicatorError}
+                    history={historicalData}
+                    historyError={historicalError?.message ?? null}
+                    historyLoading={historicalLoading || historicalValidating}
                   />
                 )}
                 {!indicatorData && !indicatorError && (
@@ -178,13 +224,19 @@ export function DashboardPage() {
                 )}
               </CardContent>
             </Card>
-            <Card className="flex flex-col">
-              <CardContent className="flex h-full flex-col gap-4 pt-6">
+            <Card className="flex flex-col" data-testid="dashboard-chat">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-lg font-medium">Asistente estratégico</CardTitle>
+                <CardDescription>
+                  Conversa con el bot para contextualizar las señales del mercado.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex h-full flex-col gap-4">
                 <ChatPanel token={token ?? undefined} />
               </CardContent>
             </Card>
           </div>
-          <div className="flex flex-col gap-6">
+          <div className="grid auto-rows-min gap-6">
             <AlertsPanel token={token ?? undefined} />
             <NewsPanel token={token ?? undefined} />
           </div>
