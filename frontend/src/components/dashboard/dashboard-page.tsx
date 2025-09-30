@@ -7,6 +7,7 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { ChatPanel } from "@/components/chat/chat-panel";
 import { AlertsPanel } from "@/components/alerts/alerts-panel";
 import { NewsPanel } from "@/components/news/news-panel";
+import { PortfolioPanel } from "@/components/portfolio/PortfolioPanel";
 import { MarketSidebar } from "@/components/sidebar/market-sidebar";
 import { ThemeToggle } from "@/components/dashboard/theme-toggle";
 import { IndicatorsChart } from "@/components/indicators/IndicatorsChart"; // [Codex] nuevo
@@ -137,10 +138,11 @@ export function DashboardPage() {
             </Button>
           </div>
         </header>
-        <section className="grid flex-1 gap-6 xl:grid-cols-[2fr_1fr]">
-          <div className="flex flex-col gap-6">
+        <section className="grid flex-1 gap-6 lg:grid-cols-2 xl:grid-cols-[2fr_1fr]">
+          <div className="grid auto-rows-min gap-6">
+            <PortfolioPanel token={token ?? undefined} />
             {/* [Codex] nuevo - tarjeta de indicadores con insights AI */}
-            <Card className="flex flex-col">
+            <Card className="flex flex-col" data-testid="dashboard-indicators">
               <CardHeader className="flex items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-lg font-medium">
                   Indicadores clave (BTCUSDT)
@@ -178,13 +180,13 @@ export function DashboardPage() {
                 )}
               </CardContent>
             </Card>
-            <Card className="flex flex-col">
+            <Card className="flex flex-col" data-testid="dashboard-chat">
               <CardContent className="flex h-full flex-col gap-4 pt-6">
                 <ChatPanel token={token ?? undefined} />
               </CardContent>
             </Card>
           </div>
-          <div className="flex flex-col gap-6">
+          <div className="grid auto-rows-min gap-6">
             <AlertsPanel token={token ?? undefined} />
             <NewsPanel token={token ?? undefined} />
           </div>

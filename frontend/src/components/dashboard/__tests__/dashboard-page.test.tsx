@@ -23,6 +23,7 @@ const mockMarketSidebar = jest.fn(() => <aside data-testid="market-sidebar" />);
 const mockAlertsPanel = jest.fn(() => <section data-testid="alerts-panel" />);
 const mockNewsPanel = jest.fn(() => <section data-testid="news-panel" />);
 const mockChatPanel = jest.fn(() => <section data-testid="chat-panel" />);
+const mockPortfolioPanel = jest.fn(() => <section data-testid="portfolio-panel" />);
 const mockIndicatorsChart = jest.fn((props) => (
   <div data-testid="indicators-chart">{props.symbol}</div>
 ));
@@ -41,6 +42,10 @@ jest.mock("@/components/news/news-panel", () => ({
 
 jest.mock("@/components/chat/chat-panel", () => ({
   ChatPanel: (props: any) => mockChatPanel(props),
+}));
+
+jest.mock("@/components/portfolio/PortfolioPanel", () => ({
+  PortfolioPanel: (props: any) => mockPortfolioPanel(props),
 }));
 
 jest.mock("@/components/indicators/IndicatorsChart", () => ({
@@ -90,6 +95,7 @@ describe("DashboardPage", () => {
     mockAlertsPanel.mockClear();
     mockNewsPanel.mockClear();
     mockChatPanel.mockClear();
+    mockPortfolioPanel.mockClear();
   });
 
   it("muestra la pantalla de carga mientras la sesión está verificándose", () => {
@@ -139,6 +145,9 @@ describe("DashboardPage", () => {
     expect(await screen.findByText(/bienvenido de vuelta/i)).toBeInTheDocument();
     expect(screen.getByText(/Ana/i)).toBeInTheDocument();
     expect(mockMarketSidebar).toHaveBeenCalled();
+    expect(mockPortfolioPanel).toHaveBeenCalledWith(
+      expect.objectContaining({ token: baseAuth.token })
+    );
     expect(mockAlertsPanel).toHaveBeenCalled();
     expect(mockNewsPanel).toHaveBeenCalled();
     expect(mockChatPanel).toHaveBeenCalled();
