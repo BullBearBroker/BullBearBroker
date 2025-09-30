@@ -700,6 +700,9 @@ async def test_forex_endpoint_falls_back_to_yahoo(
     assert payload["price"] == pytest.approx(1.2345)
     assert payload["source"] == "Yahoo Finance"
     assert info["calls"] == ["Twelve Data", "Yahoo Finance"]
+    assert [s.strip().lower() for s in payload["sources"]] == [
+        s.strip().lower() for s in ["Twelve Data", "Yahoo Finance"]
+    ]
 
 
 @pytest.mark.asyncio

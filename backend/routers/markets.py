@@ -53,6 +53,65 @@ async def _collect_quotes(
     return results, missing
 
 
+def _to_float(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _normalize_candle(entry: Any) -> Optional[Dict[str, Any]]:
+    if isinstance(entry, dict):
+        timestamp = entry.get("timestamp") or entry.get("time")
+        open_ = _to_float(entry.get("open") or entry.get("o"))
+        high = _to_float(entry.get("high") or entry.get("h"))
+        low = _to_float(entry.get("low") or entry.get("l"))
+        close = _to_float(entry.get("close") or entry.get("c"))
+        volume = _to_float(entry.get("volume") or entry.get("v"))
+    elif isinstance(entry, (list, tuple)) and len(entry) >= 6:
+        timestamp, open_, high, low, close, volume = entry[:6]
+        open_ = _to_float(open_)
+        high = _to_float(high)
+        low = _to_float(low)
+        close = _to_float(close)
+        volume = _to_float(volume)
+    else:
+        return None
+
+    if timestamp is None or None in (open_, high, low, close):
+        return None
+
+    return {
+        "timestamp": str(timestamp),
+        "open": open_,
+        "high": high,
+        "low": low,
+        "close": close,
+        "volume": volume,
+    }
+
+
+def _normalize_history_payload(payload: Any) -> Dict[str, Any]:
+    if not isinstance(payload, dict):
+        return {}
+
+    values = payload.get("values")
+    if not isinstance(values, list):
+        normalized_values: List[Dict[str, Any]] = []
+    else:
+        normalized_values = []
+        for entry in values:
+            candle = _normalize_candle(entry)
+            if candle is not None:
+                normalized_values.append(candle)
+
+    normalized: Dict[str, Any] = dict(payload)
+    normalized["values"] = normalized_values
+    return normalized
+
+
 @router.get("/crypto/prices")
 async def get_crypto_prices(symbols: str = Query(..., description="Lista de símbolos separados por coma")) -> Dict[str, Any]:
     """Return crypto prices for the provided symbols."""
@@ -143,16 +202,21 @@ async def get_history(
     market: str = Query("auto", pattern="^(auto|crypto|stock|equity|forex)$"),
 ) -> Dict[str, Any]:
     try:
-        return await market_service.get_historical_ohlc(
+        raw = await market_service.get_historical_ohlc(
             symbol, interval=interval, limit=limit, market=market
         )
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     except Exception as exc:  # pragma: no cover - fallback controlado
-        raise HTTPException(
-            status_code=502,
-            detail=f"No se pudieron obtener datos históricos para {symbol}: {exc}",
-        ) from exc
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    history = _normalize_history_payload(raw)
+    if not history or not history.get("values"):
+        raise HTTPException(status_code=404, detail="No data found")
+
+    return history
 
 
 @router.get("/stock/{symbol}")
