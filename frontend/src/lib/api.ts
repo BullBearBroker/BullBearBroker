@@ -1,5 +1,11 @@
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+const envApiUrl =
+  process.env.NEXT_PUBLIC_API_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL;
+
+if (!envApiUrl) {
+  throw new Error("NEXT_PUBLIC_API_URL is not defined");
+}
+
+export const API_BASE_URL = envApiUrl.replace(/\/$/, "");
 
 export function resolveWebSocketUrl(path: string): string {
   const base = new URL(API_BASE_URL);

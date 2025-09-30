@@ -9,11 +9,15 @@ from typing import Any, Dict, Optional
 import jwt
 
 JWT_ALG = "HS256"
-ACCESS_MIN = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
-REFRESH_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
+ACCESS_MIN = int(os.environ.get("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
+REFRESH_DAYS = int(os.environ.get("REFRESH_TOKEN_EXPIRE_DAYS", "7"))
 
-ACCESS_SECRET = os.getenv("ACCESS_TOKEN_SECRET", os.getenv("SECRET_KEY", "change-me"))
-REFRESH_SECRET = os.getenv("REFRESH_TOKEN_SECRET", os.getenv("SECRET_KEY", "change-me"))
+ACCESS_SECRET = os.environ.get(
+    "ACCESS_TOKEN_SECRET", os.environ.get("SECRET_KEY", "change-me")
+)
+REFRESH_SECRET = os.environ.get(
+    "REFRESH_TOKEN_SECRET", os.environ.get("SECRET_KEY", "change-me")
+)
 
 
 def _now() -> datetime:
