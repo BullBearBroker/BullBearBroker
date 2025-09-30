@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 import os
-from typing import Dict, List, Tuple, Optional
+from collections import OrderedDict
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 import httpx
 
 # Leemos claves directamente del entorno (evitamos acoplar a utils.config)
@@ -16,6 +18,135 @@ ALPHAV_INTERVALS_STOCK = {"1h": "60min", "1d": "Daily"}  # 4h no está soportado
 ALPHAV_INTERVALS_FX = {"1h": "60min", "1d": "Daily"}     # 4h no está soportado
 
 DEFAULT_LIMIT = 300
+
+
+_RESAMPLE_INTERVALS: Dict[str, int] = {"1h": 3600, "4h": 14_400, "1d": 86_400}
+
+
+def _parse_timestamp(value: Any) -> datetime:
+    """Convert different timestamp representations into a timezone-aware datetime."""
+
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+
+    if isinstance(value, (int, float)):
+        return datetime.fromtimestamp(float(value), tz=timezone.utc)
+
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            raise ValueError("Timestamp vacío no es válido")
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        try:
+            parsed = datetime.fromisoformat(text)
+        except ValueError as exc:  # pragma: no cover - defensive, exercised via tests
+            raise ValueError(f"Timestamp inválido: {value}") from exc
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+
+    raise TypeError(f"Tipo de timestamp no soportado: {type(value)!r}")
+
+
+def _normalize_point(point: Mapping[str, Any] | Sequence[Any]) -> Tuple[datetime, float, Optional[float]]:
+    """Extract timestamp, price and optional volume from incoming payloads."""
+
+    if isinstance(point, Mapping):
+        timestamp_raw = (
+            point.get("timestamp")
+            or point.get("time")
+            or point.get("date")
+        )
+        if timestamp_raw is None:
+            raise ValueError("Cada dato debe incluir 'timestamp'")
+        price_raw = (
+            point.get("close")
+            if point.get("close") is not None
+            else point.get("price")
+        )
+        if price_raw is None:
+            raise ValueError("Cada dato debe incluir 'close' o 'price'")
+        volume_raw = point.get("volume") or point.get("vol")
+    else:
+        if len(point) < 2:
+            raise ValueError("Las muestras deben contener al menos timestamp y valor")
+        timestamp_raw, price_raw = point[0], point[1]
+        volume_raw = point[2] if len(point) > 2 else None
+
+    timestamp = _parse_timestamp(timestamp_raw)
+    price = float(price_raw)
+    volume = None if volume_raw is None else float(volume_raw)
+    return timestamp, price, volume
+
+
+def _bucket_start(timestamp: datetime, interval: str) -> datetime:
+    seconds = _RESAMPLE_INTERVALS.get(interval)
+    if seconds is None:
+        raise ValueError(f"Intervalo no soportado para resample: {interval}")
+
+    if interval == "1d":
+        return timestamp.replace(hour=0, minute=0, second=0, microsecond=0)
+
+    if interval == "4h":
+        hour_block = (timestamp.hour // 4) * 4
+        return timestamp.replace(hour=hour_block, minute=0, second=0, microsecond=0)
+
+    # Default to hourly buckets
+    return timestamp.replace(minute=0, second=0, microsecond=0)
+
+
+def _format_timestamp(value: datetime) -> str:
+    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def resample_series(
+    series: Sequence[Mapping[str, Any]] | Sequence[Sequence[Any]],
+    interval: str,
+) -> List[Dict[str, Any]]:
+    """Aggregate raw candle data into OHLC buckets for the requested interval."""
+
+    if not series:
+        return []
+
+    if interval not in _RESAMPLE_INTERVALS:
+        raise ValueError("Intervalo no soportado para resample")
+
+    normalized: List[Tuple[datetime, float, Optional[float]]] = []
+    for point in series:
+        normalized.append(_normalize_point(point))
+
+    normalized.sort(key=lambda item: item[0])
+
+    aggregated: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+    for timestamp, price, volume in normalized:
+        bucket_ts = _bucket_start(timestamp, interval)
+        bucket_key = _format_timestamp(bucket_ts)
+        bucket = aggregated.get(bucket_key)
+        if bucket is None:
+            bucket = {
+                "timestamp": bucket_key,
+                "open": price,
+                "high": price,
+                "low": price,
+                "close": price,
+            }
+            if volume is not None:
+                bucket["volume"] = volume
+            aggregated[bucket_key] = bucket
+        else:
+            bucket["close"] = price
+            bucket["high"] = max(bucket["high"], price)
+            bucket["low"] = min(bucket["low"], price)
+            if volume is not None:
+                if "volume" in bucket:
+                    bucket["volume"] += volume
+                else:
+                    bucket["volume"] = volume
+
+    return list(aggregated.values())
 
 async def _http_get_json(url: str, params: Dict[str, str]) -> Dict:
     timeout = httpx.Timeout(15.0, connect=10.0)
