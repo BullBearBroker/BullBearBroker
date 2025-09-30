@@ -1,3 +1,4 @@
+import math
 from typing import List
 
 import numpy as np
@@ -78,3 +79,41 @@ def test_volume_weighted_average_price_ignores_none_volume_entries() -> None:
 
     assert isinstance(result, float)
     assert result == pytest.approx(10.166667, rel=1e-6)
+
+
+def test_indicators_handle_short_series_and_zero_volume() -> None:
+    assert indicators.ema([1.0, 2.0], 5) is None
+    assert indicators.rsi([1.0, 1.0], period=5) is None
+    assert indicators.macd([1.0] * 10) is None
+    assert indicators.bollinger([1.0, 2.0, 3.0], period=5) is None
+    assert indicators.average_true_range([1.0], [0.5], [0.8], period=3) is None
+    assert indicators.stochastic_rsi([1.0] * 5, period=14) is None
+    assert indicators.ichimoku_cloud([1.0] * 5, [0.5] * 5, [0.8] * 5, span_b_period=10) is None
+    assert indicators.volume_weighted_average_price([1.0], [1.0], [1.0], [0.0]) is None
+
+
+def test_indicators_manage_nan_and_negative_inputs() -> None:
+    values = [0.0, -1.0, 2.0, float("nan"), -0.5, 3.0, 0.0, -2.0, 1.5, 0.0, 2.5, -1.0, 0.5, 0.0, 1.0]
+    highs = [v + 0.5 if not math.isnan(v) else v for v in values]
+    lows = [v - 0.5 if not math.isnan(v) else v for v in values]
+    closes = values
+    volumes = [1.0, 0.0, 2.0, float("nan"), 1.5, 2.0, 0.0, 3.0, 1.0, 0.0, 2.5, 1.0, 0.5, 0.0, 1.0]
+
+    ema_result = indicators.ema(values, 3)
+    assert ema_result is None or isinstance(ema_result, float)
+
+    rsi_result = indicators.rsi(values, 5)
+    assert rsi_result is None or isinstance(rsi_result, float)
+
+    bollinger_result = indicators.bollinger(values, period=5)
+    assert isinstance(bollinger_result, dict)
+    assert all(
+        (value is None) or isinstance(value, float)
+        for value in bollinger_result.values()
+    )
+
+    atr_result = indicators.average_true_range(highs, lows, closes, period=5)
+    assert atr_result is None or isinstance(atr_result, float)
+
+    vwap_result = indicators.volume_weighted_average_price(highs, lows, closes, volumes)
+    assert vwap_result is None or isinstance(vwap_result, float)
