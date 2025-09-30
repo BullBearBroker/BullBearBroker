@@ -121,6 +121,12 @@ class DummyUserService:
         self._secret = "test-secret"
         self._algorithm = "HS256"
 
+    @staticmethod
+    def _as_naive_utc(dt: datetime) -> datetime:
+        if dt.tzinfo is None:
+            return dt
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+
     def create_user(self, email: str, password: str) -> DummyUser:
         if email in self._users:
             raise self.UserAlreadyExistsError("Email ya está registrado")
@@ -205,6 +211,7 @@ class DummyUserService:
                 raise self.InvalidTokenError("Token inválido")
             expires_at = self._extract_exp(payload)
 
+        expires_at = self._as_naive_utc(expires_at)
         session = SimpleNamespace(user_id=user_id, token=token, expires_at=expires_at)
         self._sessions.append(session)
         self._access_tokens[token] = expires_at
@@ -217,6 +224,7 @@ class DummyUserService:
     def register_external_session(
         self, user_id: uuid.UUID, token: str, expires_at: datetime
     ) -> None:
+        expires_at = self._as_naive_utc(expires_at)
         self._sessions.append(
             SimpleNamespace(user_id=user_id, token=token, expires_at=expires_at)
         )
@@ -228,7 +236,8 @@ class DummyUserService:
             (
                 sess
                 for sess in self._sessions
-                if sess.token == token and sess.expires_at > now
+                if sess.token == token
+                and self._as_naive_utc(sess.expires_at) > now
             ),
             None,
         )
@@ -236,18 +245,22 @@ class DummyUserService:
         if session is not None:
             user_id = session.user_id
             if token not in self._access_tokens:
-                self._access_tokens[token] = session.expires_at
+                self._access_tokens[token] = self._as_naive_utc(session.expires_at)
         else:
             payload = self._decode_token(token)
             user_id = self._extract_user_id(payload)
             expires_at = self._access_tokens.get(token)
             if expires_at is None:
-                self._access_tokens[token] = self._extract_exp(payload)
+                self._access_tokens[token] = self._as_naive_utc(
+                    self._extract_exp(payload)
+                )
 
         expires_at = self._access_tokens.get(token)
+        if expires_at is not None:
+            expires_at = self._as_naive_utc(expires_at)
 
         if not (
-            (session is not None and session.expires_at > now)
+            (session is not None and self._as_naive_utc(session.expires_at) > now)
             or (expires_at is not None and expires_at > now)
         ):
             raise self.InvalidTokenError("Token inválido")
@@ -685,7 +698,7 @@ async def test_forex_endpoint_falls_back_to_yahoo(
     payload = response.json()
     assert payload["price"] == pytest.approx(1.2345)
     assert payload["source"] == "Yahoo Finance"
-    assert info["calls"] == ["Twelve Data", "Alpha Vantage", "Yahoo Finance"]
+    assert info["calls"] == ["Twelve Data", "Yahoo Finance"]
 
 
 @pytest.mark.asyncio

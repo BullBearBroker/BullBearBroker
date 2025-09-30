@@ -133,7 +133,7 @@ async def login(credentials: UserLogin, db: Session = Depends(get_db)) -> TokenP
     user_service.store_refresh_token(user.id, refresh_token)
 
     access_token = create_access_token(sub=sub, extra={"jti": str(uuid4())})
-    access_expires = datetime.utcnow() + timedelta(minutes=15)
+    access_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
     user_service.register_external_session(user.id, access_token, access_expires)
 
     return TokenPair(
@@ -164,13 +164,21 @@ def refresh_token(req: RefreshRequest, db: Session = Depends(get_db)) -> TokenPa
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
 
         db.delete(db_token)
-        new_refresh = create_refresh_token(sub=sub, jti=str(uuid4()))
-        db.add(RefreshToken(user_id=sub_uuid, token=new_refresh))
         db.commit()
+
+        new_refresh = create_refresh_token(sub=sub, jti=str(uuid4()))
         refresh_payload = decode_refresh(new_refresh)
         refresh_expires = datetime.fromtimestamp(refresh_payload["exp"], tz=timezone.utc)
+        db.add(
+            RefreshToken(
+                user_id=sub_uuid,
+                token=new_refresh,
+                expires_at=refresh_expires,
+            )
+        )
+        db.commit()
         access_token = create_access_token(sub=sub)
-        access_expires = datetime.utcnow() + timedelta(minutes=15)
+        access_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
         user_service.register_external_session(sub_uuid, access_token, access_expires)
         return TokenPair(
             access_token=access_token,
@@ -185,7 +193,7 @@ def refresh_token(req: RefreshRequest, db: Session = Depends(get_db)) -> TokenPa
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
     access_token = create_access_token(sub=str(user.id), extra={"jti": str(uuid4())})
-    access_expires = datetime.utcnow() + timedelta(minutes=15)
+    access_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
     user_service.register_external_session(user.id, access_token, access_expires)
     return TokenPair(
         access_token=access_token,
