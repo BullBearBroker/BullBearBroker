@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import json
 import os
 from contextlib import asynccontextmanager
@@ -37,6 +38,7 @@ async def lifespan(app: FastAPI):
     # 🔹 Startup
     redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
     redis_client = None
+    db_engine = None
     try:
         redis_client = await redis.from_url(
             redis_url,
@@ -55,11 +57,12 @@ async def lifespan(app: FastAPI):
         logger.warning("fastapi_limiter_unavailable", error=str(exc))
 
     try:
-        from backend.database import Base, engine
+        from backend.database import Base, engine as imported_engine
         from backend.services.user_service import user_service
 
+        db_engine = imported_engine
         if ENV == "local":
-            Base.metadata.create_all(bind=engine)
+            Base.metadata.create_all(bind=db_engine)
             logger.info("database_ready")
         else:
             logger.info("database_migrations_required", env=ENV)
@@ -84,9 +87,19 @@ async def lifespan(app: FastAPI):
     try:
         if "redis_client" in locals() and redis_client:
             await redis_client.aclose()
+            FastAPILimiter.redis = None
             logger.info("redis_closed")
     except Exception as exc:
         logger.warning("redis_close_error", error=str(exc))
+
+    try:
+        if db_engine is not None:
+            dispose_result = db_engine.dispose()
+            if inspect.isawaitable(dispose_result):
+                await dispose_result
+            logger.info("engine_disposed")
+    except Exception as exc:
+        logger.warning("engine_dispose_error", error=str(exc))
 
 
 # ========================
