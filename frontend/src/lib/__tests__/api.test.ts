@@ -76,6 +76,48 @@ describe("request", () => {
 
     await expect(request("/demo", { method: "GET" })).rejects.toThrow("Fallo interno");
   });
+
+  it("propaga un error cuando el JSON no es válido", async () => {
+    const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: jest.fn().mockResolvedValue("no-json"),
+      headers: new Headers(),
+    });
+
+    await expect(request("/demo", { method: "GET" })).rejects.toThrow(
+      "Invalid JSON response"
+    );
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
+  it("usa el statusText cuando el cuerpo de error no se puede parsear", async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: jest.fn().mockRejectedValue(new Error("invalid")),
+      statusText: "Bad Request",
+      text: jest.fn(),
+      headers: new Headers(),
+    });
+
+    await expect(request("/demo", { method: "GET" })).rejects.toThrow("Bad Request");
+  });
+
+  it("prioriza el campo message cuando está disponible", async () => {
+    (global.fetch as jest.Mock).mockResolvedValue({
+      ok: false,
+      status: 422,
+      json: jest.fn().mockResolvedValue({ message: "Mensaje amigable" }),
+      statusText: "Unprocessable Entity",
+      text: jest.fn(),
+      headers: new Headers(),
+    });
+
+    await expect(request("/demo", { method: "GET" })).rejects.toThrow("Mensaje amigable");
+  });
 });
 
 describe("API wrappers", () => {
@@ -103,24 +145,31 @@ describe("API wrappers", () => {
 
   it("llama a los endpoints de autenticación con los datos correctos", async () => {
     (global.fetch as jest.Mock)
+      .mockResolvedValueOnce(createResponse({ access_token: "r", refresh_token: "s" }))
       .mockResolvedValueOnce(createResponse({ access_token: "a", refresh_token: "b" }))
       .mockResolvedValueOnce(createResponse({ access_token: "c", refresh_token: "d" }))
       .mockResolvedValueOnce(createResponse({ id: "user" }));
 
+    await api.register({ email: "user@example.com", password: "secret", name: "User" });
     await api.login({ email: "user@example.com", password: "secret" });
     await api.refreshToken("refresh-value");
     await api.getProfile("token-123");
 
     const calls = (global.fetch as jest.Mock).mock.calls;
-    expect(calls[0][0]).toBe(`${API_BASE_URL}/api/auth/login`);
-    expect(JSON.parse(calls[0][1].body)).toEqual({
+    expect(calls[0][0]).toBe(`${API_BASE_URL}/api/auth/register`);
+    expect(JSON.parse(calls[0][1].body)).toMatchObject({
+      email: "user@example.com",
+      name: "User",
+    });
+    expect(calls[1][0]).toBe(`${API_BASE_URL}/api/auth/login`);
+    expect(JSON.parse(calls[1][1].body)).toEqual({
       email: "user@example.com",
       password: "secret",
     });
-    expect(calls[1][0]).toBe(`${API_BASE_URL}/api/auth/refresh`);
-    expect(JSON.parse(calls[1][1].body)).toEqual({ refresh_token: "refresh-value" });
-    expect(calls[2][0]).toBe(`${API_BASE_URL}/api/auth/me`);
-    expect((calls[2][1].headers as Headers).get("Authorization")).toBe(
+    expect(calls[2][0]).toBe(`${API_BASE_URL}/api/auth/refresh`);
+    expect(JSON.parse(calls[2][1].body)).toEqual({ refresh_token: "refresh-value" });
+    expect(calls[3][0]).toBe(`${API_BASE_URL}/api/auth/me`);
+    expect((calls[3][1].headers as Headers).get("Authorization")).toBe(
       "Bearer token-123"
     );
   });
@@ -246,5 +295,21 @@ describe("API wrappers", () => {
     );
     expect(result.messages[result.messages.length - 1].content).toBe("Ok");
     warnSpy.mockRestore();
+  });
+
+  it("lanza error cuando el tipo de mercado no es soportado", async () => {
+    await expect(api.getMarketQuote("commodities" as any, "OIL")).rejects.toThrow(
+      "Tipo de mercado no soportado: commodities"
+    );
+  });
+
+  it("avisa cuando no hay cotizaciones disponibles", async () => {
+    (global.fetch as jest.Mock).mockResolvedValueOnce(
+      createResponse({ quotes: [] }, 200)
+    );
+
+    await expect(api.getMarketQuote("crypto", "btc", "token")).rejects.toThrow(
+      "No se encontró información para BTC"
+    );
   });
 });

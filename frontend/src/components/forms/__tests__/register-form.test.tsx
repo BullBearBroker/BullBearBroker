@@ -1,5 +1,5 @@
 // [Codex] nuevo - Tests ajustados a placeholders y flujo de useAuth
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { customRender, screen, fireEvent, waitFor } from "@/tests/utils/renderWithProviders";
 import RegisterForm from "../register-form";
 
 // Mock de useAuth
@@ -39,7 +39,7 @@ describe("RegisterForm", () => {
   });
 
   it("valida campos obligatorios", async () => {
-    render(<RegisterForm />);
+    customRender(<RegisterForm />);
 
     const submit = screen.getByRole("button", { name: /registrarse/i });
     const form = submit.closest("form");
@@ -53,7 +53,7 @@ describe("RegisterForm", () => {
   });
 
   it("muestra error cuando el correo tiene formato inválido", async () => {
-    render(<RegisterForm />);
+    customRender(<RegisterForm />);
 
     fireEvent.input(screen.getByPlaceholderText(/nombre/i), {
       target: { value: "Jane" },
@@ -82,7 +82,7 @@ describe("RegisterForm", () => {
   });
 
   it("muestra error cuando las contraseñas no coinciden", () => {
-    render(<RegisterForm />);
+    customRender(<RegisterForm />);
 
     fireEvent.input(screen.getByPlaceholderText(/nombre/i), {
       target: { value: "Jane" },
@@ -108,7 +108,7 @@ describe("RegisterForm", () => {
   });
 
   it("envía los datos válidos", async () => {
-    render(<RegisterForm />);
+    customRender(<RegisterForm />);
 
     fireEvent.input(screen.getByPlaceholderText(/nombre/i), {
       target: { value: "Jane" },
@@ -149,7 +149,7 @@ describe("RegisterForm", () => {
       new Error("Duplicado")
     );
 
-    render(<RegisterForm />);
+    customRender(<RegisterForm />);
 
     fireEvent.input(screen.getByPlaceholderText(/nombre/i), {
       target: { value: "Jane" },

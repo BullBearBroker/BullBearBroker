@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, customRender, screen } from "@/tests/utils/renderWithProviders";
 import { axe } from "jest-axe";
 
 import { Navbar } from "../navbar";
@@ -17,7 +17,7 @@ describe("Navbar", () => {
   it("muestra enlace de ingreso cuando no hay sesión", async () => {
     mockUseAuth.mockReturnValue({ user: null, loading: false, logout: jest.fn() });
 
-    render(<Navbar />);
+    customRender(<Navbar />);
 
     expect(screen.getByText(/bullbearbroker/i)).toBeInTheDocument();
     const loginLink = screen.getByRole("link", { name: /ingresar/i });
@@ -32,7 +32,7 @@ describe("Navbar", () => {
       logout,
     });
 
-    render(<Navbar />);
+    customRender(<Navbar />);
 
     expect(screen.getByText(/jane/i)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /cerrar sesión/i }));
@@ -42,7 +42,7 @@ describe("Navbar", () => {
   it("muestra estado de carga mientras se verifica la sesión", () => {
     mockUseAuth.mockReturnValue({ user: null, loading: true, logout: jest.fn() });
 
-    render(<Navbar />);
+    customRender(<Navbar />);
 
     expect(screen.getByText(/verificando sesión/i)).toBeInTheDocument();
   });
@@ -50,7 +50,7 @@ describe("Navbar", () => {
   it("cumple reglas básicas de accesibilidad", async () => {
     mockUseAuth.mockReturnValue({ user: null, loading: false, logout: jest.fn() });
 
-    const { container } = render(<Navbar />);
+    const { container } = customRender(<Navbar />);
     expect(await axe(container)).toHaveNoViolations();
   });
 });

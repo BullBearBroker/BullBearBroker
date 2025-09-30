@@ -1,4 +1,4 @@
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@/tests/utils/renderWithProviders";
 import { SWRConfig } from "swr";
 
 import { useNewsFeed } from "../useNewsFeed";

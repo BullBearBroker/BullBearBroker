@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { customRender, screen } from "@/tests/utils/renderWithProviders";
 import { axe } from "jest-axe";
 
 jest.mock("../navbar", () => ({
@@ -13,7 +13,7 @@ import { AppChrome } from "../app-chrome";
 
 describe("AppChrome", () => {
   it("incluye navbar, contenido y footer", () => {
-    render(
+    customRender(
       <AppChrome>
         <p>Contenido principal</p>
       </AppChrome>
@@ -25,7 +25,7 @@ describe("AppChrome", () => {
   });
 
   it("cumple reglas básicas de accesibilidad", async () => {
-    const { container } = render(
+    const { container } = customRender(
       <AppChrome>
         <p>Contenido a11y</p>
       </AppChrome>
