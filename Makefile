@@ -1,41 +1,42 @@
 COMPOSE ?= docker compose
-ENV_FILE ?= .env.local
 
-.PHONY: up up-local up-supabase down down-v logs build clean test up-staging down-staging migrate
+.PHONY: up up-local up-supabase up-staging down down-v down-staging clean logs migrate test test-backend test-frontend check-all
 
-up:
-	ENV_FILE=$(ENV_FILE) $(COMPOSE) up -d
+up: up-local
 
 up-local:
-	ENV_FILE=.env.local $(COMPOSE) up -d
+	$(COMPOSE) --env-file .env.local up -d --build
 
 up-supabase:
-	ENV_FILE=.env.supabase $(COMPOSE) up -d
+	$(COMPOSE) --env-file .env.supabase up -d --build
 
 up-staging:
-	APP_ENV=staging ENV_FILE=$(ENV_FILE) $(COMPOSE) --profile staging up -d
-
-build:
-	ENV_FILE=$(ENV_FILE) $(COMPOSE) up --build
+	APP_ENV=staging $(COMPOSE) --env-file .env.local --profile staging up -d --build
 
 down:
-	ENV_FILE=$(ENV_FILE) $(COMPOSE) down
+	$(COMPOSE) down
 
 down-v:
-	ENV_FILE=$(ENV_FILE) $(COMPOSE) down -v
+	$(COMPOSE) down -v
 
 down-staging:
-	APP_ENV=staging ENV_FILE=$(ENV_FILE) $(COMPOSE) --profile staging down
+	APP_ENV=staging $(COMPOSE) --profile staging down
 
 clean:
-	ENV_FILE=$(ENV_FILE) $(COMPOSE) down -v --remove-orphans
+	$(COMPOSE) down -v --remove-orphans
 
 logs:
-	ENV_FILE=$(ENV_FILE) $(COMPOSE) logs -f
+	$(COMPOSE) logs -f --tail=200
 
 migrate:
-	ENV_FILE=$(ENV_FILE) bash -c 'set -a; if [ -f "$$ENV_FILE" ]; then . "$$ENV_FILE"; fi; alembic upgrade head'
+	$(COMPOSE) exec backend alembic upgrade head
 
-test:
-	python -m pytest backend/tests
-	npm --prefix frontend test -- --watch=false
+test-backend:
+	$(COMPOSE) exec backend pytest backend/tests -q
+
+test-frontend:
+	NEXT_PUBLIC_API_URL=http://localhost:8000 npm --prefix frontend run test:dev
+
+test: test-backend test-frontend
+
+check-all: migrate test-backend test-frontend

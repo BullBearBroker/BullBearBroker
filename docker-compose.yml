@@ -1,5 +1,3 @@
-version: "3.9"
-
 x-backend-base: &backend-base
   build:
     context: .
@@ -26,6 +24,7 @@ x-frontend-base: &frontend-base
 
 services:
   db:
+    container_name: bullbear-db
     profiles: ["default", "staging"]
     image: postgres:15-alpine
     environment:
@@ -43,6 +42,7 @@ services:
       retries: 5
 
   redis:
+    container_name: bullbear-redis
     profiles: ["default", "staging"]
     image: redis:7-alpine
     ports:
@@ -54,6 +54,7 @@ services:
       retries: 5
 
   backend:
+    container_name: bullbear-backend
     <<: *backend-base
     profiles: ["default"]
     command: uvicorn main:app --reload --host 0.0.0.0 --port 8000
@@ -63,6 +64,7 @@ services:
       - ./backend:/app
 
   backend-staging:
+    container_name: bullbear-backend-staging
     <<: *backend-base
     profiles: ["staging"]
     command: uvicorn main:app --host 0.0.0.0 --port 8000
@@ -70,6 +72,7 @@ services:
       - "8000:8000"
 
   frontend:
+    container_name: bullbear-frontend
     <<: *frontend-base
     profiles: ["default"]
     command: npm run dev -- --hostname 0.0.0.0 --port 3000
@@ -82,6 +85,7 @@ services:
       - "3000:3000"
 
   frontend-staging:
+    container_name: bullbear-frontend-staging
     <<: *frontend-base
     profiles: ["staging"]
     command: npm start
