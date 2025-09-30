@@ -66,6 +66,19 @@ export interface Alert {
   [key: string]: unknown;
 }
 
+export interface PortfolioItem {
+  id: string;
+  symbol: string;
+  amount: number;
+  price?: number | null;
+  value?: number | null;
+}
+
+export interface PortfolioSummary {
+  items: PortfolioItem[];
+  total_value: number;
+}
+
 export interface NewsItem {
   id: string | number;
   title: string;
@@ -351,6 +364,38 @@ export function suggestAlertCondition(
     {
       method: "POST",
       body: JSON.stringify(payload),
+    },
+    token
+  );
+}
+
+/* ===========
+   PORTFOLIO
+   =========== */
+
+export function listPortfolio(token: string) {
+  return request<PortfolioSummary>("/api/portfolio", { method: "GET" }, token);
+}
+
+export function createPortfolioItem(
+  token: string,
+  payload: { symbol: string; amount: number }
+) {
+  return request<PortfolioItem>(
+    "/api/portfolio",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    token
+  );
+}
+
+export function deletePortfolioItem(token: string, id: string | number) {
+  return request<void>(
+    `/api/portfolio/${id}`,
+    {
+      method: "DELETE",
     },
     token
   );
