@@ -474,3 +474,52 @@ async def test_delete_all_alerts(client: AsyncClient, dummy_user_service: DummyU
     list_response = await client.get("/api/alerts", headers=_auth_header(token))
     assert list_response.status_code == 200
     assert list_response.json() == []
+
+
+@pytest.mark.asyncio
+async def test_create_alert_with_invalid_payload_returns_422(
+    client: AsyncClient, dummy_user_service: DummyUserService
+) -> None:
+    email = f"user-{uuid.uuid4()}@example.com"
+    token = await _register_and_login(dummy_user_service, email, "secret123")
+
+    invalid_payload = {
+        "title": "",
+        "asset": "btc",
+        "value": "not-a-number",
+        "condition": ">",
+        "active": True,
+    }
+
+    response = await client.post(
+        "/api/alerts", json=invalid_payload, headers=_auth_header(token)
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_delete_nonexistent_alert_returns_404(
+    client: AsyncClient, dummy_user_service: DummyUserService
+) -> None:
+    email = f"user-{uuid.uuid4()}@example.com"
+    token = await _register_and_login(dummy_user_service, email, "secret123")
+
+    response = await client.delete(
+        f"/api/alerts/{uuid.uuid4()}", headers=_auth_header(token)
+    )
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_list_alerts_empty_returns_empty_list(
+    client: AsyncClient, dummy_user_service: DummyUserService
+) -> None:
+    email = f"user-{uuid.uuid4()}@example.com"
+    token = await _register_and_login(dummy_user_service, email, "secret123")
+
+    response = await client.get("/api/alerts", headers=_auth_header(token))
+
+    assert response.status_code == 200
+    assert response.json() == []

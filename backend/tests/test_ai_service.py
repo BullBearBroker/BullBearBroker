@@ -1,8 +1,7 @@
 from types import MethodType
 
-from types import MethodType
-
 import pytest
+import asyncio
 
 from backend.services import ai_service as ai_service_module
 from backend.services.ai_service import AIService
@@ -177,3 +176,94 @@ async def test_process_message_uses_local_fallback(service, monkeypatch):
     assert result.text == 'respuesta local'  # [Codex] cambiado
     assert result.provider == 'local'
     assert sleep_calls == [1, 2, 1, 2, 1, 2]
+
+
+@pytest.mark.anyio
+async def test_process_message_empty_prompt_uses_local_fallback(service, monkeypatch):
+    async def mistral_failure(self, message, context):
+        raise ValueError('mensaje vacío')
+
+    async def huggingface_failure(self, message, context):
+        raise ValueError('mensaje vacío')
+
+    async def ollama_failure(self, message, context):
+        raise ValueError('mensaje vacío')
+
+    async def fake_sleep(delay):
+        pass
+
+    async def local_response(self, message):
+        return 'respuesta predeterminada'
+
+    monkeypatch.setattr(AIService, 'process_with_mistral', mistral_failure)
+    monkeypatch.setattr(AIService, '_call_huggingface', huggingface_failure)
+    monkeypatch.setattr(AIService, '_call_ollama', ollama_failure)
+    monkeypatch.setattr(AIService, 'generate_response', local_response)
+    monkeypatch.setattr(ai_service_module.asyncio, 'sleep', fake_sleep)
+
+    result = await service.process_message('   ')
+
+    assert result.provider == 'local'
+    assert result.text == 'respuesta predeterminada'
+
+
+@pytest.mark.anyio
+async def test_process_message_timeout_in_primary_provider(service, monkeypatch):
+    attempts = {'count': 0}
+
+    async def mistral_timeout(self, message, context):
+        attempts['count'] += 1
+        raise asyncio.TimeoutError('timeout')
+
+    hf_calls = {'count': 0}
+
+    async def huggingface_success(self, message, context):
+        hf_calls['count'] += 1
+        return 'respuesta alternativa'
+
+    async def ollama_not_called(self, message, context):
+        raise AssertionError('Ollama no debería ejecutarse en este escenario')
+
+    async def fake_sleep(delay):
+        pass
+
+    monkeypatch.setattr(AIService, 'process_with_mistral', mistral_timeout)
+    monkeypatch.setattr(AIService, '_call_huggingface', huggingface_success)
+    monkeypatch.setattr(AIService, '_call_ollama', ollama_not_called)
+    monkeypatch.setattr(ai_service_module.asyncio, 'sleep', fake_sleep)
+
+    result = await service.process_message('Analiza el mercado del oro')
+
+    assert attempts['count'] == 3
+    assert hf_calls['count'] == 1
+    assert result.provider == 'huggingface'
+    assert result.text == 'respuesta alternativa'
+
+
+@pytest.mark.anyio
+async def test_process_message_invalid_model_response(service, monkeypatch):
+    async def fake_generate(message, context):
+        return 'Lo siento, estoy teniendo dificultades para responder'
+
+    hf_calls = {'count': 0}
+
+    async def huggingface_success(self, message, context):
+        hf_calls['count'] += 1
+        return 'respuesta huggingface válida'
+
+    async def ollama_not_called(self, message, context):
+        raise AssertionError('Ollama no debería ser llamado')
+
+    async def fake_sleep(delay):
+        pass
+
+    monkeypatch.setattr(ai_service_module.mistral_service, 'generate_financial_response', fake_generate)
+    monkeypatch.setattr(AIService, '_call_huggingface', huggingface_success)
+    monkeypatch.setattr(AIService, '_call_ollama', ollama_not_called)
+    monkeypatch.setattr(ai_service_module.asyncio, 'sleep', fake_sleep)
+
+    result = await service.process_message('Analiza BTC')
+
+    assert hf_calls['count'] == 1
+    assert result.provider == 'huggingface'
+    assert result.text == 'respuesta huggingface válida'
