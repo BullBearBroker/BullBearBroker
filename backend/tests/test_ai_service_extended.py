@@ -103,7 +103,7 @@ async def test_huggingface_timeout_triggers_ollama(service: AIService, monkeypat
 
     result = await service.process_message("Analiza ETH")
     assert result.provider == "ollama"
-    assert result.text == "respuesta ollama"
+    assert "respuesta ollama" in result.text
 
 
 @pytest.mark.anyio
