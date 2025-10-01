@@ -43,6 +43,12 @@ async def test_suggest_alert_condition_rejects_incomplete_payload(
         await service.suggest_alert_condition(" ", interval="1h")
 
 
+@pytest.mark.anyio
+async def test_suggest_alert_condition_requires_symbol(service: AlertService) -> None:
+    with pytest.raises(ValueError):
+        await service.suggest_alert_condition("", interval="4h")
+
+
 def test_fetch_alert_persists_valid_records(service: AlertService, in_memory_factory) -> None:
     user_id = uuid4()
     with in_memory_factory() as session:
@@ -355,6 +361,19 @@ def test_should_trigger_equal_condition(service: AlertService) -> None:
     assert service._should_trigger(alert, 100.0000004)
     assert service._should_trigger(alert, 99.9999997)
     assert service._should_trigger(alert, 100.01) is False
+
+
+def test_should_trigger_unknown_condition_returns_false(service: AlertService) -> None:
+    alert = Alert(
+        user_id=uuid4(),
+        title="Unknown",
+        asset="ETHUSDT",
+        condition="unsupported",
+        value=2000.0,
+        active=True,
+    )
+
+    assert service._should_trigger(alert, 2100.0) is False
 
 
 @pytest.mark.anyio

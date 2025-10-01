@@ -1,4 +1,3 @@
-import asyncio
 from typing import Any, Dict
 from unittest.mock import AsyncMock
 
@@ -6,6 +5,7 @@ import pytest
 
 from backend.services.stock_service import StockService
 from backend.utils.config import Config
+from backend.services import stock_service as stock_service_module
 
 
 class DummyCache:
@@ -88,3 +88,26 @@ async def test_get_price_returns_none_when_all_fail(monkeypatch):
     assert failure_mock.await_count == 3
     sources = [call.args[3] for call in failure_mock.await_args_list]
     assert sources == [api["name"] for api in service.apis]
+
+
+@pytest.mark.asyncio
+async def test_call_with_retries_exhausts_attempts(monkeypatch):
+    service = StockService(cache_client=DummyCache(), session_factory=lambda timeout=None: DummySession())
+
+    attempt_counter = {"count": 0}
+
+    async def failing_handler(_session, _symbol):
+        attempt_counter["count"] += 1
+        raise KeyError("missing Global Quote")
+
+    monkeypatch.setattr(stock_service_module.asyncio, "sleep", AsyncMock(return_value=None))
+
+    result = await service._call_with_retries(
+        failing_handler,
+        DummySession(),
+        "IBM",
+        "Alpha Vantage",
+    )
+
+    assert result is None
+    assert attempt_counter["count"] == service.RETRY_ATTEMPTS
