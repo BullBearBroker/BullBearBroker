@@ -11,10 +11,13 @@ import {
   deletePortfolioItem,
   listPortfolio,
 } from "@/lib/api";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
+import { EmptyState } from "@/components/common/EmptyState";
+import { Skeleton } from "@/components/common/Skeleton";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -25,7 +28,7 @@ interface PortfolioPanelProps {
   token?: string;
 }
 
-export function PortfolioPanel({ token }: PortfolioPanelProps) {
+function PortfolioPanelContent({ token }: PortfolioPanelProps) {
   const { data, error, mutate, isLoading } = useSWR<PortfolioSummary>(
     token ? ["portfolio", token] : null,
     () => listPortfolio(token!)
@@ -140,18 +143,23 @@ export function PortfolioPanel({ token }: PortfolioPanelProps) {
 
         <div className="space-y-3">
           {isLoading && (
-            <p className="text-sm text-muted-foreground">Cargando portafolio...</p>
+            <div className="space-y-2" data-testid="portfolio-loading">
+              {[0, 1, 2].map((index) => (
+                <Skeleton key={index} className="h-16 w-full" />
+              ))}
+            </div>
           )}
           {error && (
-            <p className="text-sm text-destructive">
-              Error al cargar el portafolio:{" "}
-              {error instanceof Error ? error.message : "Desconocido"}
+            <p className="text-sm text-destructive" role="alert">
+              Error al cargar el portafolio: {error instanceof Error ? error.message : "Desconocido"}
             </p>
           )}
           {!isLoading && !error && (!data || data.items.length === 0) && (
-            <p className="text-sm text-muted-foreground">
-              Todavía no tienes activos registrados. Agrega uno para ver su valoración.
-            </p>
+            <EmptyState
+              title="Tu portafolio está vacío"
+              description="Agrega un activo para visualizar su valoración estimada."
+              icon={<PlusCircle className="h-5 w-5" />}
+            />
           )}
 
           {data?.items.map((item) => {
@@ -195,5 +203,32 @@ export function PortfolioPanel({ token }: PortfolioPanelProps) {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function PortfolioPanelFallback() {
+  return (
+    <Card className="flex flex-col">
+      <CardHeader className="space-y-1">
+        <CardTitle className="text-lg font-medium">Portafolio</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          No se pudo cargar esta sección. Intenta recargar la página.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <EmptyState
+          title="Ocurrió un problema al mostrar el portafolio"
+          description="Actualiza la página o intenta nuevamente más tarde."
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
+export function PortfolioPanel(props: PortfolioPanelProps) {
+  return (
+    <ErrorBoundary fallback={<PortfolioPanelFallback />} resetKeys={[props.token]}>
+      <PortfolioPanelContent {...props} />
+    </ErrorBoundary>
   );
 }

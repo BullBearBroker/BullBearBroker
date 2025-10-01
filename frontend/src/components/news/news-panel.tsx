@@ -5,6 +5,9 @@ import { Newspaper } from "lucide-react";
 import Link from "next/link";
 
 import { listNews, NewsItem } from "@/lib/api";
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
+import { EmptyState } from "@/components/common/EmptyState";
+import { Skeleton } from "@/components/common/Skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -12,7 +15,7 @@ interface NewsPanelProps {
   token?: string;
 }
 
-export function NewsPanel({ token }: NewsPanelProps) {
+function NewsPanelContent({ token }: NewsPanelProps) {
   const { data, error, isLoading } = useSWR<NewsItem[]>(
     ["news", token],
     () => listNews(token)
@@ -36,9 +39,30 @@ export function NewsPanel({ token }: NewsPanelProps) {
         </Badge>
       </CardHeader>
       <CardContent className="space-y-3">
-        {isLoading && <p className="text-sm text-muted-foreground">Cargando noticias...</p>}
-        {(error || (!isLoading && !sortedNews?.length)) && (
-          <p className="text-sm text-muted-foreground">No hay noticias disponibles.</p>
+        {isLoading && (
+          <div className="space-y-2" data-testid="news-loading">
+            {[0, 1, 2].map((index) => (
+              <div key={index} className="space-y-2 rounded-lg border p-3">
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-3 w-full" />
+                <Skeleton className="h-3 w-1/2" />
+              </div>
+            ))}
+          </div>
+        )}
+        {error && (
+          <EmptyState
+            title="No se pudieron cargar las noticias"
+            description={error instanceof Error ? error.message : "Intenta nuevamente más tarde."}
+            icon={<Newspaper className="h-5 w-5" />}
+          />
+        )}
+        {!error && !isLoading && (!sortedNews || sortedNews.length === 0) && (
+          <EmptyState
+            title="No hay noticias disponibles"
+            description="Vuelve más tarde para descubrir las últimas novedades del mercado."
+            icon={<Newspaper className="h-5 w-5" />}
+          />
         )}
         {sortedNews?.slice(0, 6).map((item) => (
           <article key={item.id} className="space-y-1 rounded-lg border p-3">
@@ -62,5 +86,33 @@ export function NewsPanel({ token }: NewsPanelProps) {
         ))}
       </CardContent>
     </Card>
+  );
+}
+
+function NewsPanelFallback() {
+  return (
+    <Card className="flex flex-col">
+      <CardHeader className="space-y-1">
+        <CardTitle className="text-lg font-medium">Noticias</CardTitle>
+        <p className="text-sm text-muted-foreground">
+          No se pudo cargar esta sección. Intenta nuevamente en unos instantes.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <EmptyState
+          title="Ups, algo salió mal"
+          description="Actualiza la página o vuelve más tarde para ver las noticias."
+          icon={<Newspaper className="h-6 w-6" />}
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
+export function NewsPanel(props: NewsPanelProps) {
+  return (
+    <ErrorBoundary fallback={<NewsPanelFallback />} resetKeys={[props.token]}>
+      <NewsPanelContent {...props} />
+    </ErrorBoundary>
   );
 }
