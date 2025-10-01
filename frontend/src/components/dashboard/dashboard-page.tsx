@@ -17,8 +17,9 @@ import { Badge } from "@/components/ui/badge";
 import { getIndicators, sendChatMessage } from "@/lib/api"; // [Codex] nuevo
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useHistoricalData } from "@/hooks/useHistoricalData"; // [Codex] nuevo
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 
-export function DashboardPage() {
+function DashboardPageContent() {
   const { user, loading, token, logout } = useAuth();
   const router = useRouter();
 
@@ -243,5 +244,26 @@ export function DashboardPage() {
         </section>
       </main>
     </div>
+  );
+}
+
+function DashboardPageFallback() {
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-background p-6">
+      <div className="w-full max-w-md rounded-lg border border-destructive/40 bg-destructive/10 p-6 text-center">
+        <h2 className="text-lg font-semibold text-destructive">No se pudo cargar el dashboard</h2>
+        <p className="mt-2 text-sm text-muted-foreground">
+          Actualiza la página o intenta iniciar sesión nuevamente.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export function DashboardPage() {
+  return (
+    <ErrorBoundary fallback={<DashboardPageFallback />}>
+      <DashboardPageContent />
+    </ErrorBoundary>
   );
 }

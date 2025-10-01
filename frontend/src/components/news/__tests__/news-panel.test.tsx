@@ -30,7 +30,8 @@ describe("NewsPanel", () => {
 
     customRender(<NewsPanel token="token" />);
 
-    expect(screen.getByText("Cargando noticias...")).toBeInTheDocument();
+    expect(screen.getByTestId("news-loading")).toBeInTheDocument();
+    expect(screen.getAllByTestId("skeleton")).toHaveLength(9);
   });
 
   it("muestra las noticias recibidas ordenadas", async () => {
@@ -77,9 +78,8 @@ describe("NewsPanel", () => {
 
     customRender(<NewsPanel token="token" />);
 
-    expect(
-      screen.getByText(/no hay noticias disponibles/i)
-    ).toBeInTheDocument();
+    const emptyState = screen.getByTestId("empty-state");
+    expect(within(emptyState).getByText(/no hay noticias disponibles/i)).toBeInTheDocument();
   });
 
   it("muestra estado de error ante fallas en el fetch", () => {
@@ -91,9 +91,9 @@ describe("NewsPanel", () => {
 
     customRender(<NewsPanel token="token" />);
 
-    expect(
-      screen.getByText(/no hay noticias disponibles/i)
-    ).toBeInTheDocument();
+    const emptyState = screen.getByTestId("empty-state");
+    expect(within(emptyState).getByText(/no se pudieron cargar las noticias/i)).toBeInTheDocument();
+    expect(within(emptyState).getByText(/fallo en noticias/i)).toBeInTheDocument();
   });
 
   it("usa texto por defecto cuando faltan la fuente y la fecha", () => {

@@ -1,4 +1,4 @@
-import { act, customRender, screen, waitFor } from "@/tests/utils/renderWithProviders";
+import { act, customRender, screen, waitFor, within } from "@/tests/utils/renderWithProviders";
 import userEvent from "@testing-library/user-event";
 import useSWR from "swr";
 
@@ -91,10 +91,25 @@ describe("PortfolioPanel", () => {
       } as any);
 
     const { rerender } = customRender(<PortfolioPanel token="demo" />);
-    expect(screen.getByText(/Cargando portafolio/i)).toBeInTheDocument();
+    expect(screen.getByTestId("portfolio-loading")).toBeInTheDocument();
+    expect(screen.getAllByTestId("skeleton")).toHaveLength(3);
 
     rerender(<PortfolioPanel token="demo" />);
     expect(screen.getByText(/Error al cargar el portafolio/i)).toBeInTheDocument();
+  });
+
+  it("muestra un estado vacío cuando no existen elementos", () => {
+    mockedUseSWR.mockReturnValue({
+      data: { total_value: 0, items: [] },
+      error: undefined,
+      mutate: jest.fn(),
+      isLoading: false,
+    } as any);
+
+    customRender(<PortfolioPanel token="demo" />);
+
+    const emptyState = screen.getByTestId("empty-state");
+    expect(within(emptyState).getByText(/tu portafolio está vacío/i)).toBeInTheDocument();
   });
 
   it("permite agregar un nuevo activo", async () => {
