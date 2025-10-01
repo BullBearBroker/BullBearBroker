@@ -134,7 +134,9 @@ describe("PortfolioPanel", () => {
       });
     });
 
-    expect(mutate).toHaveBeenCalled();
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalled();
+    });
   });
 
   it("muestra un mensaje de error cuando crear el activo falla", async () => {
@@ -211,7 +213,10 @@ describe("PortfolioPanel", () => {
     await waitFor(() => {
       expect(mockedDeletePortfolioItem).toHaveBeenCalledWith("secure", "1");
     });
-    expect(mutate).toHaveBeenCalled();
+
+    await waitFor(() => {
+      expect(mutate).toHaveBeenCalled();
+    });
   });
 
   it("muestra un mensaje cuando faltan precios para un activo", () => {
