@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { SWRConfig } from "swr";
 
@@ -19,6 +19,12 @@ const { useRouter } = jest.requireMock("next/navigation");
 
 const mockedUseAuth = useAuth as jest.Mock;
 const mockedUseRouter = useRouter as jest.Mock;
+
+const tick = async () => {
+  await act(async () => {
+    await Promise.resolve();
+  });
+};
 
 function renderPortfolioPage() {
   mockedUseRouter.mockReturnValue({ replace: jest.fn() });
@@ -73,19 +79,40 @@ describe("PortfolioPage", () => {
 
     expect(await screen.findByText("BTCUSDT")).toBeInTheDocument();
 
-    await user.type(
-      screen.getByPlaceholderText(/Activo/),
-      "aapl"
-    );
-    await user.type(screen.getByPlaceholderText(/Cantidad/), "3");
-    await user.click(screen.getByRole("button", { name: /Agregar activo/i }));
+    const symbolInput = await screen.findByPlaceholderText(/Activo/);
+    const amountInput = await screen.findByPlaceholderText(/Cantidad/);
+    const submitButton = await screen.findByRole("button", {
+      name: /Agregar activo/i,
+    });
 
-    expect(await screen.findByText("AAPL")).toBeInTheDocument();
+    await act(async () => {
+      await user.type(symbolInput, "aapl");
+      await user.type(amountInput, "3");
+    });
+
+    await act(async () => {
+      await user.click(submitButton);
+    });
+
+    await tick();
+
+    await waitFor(() => {
+      expect(screen.getByText("AAPL")).toBeInTheDocument();
+    });
+
     await waitFor(() => {
       expect(screen.getByText("$300.00")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: /Eliminar AAPL/i }));
+    const deleteButton = await screen.findByRole("button", {
+      name: /Eliminar AAPL/i,
+    });
+
+    await act(async () => {
+      await user.click(deleteButton);
+    });
+
+    await tick();
 
     await waitFor(() => {
       expect(screen.queryByText("AAPL")).not.toBeInTheDocument();

@@ -2,7 +2,35 @@ import "@testing-library/jest-dom";
 import "jest-axe/extend-expect";
 
 // Polyfills requeridos por MSW en entorno de pruebas
-process.env.NEXT_PUBLIC_API_URL = "http://localhost:3000/api";
+process.env.NEXT_PUBLIC_API_URL ||= "http://localhost:8000";
+
+if (typeof (global as any).ResizeObserver === "undefined") {
+  (global as any).ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  };
+}
+
+try {
+  jest.mock("recharts", () => {
+    const original = jest.requireActual("recharts");
+    const React = jest.requireActual("react");
+    const MockResponsiveContainer = ({ width, height, children }: any) =>
+      React.createElement(
+        "div",
+        { style: { width: width || 800, height: height || 400 } },
+        children
+      );
+
+    return {
+      ...original,
+      ResponsiveContainer: MockResponsiveContainer,
+    };
+  });
+} catch (error) {
+  // Si ya estaba mockeado en otro lugar, omitimos la redefinición
+}
 
 import { TextDecoder, TextEncoder } from "util";
 import { ReadableStream, WritableStream, TransformStream } from "stream/web";
