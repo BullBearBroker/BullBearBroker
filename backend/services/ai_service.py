@@ -251,7 +251,7 @@ class AIService:
         if not Config.HUGGINGFACE_API_KEY:
             raise RuntimeError("HuggingFace token not configured")
 
-        model = Config.HUGGINGFACE_MODEL
+        model = self._select_model_for_profile((context or {}).get("risk_profile"))
         base_url = Config.HUGGINGFACE_API_URL.rstrip('/')
         url = f"{base_url}/{model}"
         prompt = self._build_prompt(message, context)
@@ -336,6 +336,8 @@ class AIService:
         raise ValueError("Respuesta vacía de Ollama")
 
     def _build_prompt(self, message: str, context: Dict[str, Any]) -> str:
+        if not (message or "").strip():
+            raise ValueError("El mensaje no puede estar vacío")
         prompt_lines = [
             "Eres BullBearBroker, un analista financiero profesional.",
             f"Consulta del usuario: {message}"
@@ -359,6 +361,30 @@ class AIService:
 
         prompt_lines.append("Responde en español con recomendaciones concretas y breves.")
         return "\n".join(prompt_lines)
+
+    def _select_model_for_profile(self, profile: Optional[str]) -> str:
+        base_model = Config.HUGGINGFACE_MODEL
+        if not profile:
+            return base_model
+
+        normalized = str(profile).strip().lower()
+        mapping = getattr(Config, "HUGGINGFACE_RISK_MODELS", None)
+        if isinstance(mapping, dict):
+            lowered = {
+                str(key).strip().lower(): str(value)
+                for key, value in mapping.items()
+                if value
+            }
+            if normalized in lowered:
+                return lowered[normalized]
+
+        defaults = {
+            "investor": base_model,
+            "trader": base_model,
+            "analyst": base_model,
+            "fund": base_model,
+        }
+        return defaults.get(normalized, base_model)
 
     def _analyze_message(self, message: str) -> Dict[str, Any]:
         lower = message.lower()

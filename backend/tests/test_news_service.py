@@ -46,7 +46,13 @@ async def test_get_latest_news_handles_errors(monkeypatch):
         raise RuntimeError("crypto down")
 
     async def finance_ok(limit: int):  # noqa: ANN001
-        return [{"title": "Finance", "published_at": None}]
+        return [
+            {
+                "title": "Finance",
+                "published_at": "2024-05-01T00:00:00+00:00",
+                "url": "https://finance.example/article",
+            }
+        ]
 
     monkeypatch.setattr(service, "get_crypto_headlines", crypto_fail)
     monkeypatch.setattr(service, "get_finance_headlines", finance_ok)

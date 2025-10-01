@@ -77,8 +77,17 @@ class NewsService:
                 continue
             aggregated.extend(result)
 
-        aggregated.sort(key=self._sort_key, reverse=True)
-        return aggregated[:limited]
+        unique_items: List[Dict[str, Any]] = []
+        seen: set[str] = set()
+        for item in aggregated:
+            identifier = (item.get("url") or item.get("title") or "").strip().lower()
+            if not identifier or identifier in seen:
+                continue
+            seen.add(identifier)
+            unique_items.append(item)
+
+        unique_items.sort(key=self._sort_key, reverse=True)
+        return unique_items[:limited]
 
     async def _get_articles(
         self,
@@ -108,7 +117,24 @@ class NewsService:
                     query=fallback_query,
                 )
 
-        normalized = [self._prune_article(item) for item in articles[:limited]]
+        normalized: List[Dict[str, Any]] = []
+        seen_identifiers: set[str] = set()
+        for item in articles:
+            pruned = self._prune_article(item)
+            title = (pruned.get("title") or "").strip()
+            published = pruned.get("published_at")
+            if not title or title.lower() == "untitled":
+                continue
+            if not published:
+                continue
+            identifier = (pruned.get("url") or title).strip().lower()
+            if identifier in seen_identifiers:
+                continue
+            seen_identifiers.add(identifier)
+            normalized.append(pruned)
+            if len(normalized) >= limited:
+                break
+
         await self.cache.set(cache_key, normalized)
         return normalized
 
