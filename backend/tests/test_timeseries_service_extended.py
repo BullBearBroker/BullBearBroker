@@ -10,6 +10,7 @@ from backend.services.timeseries_service import (
     _normalize_point,
     _parse_timestamp,
     get_crypto_closes_binance,
+    get_forex_closes,
     get_stock_closes,
     resample_series,
 )
@@ -322,3 +323,114 @@ async def test_get_stock_closes_invalid_interval(monkeypatch: pytest.MonkeyPatch
 
     with pytest.raises(ValueError):
         await get_stock_closes("aapl", "5m")
+
+
+@pytest.mark.asyncio
+async def test_get_forex_closes_prefers_twelvedata(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(timeseries_module, "TWELVEDATA_API_KEY", "token")
+    monkeypatch.setattr(timeseries_module, "ALPHA_VANTAGE_API_KEY", "alpha")
+
+    payload = {
+        "values": [
+            {"close": "1.10", "high": "1.11", "low": "1.09", "open": "1.095"},
+            {"close": "1.12"},
+        ]
+    }
+    http_mock = AsyncMock(return_value=payload)
+    monkeypatch.setattr(timeseries_module, "_http_get_json", http_mock)
+
+    closes, meta = await get_forex_closes("eur/usd", "1h", limit=2)
+
+    assert closes == [1.10, 1.12]
+    assert meta["source"] == "twelvedata"
+    assert meta["highs"] == [1.11, 1.12]
+    assert meta["lows"] == [1.09, 1.12]
+    assert meta["opens"] == [1.095, 1.12]
+    assert meta["volumes"] == [0.0, 0.0]
+    http_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_get_forex_closes_falls_back_to_alpha_vantage(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(timeseries_module, "TWELVEDATA_API_KEY", "token")
+    monkeypatch.setattr(timeseries_module, "ALPHA_VANTAGE_API_KEY", "alpha")
+
+    async def fake_http_get_json(url: str, params: Dict[str, str]) -> Dict[str, Any]:
+        if "twelvedata" in url:
+            raise RuntimeError("twelvedata down")
+        assert params["function"] == "FX_INTRADAY"
+        return {
+            "Time Series FX (60min)": {
+                "2024-01-01 00:00:00": {
+                    "1. open": "1.1",
+                    "2. high": "1.2",
+                    "3. low": "1.0",
+                    "4. close": "1.15",
+                },
+                "2024-01-01 01:00:00": {
+                    "1. open": "1.15",
+                    "2. high": "1.25",
+                    "3. low": "1.05",
+                    "4. close": "1.20",
+                },
+            }
+        }
+
+    monkeypatch.setattr(timeseries_module, "_http_get_json", fake_http_get_json)
+
+    closes, meta = await get_forex_closes("eurusd", "1h", limit=2)
+
+    assert closes == [1.15, 1.20]
+    assert meta["source"] == "alpha_vantage"
+    assert meta["note"].startswith("4h")
+    assert meta["volumes"] == [0.0, 0.0]
+
+
+@pytest.mark.asyncio
+async def test_get_forex_closes_daily_branch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(timeseries_module, "TWELVEDATA_API_KEY", "")
+    monkeypatch.setattr(timeseries_module, "ALPHA_VANTAGE_API_KEY", "alpha")
+
+    daily_payload = {
+        "Time Series FX (Daily)": {
+            "2024-01-01": {
+                "1. open": "1.1",
+                "2. high": "1.2",
+                "3. low": "1.0",
+                "4. close": "1.15",
+            },
+            "2024-01-02": {
+                "1. open": "1.15",
+                "2. high": "1.25",
+                "3. low": "1.05",
+                "4. close": "1.20",
+            },
+        }
+    }
+
+    monkeypatch.setattr(timeseries_module, "_http_get_json", AsyncMock(return_value=daily_payload))
+
+    closes, meta = await get_forex_closes("eurusd", "1d", limit=2)
+
+    assert closes == [1.15, 1.20]
+    assert meta["source"] == "alpha_vantage"
+    assert meta["interval"] == "1d"
+    assert meta["opens"] == [1.1, 1.15]
+
+
+@pytest.mark.asyncio
+async def test_get_forex_closes_requires_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(timeseries_module, "TWELVEDATA_API_KEY", "")
+    monkeypatch.setattr(timeseries_module, "ALPHA_VANTAGE_API_KEY", "")
+
+    with pytest.raises(RuntimeError):
+        await get_forex_closes("eurusd", "1h")
+
+
+@pytest.mark.asyncio
+async def test_get_forex_closes_rejects_unsupported_interval(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(timeseries_module, "TWELVEDATA_API_KEY", "token")
+    monkeypatch.setattr(timeseries_module, "ALPHA_VANTAGE_API_KEY", "alpha")
+
+    with pytest.raises(ValueError):
+        await get_forex_closes("eurusd", "4h")

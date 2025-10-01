@@ -108,3 +108,41 @@ async def test_lifespan_handles_redis_initialization_error(monkeypatch: pytest.M
 
     messages = " ".join(record.getMessage() for record in caplog.records)
     assert "fastapi_limiter_unavailable" in messages
+
+
+@pytest.mark.asyncio
+async def test_lifespan_logs_database_setup_error(monkeypatch: pytest.MonkeyPatch, caplog) -> None:
+    dummy_redis = DummyRedis()
+
+    async def fake_from_url(*_args, **_kwargs):  # noqa: ANN001
+        return dummy_redis
+
+    class _Engine:
+        def __init__(self) -> None:
+            self.disposed = False
+
+        def dispose(self):
+            self.disposed = True
+
+    fake_engine = _Engine()
+
+    monkeypatch.setattr("backend.main.redis.from_url", fake_from_url)
+    monkeypatch.setattr("backend.main.FastAPILimiter.init", lambda *_: asyncio.sleep(0))
+    monkeypatch.setattr("backend.database.engine", fake_engine)
+    monkeypatch.setattr(
+        Base.metadata,
+        "create_all",
+        lambda **_: (_ for _ in ()).throw(RuntimeError("db offline")),
+    )
+    mock_user_service = SimpleNamespace(ensure_user=lambda *_: None)
+    monkeypatch.setattr("backend.main.user_service", mock_user_service)
+    monkeypatch.setattr("backend.services.user_service.user_service", mock_user_service)
+    monkeypatch.setattr("backend.main.log_api_integration_report", lambda: asyncio.sleep(0))
+
+    caplog.clear()
+    async with app.router.lifespan_context(app):
+        pass
+
+    messages = " ".join(record.getMessage() for record in caplog.records)
+    assert "database_setup_error" in messages
+    assert fake_engine.disposed is True
