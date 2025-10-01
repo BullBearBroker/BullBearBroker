@@ -1,7 +1,6 @@
 import asyncio
 import json
 import os
-from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
@@ -9,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi_limiter import FastAPILimiter
 import redis.asyncio as redis
 
-from backend.core.logging_config import get_logger
+from backend.core.logging_config import get_logger, log_event
 from backend.core.http_logging import RequestLogMiddleware
 from backend.core.metrics import MetricsMiddleware, metrics_router
 from backend import database as database_module
@@ -75,14 +74,11 @@ async def lifespan(app: FastAPI):
                 database_ready = False
                 database_setup_failed = True
                 database_setup_error_message = str(exc)
-                logger.warning(
-                    {
-                        "service": "backend",
-                        "event": "database_setup_error",
-                        "error": database_setup_error_message,
-                        "level": "warning",
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                    }
+                log_event(
+                    logger,
+                    service="backend",
+                    event="database_setup_error",
+                    error=database_setup_error_message,
                 )
         else:
             logger.info("database_migrations_required", env=ENV)
@@ -96,14 +92,11 @@ async def lifespan(app: FastAPI):
         database_setup_failed = True
         database_setup_error_message = database_setup_error_message or str(exc)
         logger.error("database_setup_error", error=str(exc))
-        logger.warning(
-            {
-                "service": "backend",
-                "event": "database_setup_error",
-                "error": database_setup_error_message,
-                "level": "warning",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
+        log_event(
+            logger,
+            service="backend",
+            event="database_setup_error",
+            error=database_setup_error_message,
         )
 
     try:
@@ -115,14 +108,11 @@ async def lifespan(app: FastAPI):
     yield  # ⬅️ Aquí FastAPI empieza a servir requests
 
     if database_setup_failed and database_setup_error_message is not None:
-        logger.warning(
-            {
-                "service": "backend",
-                "event": "database_setup_error",
-                "error": database_setup_error_message,
-                "level": "warning",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
+        log_event(
+            logger,
+            service="backend",
+            event="database_setup_error",
+            error=database_setup_error_message,
         )
 
     # 🔹 Shutdown
@@ -141,24 +131,18 @@ async def lifespan(app: FastAPI):
             current_engine.dispose()
             logger.info("engine_disposed")
         else:
-            logger.warning(
-                {
-                    "service": "backend",
-                    "event": "engine_dispose_error",
-                    "error": "engine has no dispose()",
-                    "level": "warning",
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                }
+            log_event(
+                logger,
+                service="backend",
+                event="engine_dispose_error",
+                error="engine has no dispose()",
             )
     except Exception as exc:
-        logger.warning(
-            {
-                "service": "backend",
-                "event": "engine_dispose_error",
-                "error": str(exc),
-                "level": "warning",
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-            }
+        log_event(
+            logger,
+            service="backend",
+            event="engine_dispose_error",
+            error=str(exc),
         )
 
 
