@@ -75,3 +75,48 @@ def test_indicators_handle_extreme_values() -> None:
 
     assert isinstance(atr_value, float)
     assert isinstance(vwap_value, float)
+
+
+def test_rsi_constant_series_returns_upper_bound() -> None:
+    values = [50.0] * 6
+    result = indicators.rsi(values, period=3)
+    assert result == 100.0
+
+
+def test_average_true_range_with_minimal_period() -> None:
+    highs = [10.0, 11.0]
+    lows = [9.0, 10.0]
+    closes = [9.5, 10.5]
+    result = indicators.average_true_range(highs, lows, closes, period=1)
+    assert result == 1.5
+
+
+def test_vwap_returns_none_with_zero_volume() -> None:
+    highs = [10.0, 11.0]
+    lows = [9.0, 10.0]
+    closes = [9.5, 10.5]
+    volumes = [0, 0]
+    assert indicators.volume_weighted_average_price(highs, lows, closes, volumes) is None
+
+
+def test_ema_decreasing_sequence_returns_expected_value() -> None:
+    values = [5.0, 4.0, 3.0, 2.0, 1.0]
+    result = indicators.ema(values, period=3)
+    assert result == 2.0
+
+
+def test_indicators_handle_extreme_large_values_consistently() -> None:
+    values = [1e12, 1e12 + 1, 1e12 + 2, 1e12 + 3, 1e12 + 4, 1e12 + 5]
+    ema_value = indicators.ema(values, period=4)
+    rsi_value = indicators.rsi(values, period=4)
+
+    highs = [value + 10 for value in values]
+    lows = [value - 10 for value in values]
+    closes = list(values)
+    atr_value = indicators.average_true_range(highs, lows, closes, period=4)
+    vwap_value = indicators.volume_weighted_average_price(highs, lows, closes, [1] * len(values))
+
+    assert ema_value is not None and math.isfinite(ema_value)
+    assert rsi_value is not None and math.isfinite(rsi_value)
+    assert atr_value is not None and math.isfinite(atr_value)
+    assert vwap_value is not None and math.isfinite(vwap_value)
