@@ -1,6 +1,7 @@
 import asyncio
 
 import pytest
+from prometheus_client import CollectorRegistry, Counter, Histogram
 from starlette.requests import Request
 from starlette.responses import Response
 
@@ -9,12 +10,22 @@ from backend.core.metrics import MetricsMiddleware
 
 
 @pytest.fixture(autouse=True)
-def reset_metrics() -> None:
-    metrics.REQUEST_COUNT._metrics.clear()
-    metrics.REQUEST_LATENCY._metrics.clear()
-    yield
-    metrics.REQUEST_COUNT._metrics.clear()
-    metrics.REQUEST_LATENCY._metrics.clear()
+def reset_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    registry = CollectorRegistry()
+    request_count = Counter(
+        "bullbearbroker_requests_total",
+        "Total HTTP requests",
+        ["method", "path", "status"],
+        registry=registry,
+    )
+    request_latency = Histogram(
+        "bullbearbroker_request_duration_seconds",
+        "HTTP request latency in seconds",
+        ["method", "path"],
+        registry=registry,
+    )
+    monkeypatch.setattr(metrics, "REQUEST_COUNT", request_count)
+    monkeypatch.setattr(metrics, "REQUEST_LATENCY", request_latency)
 
 
 def _make_request(path: str = "/metrics") -> Request:
