@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from typing import Any, Dict, List, Optional, Tuple
+from unittest.mock import AsyncMock
 
 import jwt
 import pytest
@@ -523,3 +524,121 @@ async def test_list_alerts_empty_returns_empty_list(
 
     assert response.status_code == 200
     assert response.json() == []
+
+
+@pytest.mark.asyncio
+async def test_create_alert_missing_asset_returns_400(
+    client: AsyncClient, dummy_user_service: DummyUserService
+) -> None:
+    email = f"user-{uuid.uuid4()}@example.com"
+    token = await _register_and_login(dummy_user_service, email, "secret123")
+
+    payload = {
+        "title": "Alerta sin activo",
+        "asset": "   ",
+        "value": 100.0,
+        "condition": ">",
+    }
+
+    response = await client.post("/api/alerts", json=payload, headers=_auth_header(token))
+
+    assert response.status_code == 400
+    assert "asset" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_update_alert_invalid_condition_returns_400(
+    client: AsyncClient,
+    dummy_user_service: DummyUserService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    email = f"user-{uuid.uuid4()}@example.com"
+    token = await _register_and_login(dummy_user_service, email, "secret123")
+
+    create_payload = {
+        "title": "Alerta original",
+        "asset": "btc",
+        "value": 30000.0,
+        "condition": ">",
+    }
+    create_response = await client.post(
+        "/api/alerts", json=create_payload, headers=_auth_header(token)
+    )
+    alert_id = create_response.json()["id"]
+
+    monkeypatch.setattr(
+        alerts_router.alert_service,
+        "validate_condition_expression",
+        lambda *_: (_ for _ in ()).throw(ValueError("condición inválida")),
+    )
+
+    update_payload = {"condition": "<"}
+    response = await client.put(
+        f"/api/alerts/{alert_id}", json=update_payload, headers=_auth_header(token)
+    )
+
+    assert response.status_code == 400
+    assert "condición" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_send_alert_notification_requires_channel(
+    client: AsyncClient,
+    dummy_user_service: DummyUserService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    email = f"user-{uuid.uuid4()}@example.com"
+    token = await _register_and_login(dummy_user_service, email, "secret123")
+
+    monkeypatch.setattr(alerts_router.Config, "TELEGRAM_DEFAULT_CHAT_ID", None, raising=False)
+    send_mock = AsyncMock()
+    monkeypatch.setattr(alerts_router.alert_service, "send_external_alert", send_mock)
+
+    payload = {"message": "Recordatorio"}
+    response = await client.post(
+        "/api/alerts/send", json=payload, headers=_auth_header(token)
+    )
+
+    assert response.status_code == 400
+    assert "canal" in response.json()["detail"].lower()
+    send_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_alert_notification_strips_message(
+    client: AsyncClient,
+    dummy_user_service: DummyUserService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    email = f"user-{uuid.uuid4()}@example.com"
+    token = await _register_and_login(dummy_user_service, email, "secret123")
+
+    send_mock = AsyncMock(return_value={"telegram": {"status": "ok"}})
+    monkeypatch.setattr(alerts_router.alert_service, "send_external_alert", send_mock)
+    monkeypatch.setattr(alerts_router.Config, "TELEGRAM_DEFAULT_CHAT_ID", "12345", raising=False)
+
+    payload = {"message": "   Notifica   "}
+    response = await client.post(
+        "/api/alerts/send", json=payload, headers=_auth_header(token)
+    )
+
+    assert response.status_code == 200
+    send_mock.assert_awaited_once()
+    args, kwargs = send_mock.call_args
+    assert kwargs["message"] == "Notifica"
+
+
+@pytest.mark.asyncio
+async def test_send_alert_rejects_empty_message(
+    client: AsyncClient, dummy_user_service: DummyUserService
+) -> None:
+    email = f"user-{uuid.uuid4()}@example.com"
+    token = await _register_and_login(dummy_user_service, email, "secret123")
+
+    response = await client.post(
+        "/api/alerts/send",
+        json={"message": "   ", "telegram_chat_id": "123"},
+        headers=_auth_header(token),
+    )
+
+    assert response.status_code == 422
