@@ -1,12 +1,21 @@
 import { act, renderHook } from "@testing-library/react";
 
-process.env.NEXT_PUBLIC_API_URL =
-  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-
 import { useAlertsWebSocket } from "../useAlertsWebSocket";
 import * as api from "@/lib/api";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL;
+const ORIGINAL_API_URL = process.env.NEXT_PUBLIC_API_URL;
+const FALLBACK_API_URL = ORIGINAL_API_URL ?? "http://localhost:3000/api";
+
+const buildAlertsWebSocketUrl = (token: string) => {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? FALLBACK_API_URL;
+  const base = new URL(apiUrl);
+  const wsUrl = new URL("/ws/alerts", base);
+  wsUrl.protocol = base.protocol === "https:" ? "wss:" : "ws:";
+  if (token) {
+    wsUrl.searchParams.set("token", token);
+  }
+  return wsUrl.toString();
+};
 
 class MockWebSocket {
   static instances: MockWebSocket[] = [];
@@ -67,7 +76,7 @@ declare global {
 
 describe("useAlertsWebSocket", () => {
   beforeEach(() => {
-    process.env.NEXT_PUBLIC_API_URL = "http://localhost:8000";
+    process.env.NEXT_PUBLIC_API_URL = ORIGINAL_API_URL ?? FALLBACK_API_URL;
     (global as any).WebSocket = MockWebSocket as unknown as typeof WebSocket;
     jest.useFakeTimers();
     MockWebSocket.reset();
@@ -77,7 +86,7 @@ describe("useAlertsWebSocket", () => {
     jest.runOnlyPendingTimers();
     jest.useRealTimers();
     MockWebSocket.reset();
-    process.env.NEXT_PUBLIC_API_URL = API_BASE_URL;
+    process.env.NEXT_PUBLIC_API_URL = ORIGINAL_API_URL;
   });
 
   it("establece la conexión y procesa mensajes de alerta", () => {
@@ -90,7 +99,7 @@ describe("useAlertsWebSocket", () => {
 
     expect(MockWebSocket.instances).toHaveLength(1);
     const socket = MockWebSocket.instances[0];
-    expect(socket.url).toBe("ws://localhost:8000/ws/alerts?token=token-123");
+    expect(socket.url).toBe(buildAlertsWebSocketUrl("token-123"));
 
     act(() => {
       socket.triggerOpen();
