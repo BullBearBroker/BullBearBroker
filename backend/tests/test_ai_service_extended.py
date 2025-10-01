@@ -1,6 +1,7 @@
 import asyncio
 from json import JSONDecodeError
 from typing import Any, Dict
+from unittest.mock import AsyncMock
 
 import pytest
 from backend.services import ai_service as ai_service_module
@@ -336,3 +337,248 @@ async def test_process_message_builds_enrichment_summary(
     assert "📰 Noticias relevantes" in result.text
     assert "🚨 Ideas de alertas" in result.text
     assert "Respuesta principal Mistral" in result.text
+
+
+@pytest.mark.anyio
+async def test_process_message_long_prompt_uses_local_fallback(
+    service: AIService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def timeout_mistral(message: str, context: Dict[str, Any]) -> str:
+        raise asyncio.TimeoutError("mistral timeout")
+
+    def rejecting_prompt(self, message: str, context: Dict[str, Any]) -> str:
+        if len(message) > 120:
+            raise ValueError("prompt demasiado largo")
+        return "prompt"
+
+    async def failing_huggingface(self, message: str, context: Dict[str, Any]) -> str:
+        self._build_prompt(message, context)
+        raise RuntimeError("huggingface rejected prompt")
+
+    async def failing_ollama(self, message: str, context: Dict[str, Any]) -> str:
+        self._build_prompt(message, context)
+        raise RuntimeError("ollama rejected prompt")
+
+    async def blank_market_context(_self, _message: str) -> Dict[str, Any]:
+        return {}
+
+    async def no_indicators(_self, _message: str) -> Dict[str, Any]:
+        return {}
+
+    async def no_news(_self, _symbols: list) -> list:
+        return []
+
+    async def no_alerts(_self, _symbols: list, _interval: str) -> list:
+        return []
+
+    async def no_forex(_self, _pairs: list) -> list:
+        return []
+
+    async def controlled_local(self, message: str) -> str:
+        return await AIService.get_fallback_response(self, message)
+
+    async def fake_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(ai_service_module.mistral_service, "generate_financial_response", timeout_mistral)
+    monkeypatch.setattr(AIService, "_build_prompt", rejecting_prompt)
+    monkeypatch.setattr(AIService, "_call_huggingface", failing_huggingface)
+    monkeypatch.setattr(AIService, "_call_ollama", failing_ollama)
+    monkeypatch.setattr(AIService, "get_market_context", blank_market_context)
+    monkeypatch.setattr(AIService, "_collect_indicator_snapshots", no_indicators)
+    monkeypatch.setattr(AIService, "_collect_news_highlights", no_news)
+    monkeypatch.setattr(AIService, "_collect_alert_suggestions", no_alerts)
+    monkeypatch.setattr(AIService, "_collect_forex_quotes", no_forex)
+    monkeypatch.setattr(AIService, "generate_response", controlled_local)
+    monkeypatch.setattr(ai_service_module.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(ai_service_module.Config, "HUGGINGFACE_API_KEY", "token", raising=False)
+
+    result = await service.process_message("x" * 200)
+
+    assert result.provider == "local"
+    assert "dificultades técnicas" in result.text.lower()
+
+
+@pytest.mark.anyio
+async def test_process_message_streaming_partial_accumulates_text(
+    service: AIService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def blank_market_context(_self, _message: str) -> Dict[str, Any]:
+        return {}
+
+    async def no_indicators(_self, _message: str) -> Dict[str, Any]:
+        return {}
+
+    async def no_news(_self, _symbols: list) -> list:
+        return []
+
+    async def no_alerts(_self, _symbols: list, _interval: str) -> list:
+        return []
+
+    async def no_forex(_self, _pairs: list) -> list:
+        return []
+
+    async def fake_backoff(self, providers):  # noqa: ANN001
+        provider_name, _callable = providers[-1]
+        collected = []
+
+        async def _stream_tokens() -> None:
+            for chunk in ("Hola", " mundo"):
+                collected.append(chunk)
+
+        await _stream_tokens()
+        return "".join(collected), provider_name
+
+    monkeypatch.setattr(ai_service_module.Config, "HUGGINGFACE_API_KEY", "", raising=False)
+    monkeypatch.setattr(AIService, "get_market_context", blank_market_context)
+    monkeypatch.setattr(AIService, "_collect_indicator_snapshots", no_indicators)
+    monkeypatch.setattr(AIService, "_collect_news_highlights", no_news)
+    monkeypatch.setattr(AIService, "_collect_alert_suggestions", no_alerts)
+    monkeypatch.setattr(AIService, "_collect_forex_quotes", no_forex)
+    monkeypatch.setattr(AIService, "_call_with_backoff", fake_backoff)
+
+    result = await service.process_message("resumen simple")
+
+    assert result.provider == "ollama"
+    assert result.text.strip().endswith("Hola mundo")
+
+
+@pytest.mark.anyio
+async def test_process_message_cascading_failures_trigger_fallback(
+    service: AIService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def timeout_mistral(message: str, context: Dict[str, Any]) -> str:
+        raise asyncio.TimeoutError("timeout mistral")
+
+    async def corrupt_huggingface(self, message: str, context: Dict[str, Any]) -> str:
+        raise JSONDecodeError("corrupt", "{}", 0)
+
+    async def failing_ollama(self, message: str, context: Dict[str, Any]) -> str:
+        raise RuntimeError("ollama failure")
+
+    async def blank_market_context(_self, _message: str) -> Dict[str, Any]:
+        return {}
+
+    async def no_indicators(_self, _message: str) -> Dict[str, Any]:
+        return {}
+
+    async def no_news(_self, _symbols: list) -> list:
+        return []
+
+    async def no_alerts(_self, _symbols: list, _interval: str) -> list:
+        return []
+
+    async def no_forex(_self, _pairs: list) -> list:
+        return []
+
+    async def fallback_response(self, message: str) -> str:
+        return await AIService.get_fallback_response(self, message)
+
+    async def fake_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(ai_service_module.mistral_service, "generate_financial_response", timeout_mistral)
+    monkeypatch.setattr(AIService, "_call_huggingface", corrupt_huggingface)
+    monkeypatch.setattr(AIService, "_call_ollama", failing_ollama)
+    monkeypatch.setattr(AIService, "get_market_context", blank_market_context)
+    monkeypatch.setattr(AIService, "_collect_indicator_snapshots", no_indicators)
+    monkeypatch.setattr(AIService, "_collect_news_highlights", no_news)
+    monkeypatch.setattr(AIService, "_collect_alert_suggestions", no_alerts)
+    monkeypatch.setattr(AIService, "_collect_forex_quotes", no_forex)
+    monkeypatch.setattr(AIService, "generate_response", fallback_response)
+    monkeypatch.setattr(ai_service_module.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(ai_service_module.Config, "HUGGINGFACE_API_KEY", "token", raising=False)
+
+    result = await service.process_message("Analiza el SP500")
+
+    assert result.provider == "local"
+    assert "dificultades técnicas" in result.text.lower()
+
+
+def test_summarize_market_context_formats_output(service: AIService) -> None:
+    context = {
+        "market_data": {
+            "BTC": {
+                "raw_price": 45000.1234,
+                "raw_change": 2.5,
+                "source": "Feed",
+            },
+            "ETH": {
+                "price": "2000",  # fallback path when raw_price missing
+                "change": "1.2%",
+            },
+        }
+    }
+
+    lines = service._summarize_market_context(context)
+
+    assert lines[0].startswith("BTC: precio 45,000.12")
+    assert "ETH" in lines[1]
+
+
+def test_summarize_indicators_includes_available_metrics(service: AIService) -> None:
+    indicator_map = {
+        "BTC": {
+            "interval": "1h",
+            "indicators": {
+                "rsi": {"value": 55.2},
+                "macd": {"macd": 0.12345},
+                "atr": {"value": 1.234},
+                "stochastic_rsi": {"%K": 80.0},
+                "vwap": {"value": 23000.987},
+            },
+        }
+    }
+
+    lines = service._summarize_indicators(indicator_map)
+
+    assert "RSI 55.2" in lines[0]
+    assert "MACD 0.123" in lines[0]
+    assert "ATR 1.234" in lines[0]
+    assert "StochRSI %K 80.0" in lines[0]
+    assert "VWAP 23000.987" in lines[0]
+
+
+@pytest.mark.anyio
+async def test_collect_forex_quotes_formats_pairs(
+    service: AIService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class _ForexStub:
+        def __init__(self) -> None:
+            self.calls: list[str] = []
+
+        async def get_quote(self, pair: str) -> Dict[str, Any]:
+            self.calls.append(pair)
+            return {"price": 1.2345, "change": 0.0021, "source": "Stub"}
+
+    forex_stub = _ForexStub()
+    monkeypatch.setattr(ai_service_module, "forex_service", forex_stub)
+
+    quotes = await service._collect_forex_quotes(["EURUSD", "GBP/USD"])
+
+    assert forex_stub.calls == ["EURUSD", "GBP/USD"]
+    assert quotes[0].startswith("EUR/USD")
+    assert "Stub" in quotes[0]
+
+
+@pytest.mark.anyio
+async def test_call_with_backoff_retries_until_success(
+    service: AIService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    attempts = {"count": 0}
+
+    async def provider_failure_then_success() -> str:
+        attempts["count"] += 1
+        if attempts["count"] < 2:
+            raise RuntimeError("fail once")
+        return "ok"
+
+    sleep_mock = AsyncMock()
+    monkeypatch.setattr(ai_service_module.asyncio, "sleep", sleep_mock)
+
+    result, provider = await service._call_with_backoff([( "custom", provider_failure_then_success )])
+
+    assert result == "ok"
+    assert provider == "custom"
+    assert attempts["count"] == 2
+    sleep_mock.assert_awaited()
