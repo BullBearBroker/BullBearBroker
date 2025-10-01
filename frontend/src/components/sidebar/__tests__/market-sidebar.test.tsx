@@ -48,6 +48,43 @@ describe("MarketSidebar", () => {
     expect(screen.getAllByText(/actualizando/i).length).toBeGreaterThan(0);
   });
 
+  it("mantiene estable la estructura visual principal", async () => {
+    const { container } = renderSidebar();
+
+    await screen.findByText("BTCUSDT");
+    const sidebar = container.querySelector('[data-testid="market-sidebar-root"]');
+    const sections = Array.from(sidebar?.querySelectorAll("h3") ?? []).map((node) =>
+      node.textContent?.trim()
+    );
+    const summary = {
+      heading: sidebar?.querySelector("h2")?.textContent?.trim(),
+      email: sidebar?.querySelector("p")?.textContent?.trim(),
+      links: Array.from(sidebar?.querySelectorAll("a") ?? []).map((node) =>
+        node.textContent?.trim()
+      ),
+      sections,
+      logout: Array.from(sidebar?.querySelectorAll("button") ?? [])
+        .at(-1)
+        ?.textContent?.trim(),
+    };
+
+    expect(summary).toMatchInlineSnapshot(`
+      {
+        "email": "user@example.com",
+        "heading": "BullBearBroker",
+        "links": [
+          "Ver portafolio",
+        ],
+        "logout": "Cerrar sesión",
+        "sections": [
+          "Cripto",
+          "Acciones",
+          "Forex",
+        ],
+      }
+    `);
+  });
+
   it("muestra error cuando la API de mercado falla", async () => {
     server.use(
       makeMarketErrorHandler("crypto"),
