@@ -141,9 +141,19 @@ make migrate          # docker compose exec backend alembic upgrade head
 
 💡 Recomendación: tras cada despliegue en staging/prod ejecuta `make migrate` (o el comando equivalente en tu pipeline) antes de exponer la API. Esto garantiza que el esquema coincida con la última versión del código.
 
-## Pruebas automatizadas
+## Testing
 
-Ejecuta toda la suite (backend + frontend) con un solo comando:
+Desde la raíz del repositorio podés lanzar las suites de manera unificada con
+los scripts de `pnpm`:
+
+```bash
+pnpm test:frontend       # Jest modo desarrollo con watch inteligente
+pnpm test:frontend:list  # Lista los tests detectados por Jest
+pnpm test:backend        # Pytest completo para el backend
+pnpm test:backend:cov    # Pytest con cobertura para backend
+```
+
+Si preferís orquestar todo en un solo paso, mantenemos el objetivo clásico:
 
 ```bash
 make test
@@ -158,6 +168,22 @@ make test
 > Usa `npm --prefix frontend run test:ci` para validar cobertura estricta en CI.
 > Durante el desarrollo utiliza `npm --prefix frontend run test:dev` para
 > ejecutar suites filtradas sin fallos por cobertura.
+
+## Logging estructurado
+
+El backend utiliza utilidades basadas en `structlog` definidas en
+[`backend/core/logging_config.py`](backend/core/logging_config.py). La función
+`log_event` encapsula la escritura de eventos estructurados y añade
+metadatos consistentes:
+
+- `service`: servicio o módulo que emite el log (por ejemplo, `alerts`).
+- `event`: descripción corta y accionable del evento.
+- `timestamp`: ISO 8601 en UTC generado automáticamente.
+- `error`: campo opcional para adjuntar mensajes de excepción o trazas.
+
+Podés enlazar contexto adicional mediante kwargs (`user_id`, `payload`, etc.).
+El logger serializa el evento como JSON, lo que facilita enviarlo a sistemas de
+observabilidad sin parseos adicionales.
 
 ## Observabilidad (logs y métricas)
 

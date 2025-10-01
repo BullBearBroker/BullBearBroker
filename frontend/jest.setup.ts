@@ -1,8 +1,8 @@
 import "@testing-library/jest-dom";
 import "jest-axe/extend-expect";
 
-// Polyfills requeridos por MSW en entorno de pruebas
-process.env.NEXT_PUBLIC_API_URL ||= "http://localhost:8000";
+// Configura una URL de API por defecto para los tests del frontend
+process.env.NEXT_PUBLIC_API_URL ??= "http://localhost:8000";
 
 if (typeof (global as any).ResizeObserver === "undefined") {
   (global as any).ResizeObserver = class {
