@@ -94,3 +94,28 @@ async def test_all_providers_fail_returns_none(service: ForexService, monkeypatc
 def test_invalid_symbol_raises_value_error(service: ForexService) -> None:
     with pytest.raises(ValueError):
         service._split_symbol("BAD")
+
+
+@pytest.mark.anyio
+async def test_timeout_in_primary_provider_falls_back(service: ForexService, monkeypatch: pytest.MonkeyPatch) -> None:
+    timeout = AsyncMock(side_effect=asyncio.TimeoutError())
+    yahoo = AsyncMock(return_value={"price": 2.5, "change": 0.01})
+
+    monkeypatch.setattr(service, "_fetch_twelvedata", timeout)
+    monkeypatch.setattr(service, "_fetch_alpha_vantage", timeout)
+    monkeypatch.setattr(service, "_fetch_yahoo_finance", yahoo)
+
+    monkeypatch.setattr(service, "apis", [
+        {"name": "Twelve Data", "callable": service._fetch_twelvedata, "requires_key": True, "api_key": "key"},
+        {"name": "Alpha Vantage", "callable": service._fetch_alpha_vantage, "requires_key": True, "api_key": "key"},
+        {"name": "Yahoo Finance", "callable": service._fetch_yahoo_finance, "requires_key": False, "api_key": None},
+    ])
+
+    quote = await service.get_quote("AUDUSD")
+    assert quote == {
+        "symbol": "AUD/USD",
+        "price": 2.5,
+        "change": 0.01,
+        "source": "Yahoo Finance",
+        "sources": ["Twelve Data", "Alpha Vantage", "Yahoo Finance"],
+    }
