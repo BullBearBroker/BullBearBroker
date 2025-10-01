@@ -174,3 +174,98 @@ async def test_get_articles_ignores_entries_without_title_or_date(service: NewsS
 
     assert len(articles) == 1
     assert articles[0]["title"] == "Usable"
+
+
+@pytest.mark.anyio
+async def test_get_articles_returns_empty_when_all_sources_fail(
+    service: NewsService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(Config, "CRYPTOPANIC_API_KEY", "token", raising=False)
+    monkeypatch.setattr(Config, "NEWSAPI_API_KEY", "token", raising=False)
+
+    call_mock = AsyncMock(side_effect=[[], []])
+    monkeypatch.setattr(service, "_call_with_retries", call_mock)
+    monkeypatch.setattr(service, "cache", _StubCache({}))
+
+    articles = await service._get_articles(
+        cache_namespace="crypto",
+        limit=5,
+        primary_fetcher=service._fetch_cryptopanic,
+        fallback_query="crypto",
+    )
+
+    assert articles == []
+    assert call_mock.await_count == 2
+
+
+@pytest.mark.anyio
+async def test_get_latest_news_keeps_most_recent_duplicate(
+    service: NewsService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    latest_entry = {
+        "title": "Shared",  # same identifier
+        "url": "https://example.com/shared",
+        "published_at": "2024-05-04T12:00:00+00:00",
+        "source": "Crypto",
+        "summary": "",
+    }
+    older_entry = {
+        "title": "Shared",
+        "url": "https://example.com/shared",
+        "published_at": "2024-05-03T12:00:00+00:00",
+        "source": "Finance",
+        "summary": "",
+    }
+
+    async def crypto(_limit: int) -> List[Dict[str, Any]]:
+        return [latest_entry]
+
+    async def finance(_limit: int) -> List[Dict[str, Any]]:
+        return [older_entry]
+
+    monkeypatch.setattr(service, "get_crypto_headlines", crypto)
+    monkeypatch.setattr(service, "get_finance_headlines", finance)
+
+    results = await service.get_latest_news(limit=5)
+
+    assert len(results) == 1
+    assert results[0]["published_at"] == "2024-05-04T12:00:00+00:00"
+
+
+@pytest.mark.anyio
+async def test_get_articles_discards_corrupted_payload_without_source(
+    service: NewsService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    raw_articles = [
+        {
+            "title": None,
+            "url": "https://example.com/bad",
+            "published_at": "2024-05-01T00:00:00+00:00",
+            "source": None,
+            "summary": "",
+        },
+        {
+            "title": "Valid",
+            "url": "https://example.com/good",
+            "published_at": "2024-05-01T01:00:00+00:00",
+            "source": "Feed",
+            "summary": "",
+        },
+    ]
+
+    async def fake_call(handler, session, limit, **kwargs):  # noqa: ANN001
+        return raw_articles
+
+    monkeypatch.setattr(service, "_call_with_retries", fake_call)
+    monkeypatch.setattr(service, "cache", _StubCache({}))
+    monkeypatch.setattr(Config, "NEWSAPI_API_KEY", "token", raising=False)
+
+    articles = await service._get_articles(
+        cache_namespace="finance",
+        limit=5,
+        primary_fetcher=None,
+        fallback_query="finance",
+    )
+
+    assert len(articles) == 1
+    assert articles[0]["url"] == "https://example.com/good"

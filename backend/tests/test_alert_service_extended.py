@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta
 from uuid import uuid4
+from unittest.mock import AsyncMock
 
 import pytest
 from sqlalchemy import create_engine
@@ -125,3 +126,117 @@ def test_fetch_alerts_skips_inactive_records(service: AlertService, in_memory_fa
     records = service._fetch_alerts()
     assert len(records) == 1
     assert records[0].title == "Active"
+
+
+@pytest.mark.anyio
+async def test_evaluate_alerts_handles_invalid_conditions(
+    service: AlertService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    alert = Alert(
+        user_id=uuid4(),
+        title="Weird",
+        asset="BTCUSDT",
+        condition="invalid",
+        value=100.0,
+        active=True,
+    )
+
+    monkeypatch.setattr(service, "_fetch_alerts", lambda: [alert])
+    monkeypatch.setattr(service, "_resolve_price", AsyncMock(return_value=120.0))
+
+    called = False
+
+    async def fake_notify(alert_obj: Alert, price: float) -> None:  # noqa: ANN001
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(service, "_notify", fake_notify)
+
+    await service.evaluate_alerts()
+
+    assert called is False
+
+
+@pytest.mark.anyio
+async def test_evaluate_alerts_skips_alerts_deactivated_during_resolution(
+    service: AlertService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    alert = Alert(
+        user_id=uuid4(),
+        title="Flip",
+        asset="ETHUSDT",
+        condition=">",
+        value=1500.0,
+        active=True,
+    )
+
+    async def fake_resolve(symbol: str) -> float:  # noqa: ANN001
+        alert.active = False
+        return 1600.0
+
+    monkeypatch.setattr(service, "_fetch_alerts", lambda: [alert])
+    monkeypatch.setattr(service, "_resolve_price", fake_resolve)
+    notifier = AsyncMock()
+    monkeypatch.setattr(service, "_notify", notifier)
+
+    await service.evaluate_alerts()
+
+    notifier.assert_not_awaited()
+
+
+def test_fetch_alerts_reflects_reactivation(
+    service: AlertService, in_memory_factory
+) -> None:
+    user_id = uuid4()
+    with in_memory_factory() as session:
+        alert = Alert(
+            user_id=user_id,
+            title="Cycle",
+            asset="AAPL",
+            condition=">",
+            value=150.0,
+            active=True,
+        )
+        session.add(alert)
+        session.commit()
+        alert_id = alert.id
+
+    assert len(service._fetch_alerts()) == 1
+
+    with in_memory_factory() as session:
+        record = session.get(Alert, alert_id)
+        assert record is not None
+        record.active = False
+        session.commit()
+
+    assert len(service._fetch_alerts()) == 0
+
+    with in_memory_factory() as session:
+        record = session.get(Alert, alert_id)
+        assert record is not None
+        record.active = True
+        session.commit()
+
+    assert len(service._fetch_alerts()) == 1
+
+
+@pytest.mark.anyio
+async def test_send_external_alert_handles_delivery_exceptions(
+    service: AlertService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    telegram_mock = AsyncMock(side_effect=RuntimeError("telegram down"))
+    discord_mock = AsyncMock(side_effect=RuntimeError("discord down"))
+
+    monkeypatch.setattr(service, "_send_telegram_message", telegram_mock)
+    monkeypatch.setattr(service, "_send_discord_message", discord_mock)
+
+    results = await service.send_external_alert(
+        message="Check",
+        telegram_chat_id="123",
+        discord_channel_id="456",
+    )
+
+    assert results["telegram"]["status"] == "error"
+    assert "telegram down" in results["telegram"]["error"]
+    assert results["discord"]["status"] == "error"
+    assert "discord down" in results["discord"]["error"]
