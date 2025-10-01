@@ -1,4 +1,5 @@
 import asyncio
+from json import JSONDecodeError
 from typing import Any, Dict
 
 import pytest
@@ -77,6 +78,20 @@ def test_select_model_for_risk_profile(service: AIService, monkeypatch: pytest.M
     assert service._select_model_for_profile("unknown") == "base/model"
 
 
+def test_select_model_for_fund_profile_is_case_insensitive(
+    service: AIService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        ai_service_module.Config,
+        "HUGGINGFACE_RISK_MODELS",
+        {"Fund": "model/smart-fund"},
+        raising=False,
+    )
+
+    assert service._select_model_for_profile("Fund") == "model/smart-fund"
+    assert service._select_model_for_profile("fund") == "model/smart-fund"
+
+
 def test_build_prompt_rejects_empty_message(service: AIService) -> None:
     with pytest.raises(ValueError):
         service._build_prompt("   ", {})
@@ -146,3 +161,178 @@ async def test_process_message_supports_streaming_mock(service: AIService, monke
     result = await service.process_message("Dame señales")
     assert result.provider == "ollama"
     assert result.text == "Hola mundo"
+
+
+@pytest.mark.anyio
+async def test_all_providers_failure_returns_controlled_message(
+    service: AIService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def mistral_failure(message: str, context: Dict[str, Any]) -> str:
+        raise RuntimeError("mistral indisponible")
+
+    async def huggingface_failure(self, message: str, context: Dict[str, Any]) -> str:
+        raise RuntimeError("huggingface indisponible")
+
+    async def ollama_failure(self, message: str, context: Dict[str, Any]) -> str:
+        raise RuntimeError("ollama indisponible")
+
+    original_generate_response = AIService.generate_response
+
+    async def fallback_response(self, message: str) -> str:
+        await original_generate_response(self, message)
+        return await AIService.get_fallback_response(self, message)
+
+    async def fake_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(ai_service_module.mistral_service, "generate_financial_response", mistral_failure)
+    monkeypatch.setattr(AIService, "_call_huggingface", huggingface_failure)
+    monkeypatch.setattr(AIService, "_call_ollama", ollama_failure)
+    monkeypatch.setattr(AIService, "generate_response", fallback_response)
+    monkeypatch.setattr(ai_service_module.asyncio, "sleep", fake_sleep)
+
+    result = await service.process_message("escenario sin proveedores disponibles")
+    assert result.provider == "local"
+    assert "dificultades técnicas" in result.text.lower()
+
+
+@pytest.mark.anyio
+async def test_json_decode_error_from_mistral_uses_next_provider(
+    service: AIService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def mistral_invalid(message: str, context: Dict[str, Any]) -> str:
+        raise JSONDecodeError("invalid", "{", 0)
+
+    async def huggingface_success(self, message: str, context: Dict[str, Any]) -> str:
+        return "salida huggingface"
+
+    async def ollama_not_called(self, message: str, context: Dict[str, Any]) -> str:
+        raise AssertionError("Ollama no debería usarse cuando HuggingFace funciona")
+
+    async def fake_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(ai_service_module.mistral_service, "generate_financial_response", mistral_invalid)
+    monkeypatch.setattr(AIService, "_call_huggingface", huggingface_success)
+    monkeypatch.setattr(AIService, "_call_ollama", ollama_not_called)
+    monkeypatch.setattr(ai_service_module.asyncio, "sleep", fake_sleep)
+
+    result = await service.process_message("analiza sectores defensivos")
+    assert result.provider == "huggingface"
+    assert result.text == "salida huggingface"
+
+
+@pytest.mark.anyio
+async def test_prompt_too_long_triggers_fallback(service: AIService, monkeypatch: pytest.MonkeyPatch) -> None:
+    original_build_prompt = AIService._build_prompt
+    async def mistral_failure(message: str, context: Dict[str, Any]) -> str:
+        raise RuntimeError("mistral indisponible")
+
+    def limited_build_prompt(self, message: str, context: Dict[str, Any]) -> str:
+        prompt = original_build_prompt(self, message, context)
+        if len(message) > 120:
+            raise ValueError("Prompt demasiado largo")
+        return prompt
+
+    async def huggingface_wrapper(self, message: str, context: Dict[str, Any]) -> str:
+        _ = self._build_prompt(message, context)
+        return "respuesta corta"
+
+    async def ollama_wrapper(self, message: str, context: Dict[str, Any]) -> str:
+        _ = self._build_prompt(message, context)
+        return "respuesta corta"
+
+    original_generate_response = AIService.generate_response
+
+    async def fallback_response(self, message: str) -> str:
+        await original_generate_response(self, message)
+        return await AIService.get_fallback_response(self, message)
+
+    async def fake_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(ai_service_module.mistral_service, "generate_financial_response", mistral_failure)
+    monkeypatch.setattr(AIService, "_call_huggingface", huggingface_wrapper)
+    monkeypatch.setattr(AIService, "_call_ollama", ollama_wrapper)
+    monkeypatch.setattr(AIService, "_build_prompt", limited_build_prompt)
+    monkeypatch.setattr(AIService, "generate_response", fallback_response)
+    monkeypatch.setattr(ai_service_module.asyncio, "sleep", fake_sleep)
+
+    result = await service.process_message("x" * 200)
+    assert result.provider == "local"
+    assert "dificultades técnicas" in result.text.lower()
+
+
+@pytest.mark.anyio
+async def test_process_message_builds_enrichment_summary(
+    service: AIService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ai_service_module.Config, "HUGGINGFACE_API_KEY", "", raising=False)
+
+    def fake_analyze(self, message: str) -> Dict[str, Any]:
+        return {
+            "symbols": ["BTC"],
+            "interval": "1h",
+            "need_indicators": True,
+            "need_news": True,
+            "need_alerts": True,
+            "forex_pairs": ["EURUSD"],
+            "use_market_data": True,
+        }
+
+    async def fake_market_context(self, message: str) -> Dict[str, Any]:
+        return {
+            "market_data": {
+                "BTC": {
+                    "raw_price": 45000.0,
+                    "raw_change": 5.2,
+                    "source": "TestFeed",
+                }
+            }
+        }
+
+    async def fake_indicators(self, message: str) -> Dict[str, Any]:
+        return {
+            "BTC": {
+                "interval": "1h",
+                "indicators": {
+                    "rsi": {"value": 55.1},
+                    "vwap": {"value": 123.45},
+                },
+            }
+        }
+
+    async def fake_news(self, symbols: list) -> list:
+        return [{"title": "BTC en alza", "source": "Daily", "url": "http://example.com"}]
+
+    async def fake_alerts(self, symbols: list, interval: str) -> list:
+        return [{"symbol": "BTC", "suggestion": "Colocar stop", "notes": "Volatilidad"}]
+
+    async def fake_forex(self, pairs: list) -> list:
+        return ["EUR/USD: 1.1000 (+0.0100) — TestFX"]
+
+    async def mistral_success(self, message: str, context: Dict[str, Any]) -> str:
+        return "Respuesta principal Mistral"
+
+    async def fake_sleep(_delay: float) -> None:
+        return None
+
+    monkeypatch.setattr(AIService, "_analyze_message", fake_analyze)
+    monkeypatch.setattr(AIService, "get_market_context", fake_market_context)
+    monkeypatch.setattr(AIService, "_collect_indicator_snapshots", fake_indicators)
+    monkeypatch.setattr(AIService, "_collect_news_highlights", fake_news)
+    monkeypatch.setattr(AIService, "_collect_alert_suggestions", fake_alerts)
+    monkeypatch.setattr(AIService, "_collect_forex_quotes", fake_forex)
+    monkeypatch.setattr(AIService, "process_with_mistral", mistral_success)
+    monkeypatch.setattr(ai_service_module.asyncio, "sleep", fake_sleep)
+
+    result = await service.process_message("Analiza BTC con noticias y alertas")
+
+    assert result.provider == "mistral"
+    assert result.used_data is True
+    assert set(result.sources) == {"prices", "indicators", "news", "alerts"}
+    assert "📈 Datos de mercado" in result.text
+    assert "📊 Indicadores técnicos" in result.text
+    assert "📰 Noticias relevantes" in result.text
+    assert "🚨 Ideas de alertas" in result.text
+    assert "Respuesta principal Mistral" in result.text
