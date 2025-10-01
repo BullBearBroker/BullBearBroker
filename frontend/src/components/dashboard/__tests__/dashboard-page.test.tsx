@@ -360,18 +360,19 @@ describe("DashboardPage", () => {
     };
 
     expect(summary).toMatchInlineSnapshot(`
-      {
-        "cards": [
-          "dashboard-indicators",
-          "dashboard-chat",
-        ],
-        "contentClass": "flex flex-col gap-6 p-4 lg:p-6",
-        "hasSidebar": true,
-        "modulesClass": "grid flex-1 gap-6 lg:grid-cols-2 xl:grid-cols-[2fr_1fr]",
-        "pushStatus": "Push inactivo",
-        "shellClass": "grid min-h-screen bg-background text-foreground md:grid-cols-[280px_1fr]",
-      }
-    `);
+{
+  "cards": [
+    "dashboard-modules",
+    "dashboard-indicators",
+    "dashboard-chat",
+  ],
+  "contentClass": "flex flex-col gap-6 p-4 lg:p-6",
+  "hasSidebar": true,
+  "modulesClass": "grid flex-1 gap-6 lg:grid-cols-2 xl:grid-cols-[2fr_1fr]",
+  "pushStatus": "Push inactivo",
+  "shellClass": "grid min-h-screen bg-background text-foreground md:grid-cols-[280px_1fr]",
+}
+`);
   });
 
   it("muestra el estado vacío cuando no hay indicadores disponibles", async () => {
