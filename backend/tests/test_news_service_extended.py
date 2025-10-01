@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 from unittest.mock import AsyncMock
 
@@ -196,6 +197,255 @@ async def test_get_articles_returns_empty_when_all_sources_fail(
 
     assert articles == []
     assert call_mock.await_count == 2
+
+
+@pytest.mark.anyio
+async def test_get_articles_deduplicates_same_title_and_timestamp(
+    service: NewsService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    published = datetime(2024, 5, 5, 12, 0, tzinfo=timezone.utc).isoformat()
+    raw_articles = [
+        {
+            "title": "Duplicated headline",
+            "url": None,
+            "published_at": published,
+            "summary": "Uno",
+        },
+        {
+            "title": "Duplicated headline",
+            "url": None,
+            "published_at": published,
+            "summary": "Dos",
+        },
+    ]
+
+    async def fake_call(handler, session, limit, **kwargs):  # noqa: ANN001
+        return raw_articles
+
+    monkeypatch.setattr(service, "_call_with_retries", fake_call)
+    monkeypatch.setattr(service, "cache", _StubCache({}))
+    monkeypatch.setattr(Config, "FINFEED_API_KEY", "token", raising=False)
+
+    articles = await service._get_articles(
+        cache_namespace="finance",
+        limit=5,
+        primary_fetcher=service._fetch_finfeed,
+        fallback_query="finance",
+    )
+
+    assert len(articles) == 1
+    assert articles[0]["title"] == "Duplicated headline"
+
+
+@pytest.mark.anyio
+async def test_get_articles_skips_blank_and_untitled_entries(
+    service: NewsService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    published = datetime(2024, 5, 6, 12, 0, tzinfo=timezone.utc).isoformat()
+    raw_articles = [
+        {"title": " ", "url": "https://example.com/space", "published_at": published},
+        {"title": "Untitled", "url": "https://example.com/untitled", "published_at": published},
+        {"title": "Legible", "url": "https://example.com/ok", "published_at": published},
+    ]
+
+    async def fake_call(handler, session, limit, **kwargs):  # noqa: ANN001
+        return raw_articles
+
+    monkeypatch.setattr(service, "_call_with_retries", fake_call)
+    monkeypatch.setattr(service, "cache", _StubCache({}))
+    monkeypatch.setattr(Config, "FINFEED_API_KEY", "token", raising=False)
+
+    articles = await service._get_articles(
+        cache_namespace="finance",
+        limit=5,
+        primary_fetcher=service._fetch_finfeed,
+        fallback_query="finance",
+    )
+
+    assert len(articles) == 1
+    assert articles[0]["title"] == "Legible"
+
+
+@pytest.mark.anyio
+async def test_latest_news_skips_corrupted_source_payload(
+    service: NewsService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def failing_crypto(_limit: int) -> List[Dict[str, Any]]:
+        raise ValueError("crypto payload corrupt")
+
+    async def finance_entries(_limit: int) -> List[Dict[str, Any]]:
+        return [
+            {
+                "title": "Fin válido",
+                "url": "https://example.com/fin",
+                "published_at": datetime(2024, 5, 7, 12, 0, tzinfo=timezone.utc).isoformat(),
+                "summary": "",
+            }
+        ]
+
+    monkeypatch.setattr(service, "get_crypto_headlines", failing_crypto)
+    monkeypatch.setattr(service, "get_finance_headlines", finance_entries)
+
+    latest = await service.get_latest_news(limit=3)
+
+    assert len(latest) == 1
+    assert latest[0]["title"] == "Fin válido"
+
+
+@pytest.mark.anyio
+async def test_latest_news_merges_and_sorts_by_recency(
+    service: NewsService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    base = datetime(2024, 5, 10, 12, 0, tzinfo=timezone.utc)
+
+    async def crypto(_limit: int) -> List[Dict[str, Any]]:
+        return [
+            {
+                "title": "Crypto reciente",
+                "url": "https://example.com/crypto",
+                "published_at": (base + timedelta(hours=1)).isoformat(),
+                "summary": "",
+            },
+            {
+                "title": "Crypto antiguo",
+                "url": "https://example.com/crypto-old",
+                "published_at": (base - timedelta(days=1)).isoformat(),
+                "summary": "",
+            },
+        ]
+
+    async def finance(_limit: int) -> List[Dict[str, Any]]:
+        return [
+            {
+                "title": "Finance medio",
+                "url": "https://example.com/finance",
+                "published_at": base.isoformat(),
+                "summary": "",
+            }
+        ]
+
+    monkeypatch.setattr(service, "get_crypto_headlines", crypto)
+    monkeypatch.setattr(service, "get_finance_headlines", finance)
+
+    latest = await service.get_latest_news(limit=3)
+    ordered_titles = [item["title"] for item in latest]
+
+    assert ordered_titles == [
+        "Crypto reciente",
+        "Finance medio",
+        "Crypto antiguo",
+    ]
+
+
+@pytest.mark.anyio
+async def test_fetch_cryptopanic_normalizes_results(
+    service: NewsService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = {
+        "results": [
+            {
+                "title": "Headline",
+                "url": "https://example.com/post",
+                "published_at": "2024-05-01T10:00:00+00:00",
+                "body": "<b>Alert</b>",
+                "source": {"title": "Crypto Blog"},
+            }
+        ]
+    }
+
+    async def fake_fetch_json(session, url, params=None, headers=None, source_name=None):  # noqa: ANN001
+        assert source_name == "CryptoPanic"
+        return payload
+
+    monkeypatch.setattr(service, "_fetch_json", fake_fetch_json)
+    monkeypatch.setattr(Config, "CRYPTOPANIC_API_KEY", "token", raising=False)
+
+    articles = await service._fetch_cryptopanic(None, 5)
+
+    assert articles[0]["source"] == "Crypto Blog"
+    assert articles[0]["summary"] == "Alert"
+
+
+@pytest.mark.anyio
+async def test_fetch_finfeed_supports_multiple_fields(
+    service: NewsService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = {
+        "data": [
+            {
+                "headline": "Finfeed Headline",
+                "link": "https://example.com/fin",
+                "published": "Wed, 01 May 2024 10:00:00 GMT",
+                "description": "<p>Summary</p>",
+            }
+        ]
+    }
+
+    async def fake_fetch_json(session, url, params=None, headers=None, source_name=None):  # noqa: ANN001
+        assert source_name == "Finfeed"
+        return payload
+
+    monkeypatch.setattr(service, "_fetch_json", fake_fetch_json)
+    monkeypatch.setattr(Config, "FINFEED_API_KEY", "token", raising=False)
+
+    articles = await service._fetch_finfeed(None, 5)
+
+    assert articles[0]["title"] == "Finfeed Headline"
+    assert articles[0]["summary"] == "Summary"
+
+
+@pytest.mark.anyio
+async def test_fetch_newsapi_uses_domain_when_source_missing(
+    service: NewsService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    payload = {
+        "articles": [
+            {
+                "title": "API headline",
+                "url": "https://news.example/item",
+                "publishedAt": "2024-05-01T12:00:00Z",
+                "content": "<p>Body</p>",
+                "source": {},
+            }
+        ]
+    }
+
+    async def fake_fetch_json(session, url, params=None, headers=None, source_name=None):  # noqa: ANN001
+        assert source_name == "NewsAPI"
+        return payload
+
+    monkeypatch.setattr(service, "_fetch_json", fake_fetch_json)
+    monkeypatch.setattr(Config, "NEWSAPI_API_KEY", "token", raising=False)
+
+    articles = await service._fetch_newsapi(None, 5, query="q")
+
+    assert articles[0]["source"] == "news.example"
+
+
+@pytest.mark.anyio
+async def test_call_with_retries_eventually_succeeds(
+    service: NewsService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    attempts = {"count": 0}
+
+    async def flaky_handler(session, limit, **kwargs):  # noqa: ANN001
+        attempts["count"] += 1
+        if attempts["count"] < 3:
+            raise ValueError("temporary failure")
+        return [{"title": "Ok", "published_at": "2024-05-01T00:00:00+00:00"}]
+
+    monkeypatch.setattr(NewsService, "RETRY_BACKOFF", 0, raising=False)
+
+    result = await service._call_with_retries(flaky_handler, None, 5)
+
+    assert attempts["count"] == 3
+    assert result[0]["title"] == "Ok"
+    # Sin backoff no se invoca sleep, aseguramos que la lógica completó los intentos
+
+
+def test_normalize_datetime_handles_invalid_string(service: NewsService) -> None:
+    assert service._normalize_datetime("not-a-date") is None
+    assert service._normalize_datetime(None) is None
 
 
 @pytest.mark.anyio
