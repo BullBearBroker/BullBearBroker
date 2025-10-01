@@ -2,6 +2,8 @@ import "@testing-library/jest-dom";
 import "jest-axe/extend-expect";
 
 // Polyfills requeridos por MSW en entorno de pruebas
+process.env.NEXT_PUBLIC_API_URL = "http://localhost:3000/api";
+
 import { TextDecoder, TextEncoder } from "util";
 import { ReadableStream, WritableStream, TransformStream } from "stream/web";
 
