@@ -82,7 +82,7 @@ export function MarketSidebar({ token, user, onLogout }: MarketSidebarProps) {
   );
 
   return (
-    <div className="flex h-full flex-col gap-4 p-4">
+    <div className="flex h-full flex-col gap-4 p-4" data-testid="market-sidebar-root">
       <Card className="border-none bg-transparent shadow-none">
         <CardContent className="space-y-3 p-0">
           <div>

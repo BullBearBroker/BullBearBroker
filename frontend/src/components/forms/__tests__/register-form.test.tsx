@@ -1,5 +1,6 @@
 // [Codex] nuevo - Tests ajustados a placeholders y flujo de useAuth
 import { customRender, screen, fireEvent, waitFor } from "@/tests/utils/renderWithProviders";
+import { axe } from "jest-axe";
 import RegisterForm from "../register-form";
 
 // Mock de useAuth
@@ -271,5 +272,11 @@ describe("RegisterForm", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: /registrarse/i })).toBeEnabled()
     );
+  });
+
+  it("no presenta violaciones de accesibilidad básicas", async () => {
+    const { container } = customRender(<RegisterForm />);
+
+    expect(await axe(container)).toHaveNoViolations();
   });
 });

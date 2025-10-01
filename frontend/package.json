@@ -14,7 +14,8 @@
     "test:ci": "TS_NODE_PROJECT=tsconfig.jest.json NODE_OPTIONS='--loader ./node_modules/ts-node/esm.mjs' jest --config jest.config.ci.ts --coverage",
     "test:watch": "TS_NODE_PROJECT=tsconfig.jest.json NODE_OPTIONS='--loader ./node_modules/ts-node/esm.mjs' jest --config jest.config.dev.ts --watch",
     "test:alerts": "TS_NODE_PROJECT=tsconfig.jest.json NODE_OPTIONS='--loader ./node_modules/ts-node/esm.mjs' jest --config jest.config.dev.ts src/components/alerts/__tests__/alerts-panel.test.tsx",
-    "test:esm": "NODE_OPTIONS=--experimental-vm-modules jest"
+    "test:esm": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "test:e2e": "playwright test"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -54,6 +55,7 @@
     "@types/node": "^20.19.17",
     "@types/react": "^18.3.24",
     "@types/react-dom": "^18.3.7",
+    "@playwright/test": "^1.51.1",
     "autoprefixer": "^10.4.21",
     "babel-jest": "^29.7.0",
     "eslint": "^9.36.0",
