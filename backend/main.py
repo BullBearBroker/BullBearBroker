@@ -1,7 +1,7 @@
 import asyncio
-import inspect
 import json
 import os
+from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
@@ -12,6 +12,8 @@ import redis.asyncio as redis
 from backend.core.logging_config import get_logger
 from backend.core.http_logging import RequestLogMiddleware
 from backend.core.metrics import MetricsMiddleware, metrics_router
+from backend import database as database_module
+from backend.models.base import Base
 from backend.utils.config import ENV
 
 # Routers de la app
@@ -38,7 +40,6 @@ async def lifespan(app: FastAPI):
     # 🔹 Startup
     redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
     redis_client = None
-    db_engine = None
     try:
         redis_client = await redis.from_url(
             redis_url,
@@ -56,23 +57,54 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # pragma: no cover - redis opcional en tests
         logger.warning("fastapi_limiter_unavailable", error=str(exc))
 
+    database_setup_failed = False
+    database_setup_error_message: str | None = None
+
     try:
-        from backend.database import Base, engine as imported_engine
         from backend.services.user_service import user_service
 
-        db_engine = imported_engine
+        database_engine = getattr(database_module, "engine", None)
+        database_ready = True
         if ENV == "local":
-            Base.metadata.create_all(bind=db_engine)
-            logger.info("database_ready")
+            try:
+                if database_engine is None:
+                    raise RuntimeError("database engine is not configured")
+                Base.metadata.create_all(bind=database_engine, checkfirst=True)
+                logger.info("database_ready")
+            except Exception as exc:
+                database_ready = False
+                database_setup_failed = True
+                database_setup_error_message = str(exc)
+                logger.warning(
+                    {
+                        "service": "backend",
+                        "event": "database_setup_error",
+                        "error": database_setup_error_message,
+                        "level": "warning",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
         else:
             logger.info("database_migrations_required", env=ENV)
 
-        default_email = os.environ.get("BULLBEAR_DEFAULT_USER", "test@bullbear.ai")
-        default_password = os.environ.get("BULLBEAR_DEFAULT_PASSWORD", "Test1234!")
-        user_service.ensure_user(default_email, default_password)
-        logger.info("default_user_ready", email=default_email)
+        if database_ready:
+            default_email = os.environ.get("BULLBEAR_DEFAULT_USER", "test@bullbear.ai")
+            default_password = os.environ.get("BULLBEAR_DEFAULT_PASSWORD", "Test1234!")
+            user_service.ensure_user(default_email, default_password)
+            logger.info("default_user_ready", email=default_email)
     except Exception as exc:  # pragma: no cover - evita fallas en despliegues sin DB
+        database_setup_failed = True
+        database_setup_error_message = database_setup_error_message or str(exc)
         logger.error("database_setup_error", error=str(exc))
+        logger.warning(
+            {
+                "service": "backend",
+                "event": "database_setup_error",
+                "error": database_setup_error_message,
+                "level": "warning",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
     try:
         # Informe de integraciones para confirmar que usamos APIs reales.
@@ -81,6 +113,17 @@ async def lifespan(app: FastAPI):
         logger.warning("integration_report_failed", error=str(exc))
 
     yield  # ⬅️ Aquí FastAPI empieza a servir requests
+
+    if database_setup_failed and database_setup_error_message is not None:
+        logger.warning(
+            {
+                "service": "backend",
+                "event": "database_setup_error",
+                "error": database_setup_error_message,
+                "level": "warning",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
     # 🔹 Shutdown
     # Si necesitas liberar recursos (ej: cerrar redis) hazlo aquí
@@ -93,13 +136,30 @@ async def lifespan(app: FastAPI):
         logger.warning("redis_close_error", error=str(exc))
 
     try:
-        if db_engine is not None:
-            dispose_result = db_engine.dispose()
-            if inspect.isawaitable(dispose_result):
-                await dispose_result
+        current_engine = getattr(database_module, "engine", None)
+        if hasattr(current_engine, "dispose") and callable(getattr(current_engine, "dispose", None)):
+            current_engine.dispose()
             logger.info("engine_disposed")
+        else:
+            logger.warning(
+                {
+                    "service": "backend",
+                    "event": "engine_dispose_error",
+                    "error": "engine has no dispose()",
+                    "level": "warning",
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+            )
     except Exception as exc:
-        logger.warning("engine_dispose_error", error=str(exc))
+        logger.warning(
+            {
+                "service": "backend",
+                "event": "engine_dispose_error",
+                "error": str(exc),
+                "level": "warning",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+        )
 
 
 # ========================
