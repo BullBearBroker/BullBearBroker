@@ -101,3 +101,22 @@ async def test_non_numeric_payload_triggers_retry(service: StockService, monkeyp
 
     result = await service.get_price("MSFT")
     assert result == {"price": 55.0, "change": 0.0, "source": "Twelve Data"}
+
+
+@pytest.mark.anyio
+async def test_providers_without_api_keys_are_skipped(service: StockService, monkeypatch: pytest.MonkeyPatch) -> None:
+    skipped = AsyncMock()
+    fallback = AsyncMock(return_value={"price": 88.0, "change": 1.5})
+
+    monkeypatch.setattr(service, "_fetch_alpha_vantage", skipped)
+    monkeypatch.setattr(service, "_fetch_yahoo_finance", fallback)
+
+    monkeypatch.setattr(service, "apis", [
+        {"name": "Alpha Vantage", "callable": service._fetch_alpha_vantage, "requires_key": True, "api_key": None},
+        {"name": "Yahoo Finance", "callable": service._fetch_yahoo_finance, "requires_key": False, "api_key": None},
+    ])
+
+    payload = await service.get_price("IBM")
+    skipped.assert_not_awaited()
+    fallback.assert_awaited_once()
+    assert payload == {"price": 88.0, "change": 1.5, "source": "Yahoo Finance"}

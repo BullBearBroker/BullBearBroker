@@ -69,3 +69,35 @@ def test_resample_series_handles_large_dataset():
 async def test_get_crypto_closes_rejects_invalid_interval():
     with pytest.raises(ValueError):
         await ts.get_crypto_closes_binance("BTCUSDT", "abc")
+
+
+def test_resample_series_accepts_sequence_points():
+    base = datetime(2023, 5, 1, 10, 0, 0)
+    series = [
+        (base.isoformat(), 100.0, 5.0),
+        ((base + timedelta(minutes=30)).isoformat(), 102.0, 2.0),
+        ((base + timedelta(minutes=90)).isoformat(), 101.0, 1.0),
+    ]
+
+    aggregated = ts.resample_series(series, "1h")
+    assert len(aggregated) == 2
+    assert aggregated[0]["open"] == pytest.approx(100.0)
+    assert aggregated[0]["close"] == pytest.approx(102.0)
+    assert aggregated[0]["volume"] == pytest.approx(7.0)
+
+
+def test_resample_series_handles_duplicate_timestamps():
+    timestamp = datetime(2024, 1, 1, 12, 0, 0)
+    series = [
+        {"timestamp": timestamp.isoformat(), "close": 10.0},
+        {"timestamp": timestamp.isoformat(), "close": 11.0},
+        {"timestamp": (timestamp + timedelta(minutes=5)).isoformat(), "close": 8.0},
+    ]
+
+    aggregated = ts.resample_series(series, "1h")
+    assert len(aggregated) == 1
+    bucket = aggregated[0]
+    assert bucket["open"] == pytest.approx(10.0)
+    assert bucket["close"] == pytest.approx(8.0)
+    assert bucket["high"] == pytest.approx(11.0)
+    assert bucket["low"] == pytest.approx(8.0)

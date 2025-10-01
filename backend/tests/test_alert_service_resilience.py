@@ -132,3 +132,46 @@ async def test_notify_tolerates_external_failures(alert_service: AlertService, m
 
     # No exception should escape even if both channels fail
     await alert_service._notify(alert, price=151.5)
+
+
+def test_validate_condition_expression_rejects_blank(alert_service: AlertService) -> None:
+    with pytest.raises(ValueError):
+        alert_service.validate_condition_expression("   ")
+
+
+@pytest.mark.anyio
+async def test_evaluate_alerts_ignores_corrupt_prices(alert_service: AlertService, monkeypatch: pytest.MonkeyPatch) -> None:
+    alert = SimpleNamespace(
+        asset="SOLUSDT",
+        value=25.0,
+        condition=">",
+        active=True,
+    )
+
+    monkeypatch.setattr(alert_service, "_fetch_alerts", lambda: [alert])
+    monkeypatch.setattr(alert_service, "_resolve_price", AsyncMock(return_value=None))
+    notifier = AsyncMock()
+    monkeypatch.setattr(alert_service, "_notify", notifier)
+
+    await alert_service.evaluate_alerts()
+    notifier.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_resolve_price_handles_non_numeric_payload(monkeypatch: pytest.MonkeyPatch, alert_service: AlertService) -> None:
+    class FlakyMarket:
+        async def get_stock_price(self, symbol):  # noqa: ANN001
+            return {"price": None}
+
+        async def get_crypto_price(self, symbol):  # noqa: ANN001
+            return {"price": "not-a-number"}
+
+    class FlakyForex:
+        async def get_quote(self, symbol):  # noqa: ANN001
+            return {"price": None}
+
+    monkeypatch.setattr(alert_module, "market_service", FlakyMarket(), raising=False)
+    monkeypatch.setattr(alert_module, "forex_service", FlakyForex(), raising=False)
+
+    result = await alert_service._resolve_price("EURUSD")
+    assert result is None
