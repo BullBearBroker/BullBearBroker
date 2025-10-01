@@ -124,3 +124,30 @@ def test_vwap_handles_anomalous_volume(volumes):
 def test_indicators_invalid_types_raise_type_error(func, args):
     with pytest.raises((TypeError, ValueError)):
         func(*args)
+
+
+def test_rsi_handles_constant_and_descending_sequences():
+    constant = [42.0] * 20
+    descending = [100.0 - i for i in range(20)]
+
+    assert indicators.rsi(constant, 14) == 100.0
+    assert indicators.rsi(descending, 14) == 0.0
+
+
+def test_ema_returns_constant_value_for_flat_series():
+    values = [3.14159] * 10
+
+    result = indicators.ema(values, period=5)
+
+    assert result == pytest.approx(3.14159, rel=1e-6)
+
+
+def test_vwap_with_negative_volumes_is_controlled():
+    highs = [11.0, 10.5, 10.0]
+    lows = [9.0, 9.5, 9.0]
+    closes = [10.0, 9.75, 9.5]
+    volumes = [-5.0, 0.0, 2.5]
+
+    result = indicators.volume_weighted_average_price(highs, lows, closes, volumes)
+
+    assert result is None or math.isfinite(result)

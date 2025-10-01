@@ -197,9 +197,19 @@ def test_parse_timestamp_rejects_empty_string() -> None:
         _parse_timestamp("   ")
 
 
+def test_parse_timestamp_rejects_unsupported_type() -> None:
+    with pytest.raises(TypeError):
+        _parse_timestamp(object())
+
+
 def test_normalize_point_requires_price_field() -> None:
     with pytest.raises(ValueError):
         _normalize_point({"timestamp": "2024-01-01T00:00:00Z"})
+
+
+def test_normalize_point_sequence_requires_timestamp_and_price() -> None:
+    with pytest.raises(ValueError):
+        _normalize_point(["2024-01-01T00:00:00Z"])
 
 
 def test_normalize_point_with_sequence_returns_expected_tuple() -> None:
