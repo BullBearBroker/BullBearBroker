@@ -80,5 +80,17 @@ class CacheClient:
             expires_at = time.monotonic() + ttl
             self._memory_cache[namespaced_key] = (expires_at, value)
 
+    async def delete(self, key: str) -> None:
+        namespaced_key = self._format_key(key)
+
+        if self._redis:
+            try:
+                await self._redis.delete(namespaced_key)
+            except Exception as exc:  # pragma: no cover - depende de redis
+                print(f"CacheClient: error eliminando en Redis ({exc})")
+
+        async with self._lock:
+            self._memory_cache.pop(namespaced_key, None)
+
 
 __all__ = ["CacheClient"]
