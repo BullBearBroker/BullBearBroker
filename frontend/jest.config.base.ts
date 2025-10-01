@@ -22,13 +22,14 @@ const baseConfig: Config = {
       "<rootDir>/node_modules/@mswjs/interceptors/lib/node/interceptors/$1/index.js",
   },
   transform: {
-    "^.+\\.(js|jsx|ts|tsx)$": [
+    "^.+\\.(ts|tsx|js|jsx)$": [
       "babel-jest",
-      { configFile: path.resolve(__dirname, "babel.config.js") },
+      { configFile: path.resolve(__dirname, "babel.config.js"), babelrc: false },
     ],
   },
   transformIgnorePatterns: [
     "/node_modules/(?!(recharts|d3-|msw|@mswjs|until-async|strict-event-emitter|outvariant|headers-polyfill)/)",
+    "node_modules/(?!(recharts|d3-|msw|@mswjs|until-async|strict-event-emitter|outvariant|headers-polyfill|nanoid|uuid|other-esm-lib)/)",
   ],
   moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json", "node"],
   testMatch: [
