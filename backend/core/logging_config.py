@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Any
 
@@ -44,3 +45,23 @@ def get_logger(**initial_context: Any) -> structlog.stdlib.BoundLogger:
     if initial_context:
         return logger.bind(**initial_context)
     return logger
+
+
+def log_event(
+    logger: structlog.stdlib.BoundLogger,
+    service: str,
+    event: str,
+    level: str = "warning",
+    **extra: Any,
+) -> None:
+    payload: dict[str, Any] = {
+        "service": service,
+        "event": event,
+        "level": level,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    if extra:
+        payload.update(extra)
+
+    log_method = logger.warning if level == "warning" else logger.info
+    log_method(payload)
