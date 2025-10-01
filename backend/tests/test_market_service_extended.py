@@ -56,6 +56,32 @@ class _StubCache:
         self.sets += 1
 
 
+@dataclass
+class _ExpiringStubCache:
+    store: Dict[str, Any]
+    default_ttl: int = 1
+    now: float = 0.0
+    sets: int = 0
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+    async def get(self, key: str) -> Optional[Any]:
+        entry = self.store.get(key)
+        if entry is None:
+            return None
+        value, expiry = entry
+        if expiry is not None and self.now >= expiry:
+            self.store.pop(key, None)
+            return None
+        return value
+
+    async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:
+        expiry = self.now + (ttl if ttl is not None else self.default_ttl)
+        self.store[key] = (value, expiry)
+        self.sets += 1
+
+
 @pytest.fixture()
 def market_service(monkeypatch: pytest.MonkeyPatch) -> MarketService:
     monkeypatch.setattr(market_service_module, "CacheClient", lambda *args, **kwargs: _StubCache({}))
@@ -184,3 +210,120 @@ async def test_history_cache_hit_skips_fetch(monkeypatch: pytest.MonkeyPatch, ma
 async def test_fetch_binance_history_rejects_invalid_interval(market_service: MarketService) -> None:
     with pytest.raises(ValueError):
         await market_service._fetch_binance_history("BTCUSDT", "7m", 10)
+
+
+@pytest.mark.asyncio
+async def test_get_historical_ohlc_raises_when_yahoo_payload_incomplete(
+    monkeypatch: pytest.MonkeyPatch, market_service: MarketService
+) -> None:
+    payload = {"chart": {"result": []}}
+
+    dummy_response = _DummyResponse(status=200, payload=payload)
+    monkeypatch.setattr(
+        market_service_module.aiohttp,
+        "ClientSession",
+        lambda *args, **kwargs: _DummySession(dummy_response),
+    )
+
+    with pytest.raises(ValueError) as exc:
+        await market_service.get_historical_ohlc("msft", interval="1h", market="stock")
+
+    assert "Yahoo: Datos históricos no disponibles" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_history_cache_refetches_after_ttl_expiration(
+    monkeypatch: pytest.MonkeyPatch, market_service: MarketService
+) -> None:
+    cache = _ExpiringStubCache({}, default_ttl=1)
+    market_service.history_cache = cache  # type: ignore[assignment]
+
+    calls: List[str] = []
+
+    async def fake_fetch(self, symbol: str, interval: str, limit: int) -> Dict[str, Any]:
+        calls.append(interval)
+        return {
+            "symbol": symbol,
+            "interval": interval,
+            "source": "Binance",
+            "values": [
+                {
+                    "timestamp": "2024-01-01T00:00:00+00:00",
+                    "open": 1.0,
+                    "high": 1.0,
+                    "low": 1.0,
+                    "close": 1.0,
+                    "volume": 1.0,
+                }
+            ],
+        }
+
+    monkeypatch.setattr(MarketService, "_fetch_binance_history", fake_fetch)
+
+    await market_service.get_historical_ohlc("btcusdt", market="crypto")
+    assert len(calls) == 1
+
+    cache.advance(5)
+
+    await market_service.get_historical_ohlc("btcusdt", market="crypto")
+    assert len(calls) == 2
+    assert cache.sets == 2
+
+
+@pytest.mark.asyncio
+async def test_get_historical_ohlc_raises_for_unsupported_interval(
+    monkeypatch: pytest.MonkeyPatch, market_service: MarketService
+) -> None:
+    async def fake_binance(self, symbol: str, interval: str, limit: int) -> Dict[str, Any]:
+        raise ValueError(f"Intervalo no soportado por Binance: {interval}")
+
+    market_service.history_cache = _StubCache({})  # type: ignore[assignment]
+    monkeypatch.setattr(MarketService, "_fetch_binance_history", fake_binance)
+
+    with pytest.raises(ValueError) as exc:
+        await market_service.get_historical_ohlc("btcusdt", interval="7m", market="crypto")
+
+    assert "Intervalo no soportado" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_get_historical_ohlc_rejects_corrupted_yahoo_values(
+    monkeypatch: pytest.MonkeyPatch, market_service: MarketService
+) -> None:
+    async def failing_binance(*_args: Any, **_kwargs: Any) -> None:
+        raise ClientError("binance unavailable")
+
+    corrupted_payload = {
+        "chart": {
+            "result": [
+                {
+                    "timestamp": [1700000000],
+                    "indicators": {
+                        "quote": [
+                            {
+                                "open": ["bad"],
+                                "high": ["101"],
+                                "low": ["99"],
+                                "close": ["100"],
+                                "volume": ["50"],
+                            }
+                        ]
+                    },
+                }
+            ]
+        }
+    }
+
+    dummy_response = _DummyResponse(status=200, payload=corrupted_payload)
+    monkeypatch.setattr(
+        market_service_module.aiohttp,
+        "ClientSession",
+        lambda *args, **kwargs: _DummySession(dummy_response),
+    )
+
+    monkeypatch.setattr(MarketService, "_fetch_binance_history", failing_binance)
+
+    with pytest.raises(ValueError) as exc:
+        await market_service.get_historical_ohlc("aapl", interval="1h", market="stock")
+
+    assert "Yahoo: could not convert string to float" in str(exc.value)
