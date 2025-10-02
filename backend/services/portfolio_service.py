@@ -5,9 +5,10 @@ from __future__ import annotations
 import asyncio
 import csv
 import io
+from collections.abc import Iterable
 from contextlib import contextmanager
 from decimal import Decimal
-from typing import Any, Dict, Iterable, List, Optional, Set
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import delete, select
@@ -55,7 +56,7 @@ class PortfolioService:
     # ------------------------------
     # CRUD helpers
     # ------------------------------
-    def list_items(self, user_id: UUID) -> List[PortfolioItem]:
+    def list_items(self, user_id: UUID) -> list[PortfolioItem]:
         with self._session_scope() as session:
             records = (
                 session.scalars(
@@ -126,7 +127,7 @@ class PortfolioService:
             writer.writerow([item.symbol, float(item.amount)])
         return buffer.getvalue()
 
-    def import_from_csv(self, user_id: UUID, *, content: str) -> Dict[str, Any]:
+    def import_from_csv(self, user_id: UUID, *, content: str) -> dict[str, Any]:
         if not content.strip():
             raise ValueError("El archivo CSV está vacío")
 
@@ -158,12 +159,12 @@ class PortfolioService:
                 "Faltan columnas requeridas en el CSV: " + ", ".join(sorted(missing))
             )
 
-        errors: List[Dict[str, Any]] = []
-        created_items: List[PortfolioItem] = []
-        seen_symbols: Set[str] = set()
+        errors: list[dict[str, Any]] = []
+        created_items: list[PortfolioItem] = []
+        seen_symbols: set[str] = set()
 
         with self._session_scope() as session:
-            existing_symbols: Set[str] = {
+            existing_symbols: set[str] = {
                 row[0]
                 for row in session.execute(
                     select(PortfolioItem.symbol).where(PortfolioItem.user_id == user_id)
@@ -257,7 +258,7 @@ class PortfolioService:
     # ------------------------------
     # Valuation helpers
     # ------------------------------
-    async def get_portfolio_overview(self, user_id: UUID) -> Dict[str, Any]:
+    async def get_portfolio_overview(self, user_id: UUID) -> dict[str, Any]:
         items = self.list_items(user_id)
         if not items:
             return {"items": [], "total_value": 0.0}
@@ -266,9 +267,9 @@ class PortfolioService:
             *[self._resolve_price(item.symbol) for item in items]
         )
 
-        overview_items: List[Dict[str, Any]] = []
+        overview_items: list[dict[str, Any]] = []
         total_value = 0.0
-        for item, price in zip(items, prices):
+        for item, price in zip(items, prices, strict=False):
             amount_float = float(item.amount)
             value = price * amount_float if price is not None else None
             if value is not None:
@@ -288,7 +289,7 @@ class PortfolioService:
             "total_value": round(total_value, 2),
         }
 
-    async def _resolve_price(self, symbol: str) -> Optional[float]:
+    async def _resolve_price(self, symbol: str) -> float | None:
         normalized = symbol.strip().upper()
         # Try crypto first
         if market_service is not None:

@@ -1,10 +1,13 @@
 # backend/services/timeseries_service.py
 
 from __future__ import annotations
+
 import os
 from collections import OrderedDict
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
+from typing import Any
+
 import httpx
 
 _HTTP_TIMEOUT_SECONDS = 15.0
@@ -38,7 +41,7 @@ ALPHAV_INTERVALS_FX = {"1h": "60min", "1d": "Daily"}     # 4h no está soportado
 DEFAULT_LIMIT = 300
 
 
-_RESAMPLE_INTERVALS: Dict[str, int] = {"1h": 3600, "4h": 14_400, "1d": 86_400}
+_RESAMPLE_INTERVALS: dict[str, int] = {"1h": 3600, "4h": 14_400, "1d": 86_400}
 
 
 def _parse_timestamp(value: Any) -> datetime:
@@ -46,11 +49,11 @@ def _parse_timestamp(value: Any) -> datetime:
 
     if isinstance(value, datetime):
         if value.tzinfo is None:
-            return value.replace(tzinfo=timezone.utc)
-        return value.astimezone(timezone.utc)
+            return value.replace(tzinfo=UTC)
+        return value.astimezone(UTC)
 
-    if isinstance(value, (int, float)):
-        return datetime.fromtimestamp(float(value), tz=timezone.utc)
+    if isinstance(value, int | float):
+        return datetime.fromtimestamp(float(value), tz=UTC)
 
     if isinstance(value, str):
         text = value.strip()
@@ -63,13 +66,15 @@ def _parse_timestamp(value: Any) -> datetime:
         except ValueError as exc:  # pragma: no cover - defensive, exercised via tests
             raise ValueError(f"Timestamp inválido: {value}") from exc
         if parsed.tzinfo is None:
-            parsed = parsed.replace(tzinfo=timezone.utc)
-        return parsed.astimezone(timezone.utc)
+            parsed = parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
 
     raise TypeError(f"Tipo de timestamp no soportado: {type(value)!r}")
 
 
-def _normalize_point(point: Mapping[str, Any] | Sequence[Any]) -> Tuple[datetime, float, Optional[float]]:
+def _normalize_point(
+    point: Mapping[str, Any] | Sequence[Any],
+) -> tuple[datetime, float, float | None]:
     """Extract timestamp, price and optional volume from incoming payloads."""
 
     if isinstance(point, Mapping):
@@ -117,13 +122,13 @@ def _bucket_start(timestamp: datetime, interval: str) -> datetime:
 
 
 def _format_timestamp(value: datetime) -> str:
-    return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def resample_series(
     series: Sequence[Mapping[str, Any]] | Sequence[Sequence[Any]],
     interval: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Aggregate raw candle data into OHLC buckets for the requested interval."""
 
     if not series:
@@ -132,13 +137,13 @@ def resample_series(
     if interval not in _RESAMPLE_INTERVALS:
         raise ValueError("Intervalo no soportado para resample")
 
-    normalized: List[Tuple[datetime, float, Optional[float]]] = []
+    normalized: list[tuple[datetime, float, float | None]] = []
     for point in series:
         normalized.append(_normalize_point(point))
 
     normalized.sort(key=lambda item: item[0])
 
-    aggregated: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+    aggregated: OrderedDict[str, dict[str, Any]] = OrderedDict()
     for timestamp, price, volume in normalized:
         bucket_ts = _bucket_start(timestamp, interval)
         bucket_key = _format_timestamp(bucket_ts)
@@ -166,7 +171,7 @@ def resample_series(
 
     return list(aggregated.values())
 
-async def _http_get_json(url: str, params: Dict[str, str]) -> Dict:
+async def _http_get_json(url: str, params: dict[str, str]) -> dict:
     timeout = httpx.Timeout(
         timeout=_HTTP_TIMEOUT_SECONDS,
         connect=_HTTP_CONNECT_TIMEOUT_SECONDS,
@@ -176,14 +181,20 @@ async def _http_get_json(url: str, params: Dict[str, str]) -> Dict:
         r.raise_for_status()
         return r.json()
 
-async def get_crypto_closes_binance(symbol: str, interval: str, limit: int = DEFAULT_LIMIT) -> Tuple[List[float], Dict]:
+async def get_crypto_closes_binance(
+    symbol: str, interval: str, limit: int = DEFAULT_LIMIT
+) -> tuple[list[float], dict]:
     """
     symbol: p.ej. BTCUSDT
     """
     if interval not in BINANCE_INTERVALS:
         raise ValueError("Intervalo no soportado para Binance")
     url = "https://api.binance.com/api/v3/klines"
-    params = {"symbol": symbol.upper(), "interval": BINANCE_INTERVALS[interval], "limit": str(limit)}
+    params = {
+        "symbol": symbol.upper(),
+        "interval": BINANCE_INTERVALS[interval],
+        "limit": str(limit),
+    }
     data = await _http_get_json(url, params)
     closes = [float(item[4]) for item in data]  # índice 4 = close
     highs = [float(item[2]) for item in data]  # [Codex] nuevo - capturamos máximos
@@ -201,7 +212,9 @@ async def get_crypto_closes_binance(symbol: str, interval: str, limit: int = DEF
     }
     return closes, meta
 
-async def get_stock_closes(symbol: str, interval: str, limit: int = DEFAULT_LIMIT) -> Tuple[List[float], Dict]:
+async def get_stock_closes(
+    symbol: str, interval: str, limit: int = DEFAULT_LIMIT
+) -> tuple[list[float], dict]:
     """
     Intenta TwelveData -> Alpha Vantage (fallback).
     """
@@ -227,7 +240,9 @@ async def get_stock_closes(symbol: str, interval: str, limit: int = DEFAULT_LIMI
                 highs = [float(v.get("high", v["close"])) for v in data["values"]]  # [Codex] nuevo
                 lows = [float(v.get("low", v["close"])) for v in data["values"]]   # [Codex] nuevo
                 opens = [float(v.get("open", v["close"])) for v in data["values"]]  # [Codex] nuevo
-                volumes = [float(v.get("volume", 0.0) or 0.0) for v in data["values"]]  # [Codex] nuevo
+                volumes = [
+                    float(v.get("volume", 0.0) or 0.0) for v in data["values"]
+                ]  # [Codex] nuevo
                 return closes, {
                     "source": "twelvedata",
                     "interval": interval,
@@ -256,14 +271,21 @@ async def get_stock_closes(symbol: str, interval: str, limit: int = DEFAULT_LIMI
         data = await _http_get_json(url, params)
         key = "Time Series (60min)"
         if key not in data:
-            raise RuntimeError(f"Alpha Vantage error: {data.get('Note') or data.get('Error Message') or 'respuesta inválida'}")
+            error_detail = (
+                data.get("Note")
+                or data.get("Error Message")
+                or "respuesta inválida"
+            )
+            raise RuntimeError(f"Alpha Vantage error: {error_detail}")
         # ordenar por timestamp ascendente
         items = sorted(data[key].items(), key=lambda kv: kv[0])
         closes = [float(v["4. close"]) for _, v in items][-limit:]
         highs = [float(v.get("2. high", v["4. close"])) for _, v in items][-limit:]  # [Codex] nuevo
         lows = [float(v.get("3. low", v["4. close"])) for _, v in items][-limit:]   # [Codex] nuevo
         opens = [float(v.get("1. open", v["4. close"])) for _, v in items][-limit:]  # [Codex] nuevo
-        volumes = [float(v.get("5. volume", 0.0) or 0.0) for _, v in items][-limit:]  # [Codex] nuevo
+        volumes = [
+            float(v.get("5. volume", 0.0) or 0.0) for _, v in items
+        ][-limit:]  # [Codex] nuevo
         return closes, {
             "source": "alpha_vantage",
             "interval": interval,
@@ -286,13 +308,20 @@ async def get_stock_closes(symbol: str, interval: str, limit: int = DEFAULT_LIMI
         data = await _http_get_json(url, params)
         key = "Time Series (Daily)"
         if key not in data:
-            raise RuntimeError(f"Alpha Vantage error: {data.get('Note') or data.get('Error Message') or 'respuesta inválida'}")
+            error_detail = (
+                data.get("Note")
+                or data.get("Error Message")
+                or "respuesta inválida"
+            )
+            raise RuntimeError(f"Alpha Vantage error: {error_detail}")
         items = sorted(data[key].items(), key=lambda kv: kv[0])
         closes = [float(v["4. close"]) for _, v in items][-limit:]
         highs = [float(v.get("2. high", v["4. close"])) for _, v in items][-limit:]  # [Codex] nuevo
         lows = [float(v.get("3. low", v["4. close"])) for _, v in items][-limit:]   # [Codex] nuevo
         opens = [float(v.get("1. open", v["4. close"])) for _, v in items][-limit:]  # [Codex] nuevo
-        volumes = [float(v.get("5. volume", 0.0) or 0.0) for _, v in items][-limit:]  # [Codex] nuevo
+        volumes = [
+            float(v.get("5. volume", 0.0) or 0.0) for _, v in items
+        ][-limit:]  # [Codex] nuevo
         return closes, {
             "source": "alpha_vantage",
             "interval": interval,
@@ -305,7 +334,9 @@ async def get_stock_closes(symbol: str, interval: str, limit: int = DEFAULT_LIMI
 
     raise ValueError("Intervalo no soportado para acciones")
 
-async def get_forex_closes(pair: str, interval: str, limit: int = DEFAULT_LIMIT) -> Tuple[List[float], Dict]:
+async def get_forex_closes(
+    pair: str, interval: str, limit: int = DEFAULT_LIMIT
+) -> tuple[list[float], dict]:
     """
     pair: 'EURUSD' o 'EUR/USD'
     """
@@ -332,7 +363,9 @@ async def get_forex_closes(pair: str, interval: str, limit: int = DEFAULT_LIMIT)
                 highs = [float(v.get("high", v["close"])) for v in data["values"]]  # [Codex] nuevo
                 lows = [float(v.get("low", v["close"])) for v in data["values"]]    # [Codex] nuevo
                 opens = [float(v.get("open", v["close"])) for v in data["values"]]  # [Codex] nuevo
-                volumes = [float(v.get("volume", 0.0) or 0.0) for v in data["values"]]  # [Codex] nuevo
+                volumes = [
+                    float(v.get("volume", 0.0) or 0.0) for v in data["values"]
+                ]  # [Codex] nuevo
                 return closes, {
                     "source": "twelvedata",
                     "interval": interval,
@@ -362,7 +395,12 @@ async def get_forex_closes(pair: str, interval: str, limit: int = DEFAULT_LIMIT)
         data = await _http_get_json(url, params)
         key = "Time Series FX (60min)"
         if key not in data:
-            raise RuntimeError(f"Alpha Vantage error: {data.get('Note') or data.get('Error Message') or 'respuesta inválida'}")
+            error_detail = (
+                data.get("Note")
+                or data.get("Error Message")
+                or "respuesta inválida"
+            )
+            raise RuntimeError(f"Alpha Vantage error: {error_detail}")
         items = sorted(data[key].items(), key=lambda kv: kv[0])
         closes = [float(v["4. close"]) for _, v in items][-limit:]
         highs = [float(v.get("2. high", v["4. close"])) for _, v in items][-limit:]  # [Codex] nuevo
@@ -390,7 +428,12 @@ async def get_forex_closes(pair: str, interval: str, limit: int = DEFAULT_LIMIT)
         data = await _http_get_json(url, params)
         key = "Time Series FX (Daily)"
         if key not in data:
-            raise RuntimeError(f"Alpha Vantage error: {data.get('Note') or data.get('Error Message') or 'respuesta inválida'}")
+            error_detail = (
+                data.get("Note")
+                or data.get("Error Message")
+                or "respuesta inválida"
+            )
+            raise RuntimeError(f"Alpha Vantage error: {error_detail}")
         items = sorted(data[key].items(), key=lambda kv: kv[0])
         closes = [float(v["4. close"]) for _, v in items][-limit:]
         highs = [float(v.get("2. high", v["4. close"])) for _, v in items][-limit:]  # [Codex] nuevo
@@ -408,7 +451,9 @@ async def get_forex_closes(pair: str, interval: str, limit: int = DEFAULT_LIMIT)
 
     raise ValueError("Intervalo no soportado para forex")
 
-async def get_closes(asset_type: str, symbol: str, interval: str, limit: int = DEFAULT_LIMIT) -> Tuple[List[float], Dict]:
+async def get_closes(
+    asset_type: str, symbol: str, interval: str, limit: int = DEFAULT_LIMIT
+) -> tuple[list[float], dict]:
     asset_type = asset_type.lower()
     interval = interval.lower()
     if asset_type == "crypto":

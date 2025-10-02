@@ -1,15 +1,18 @@
-from dataclasses import dataclass
-from typing import Dict, Any, Callable, Awaitable, List, Tuple, Optional
 import asyncio
 import logging
 import re
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+from typing import Any
 from urllib.parse import urljoin  # [Codex] nuevo
 
 import aiohttp
 
 from backend.core.metrics import AI_PROVIDER_FAILOVER_TOTAL
 from backend.utils.config import Config
+
 from .mistral_service import mistral_service
+
 try:  # pragma: no cover - optional imports depending on entrypoint
     from backend.services.market_service import market_service
 except ImportError:  # pragma: no cover
@@ -32,9 +35,9 @@ logger = logging.getLogger(__name__)
 @dataclass
 class AIResponsePayload:
     text: str
-    provider: Optional[str]
+    provider: str | None
     used_data: bool = False
-    sources: List[str] = None
+    sources: list[str] = None
 
     def __post_init__(self) -> None:
         if self.sources is None:
@@ -71,7 +74,7 @@ class AIService:
         self.market_service = market_service
 
     async def process_message(
-        self, message: str, context: Dict[str, Any] = None
+        self, message: str, context: dict[str, Any] = None
     ) -> AIResponsePayload:
         """Procesar mensaje del usuario y generar respuesta enriquecida."""
 
@@ -82,11 +85,11 @@ class AIService:
         interval = decision["interval"] or "1h"
 
         used_data = False
-        sources: List[str] = []
-        enrichment: Dict[str, List[str]] = {}
+        sources: list[str] = []
+        enrichment: dict[str, list[str]] = {}
 
         # Market data (precios)
-        market_context: Dict[str, Any] = {}
+        market_context: dict[str, Any] = {}
         if decision["use_market_data"]:
             try:
                 market_context = await self.get_market_context(message)
@@ -162,7 +165,7 @@ class AIService:
         if enrichment_text:
             context["enrichment_summary"] = enrichment_text
 
-        providers: List[Tuple[str, Callable[[], Awaitable[str]]]] = [
+        providers: list[tuple[str, Callable[[], Awaitable[str]]]] = [
             ("mistral", lambda: self.process_with_mistral(message, context))
         ]
 
@@ -183,7 +186,7 @@ class AIService:
             provider = "local"
             logger.info("AI response generated using local fallback")
 
-        final_parts: List[str] = []
+        final_parts: list[str] = []
         if enrichment_text:
             final_parts.append(enrichment_text)
         if ai_text:
@@ -198,7 +201,7 @@ class AIService:
             sources=sources,
         )
 
-    async def process_with_mistral(self, message: str, context: Dict[str, Any] = None) -> str:
+    async def process_with_mistral(self, message: str, context: dict[str, Any] = None) -> str:
         """Procesar mensaje con Mistral AI"""
         try:
             # Generar respuesta con Mistral AI
@@ -218,9 +221,9 @@ class AIService:
         
     async def _call_with_backoff(
         self,
-        providers: List[Tuple[str, Callable[[], Awaitable[str]]]]
-    ) -> Tuple[str, str]:
-        last_error: Optional[Exception] = None
+        providers: list[tuple[str, Callable[[], Awaitable[str]]]]
+    ) -> tuple[str, str]:
+        last_error: Exception | None = None
         total_providers = len(providers)
         for index, (provider_name, provider) in enumerate(providers):
             backoff = 1
@@ -256,7 +259,7 @@ class AIService:
             raise last_error
         raise RuntimeError("No providers available")
 
-    async def _call_huggingface(self, message: str, context: Dict[str, Any]) -> str:
+    async def _call_huggingface(self, message: str, context: dict[str, Any]) -> str:
         if not Config.HUGGINGFACE_API_KEY:
             raise RuntimeError("HuggingFace token not configured")
 
@@ -308,7 +311,7 @@ class AIService:
 
         raise ValueError("Respuesta vacía de HuggingFace")
 
-    async def _call_ollama(self, message: str, context: Dict[str, Any]) -> str:
+    async def _call_ollama(self, message: str, context: dict[str, Any]) -> str:
         host = (
             Config.OLLAMA_HOST.rstrip("/")
             if Config.OLLAMA_HOST
@@ -326,12 +329,11 @@ class AIService:
 
                 tags = await response.json()
                 models = tags.get("models") if isinstance(tags, dict) else None
-                if isinstance(models, list):
-                    if not any(
-                        isinstance(item, dict) and item.get("name") == model
-                        for item in models
-                    ):
-                        raise RuntimeError(f"Modelo {model} no disponible en Ollama")
+                if isinstance(models, list) and not any(
+                    isinstance(item, dict) and item.get("name") == model
+                    for item in models
+                ):
+                    raise RuntimeError(f"Modelo {model} no disponible en Ollama")
 
             payload = {
                 "model": model,
@@ -354,7 +356,7 @@ class AIService:
 
         raise ValueError("Respuesta vacía de Ollama")
 
-    def _build_prompt(self, message: str, context: Dict[str, Any]) -> str:
+    def _build_prompt(self, message: str, context: dict[str, Any]) -> str:
         if not (message or "").strip():
             raise ValueError("El mensaje no puede estar vacío")
         prompt_lines = [
@@ -383,7 +385,7 @@ class AIService:
         prompt_lines.append("Responde en español con recomendaciones concretas y breves.")
         return "\n".join(prompt_lines)
 
-    def _select_model_for_profile(self, profile: Optional[str]) -> str:
+    def _select_model_for_profile(self, profile: str | None) -> str:
         base_model = Config.HUGGINGFACE_MODEL
         if not profile:
             return base_model
@@ -407,7 +409,7 @@ class AIService:
         }
         return defaults.get(normalized, base_model)
 
-    def _analyze_message(self, message: str) -> Dict[str, Any]:
+    def _analyze_message(self, message: str) -> dict[str, Any]:
         lower = message.lower()
         symbols = self.extract_symbols(message)
         interval = self._extract_interval(message)
@@ -433,7 +435,7 @@ class AIService:
             "use_market_data": use_market_data,
         }
 
-    async def get_market_context(self, message: str) -> Dict[str, Any]:
+    async def get_market_context(self, message: str) -> dict[str, Any]:
         """Obtener contexto de mercado relevante"""
         if not self.market_service:
             return {}
@@ -464,7 +466,7 @@ class AIService:
 
         return context
 
-    async def _collect_indicator_snapshots(self, message: str) -> Dict[str, Any]:
+    async def _collect_indicator_snapshots(self, message: str) -> dict[str, Any]:
         """Busca símbolos + intervalos y consulta /api/markets/indicators con datos reales."""
         # [Codex] nuevo
         interval = self._extract_interval(message)
@@ -476,7 +478,7 @@ class AIService:
             return {}
 
         tasks = []
-        prepared: List[Tuple[str, str]] = []
+        prepared: list[tuple[str, str]] = []
 
         session_timeout = aiohttp.ClientTimeout(total=20)
         async with aiohttp.ClientSession(timeout=session_timeout) as session:
@@ -512,8 +514,8 @@ class AIService:
 
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-        indicator_map: Dict[str, Any] = {}
-        for (symbol_key, asset_type), result in zip(prepared, results):
+        indicator_map: dict[str, Any] = {}
+        for (symbol_key, asset_type), result in zip(prepared, results, strict=False):
             if isinstance(result, Exception):
                 logger.warning("Indicator snapshot failed for %s: %s", symbol_key, result)
                 continue
@@ -531,8 +533,8 @@ class AIService:
         self,
         session: aiohttp.ClientSession,
         url: str,
-        params: Dict[str, str],
-    ) -> Dict[str, Any]:
+        params: dict[str, str],
+    ) -> dict[str, Any]:
         """Realiza la llamada HTTP para recuperar indicadores técnicos."""
         # [Codex] nuevo
         async with session.get(url, params=params) as response:
@@ -544,8 +546,8 @@ class AIService:
             return await response.json()
 
     async def _collect_news_highlights(
-        self, symbols: List[str], limit: int = 3
-    ) -> List[Dict[str, Any]]:
+        self, symbols: list[str], limit: int = 3
+    ) -> list[dict[str, Any]]:
         if news_service is None:
             return []
         try:
@@ -558,7 +560,7 @@ class AIService:
             return []
 
         symbols_lower = [sym.lower() for sym in symbols if sym]
-        selected: List[Dict[str, Any]] = []
+        selected: list[dict[str, Any]] = []
         for article in articles:
             title = article.get("title") or ""
             summary = article.get("summary") or ""
@@ -574,7 +576,7 @@ class AIService:
         if not selected and symbols_lower:
             selected = articles[:limit]
 
-        highlights: List[Dict[str, Any]] = []
+        highlights: list[dict[str, Any]] = []
         for item in selected[:limit]:
             highlights.append(
                 {
@@ -588,14 +590,14 @@ class AIService:
         return highlights
 
     async def _collect_alert_suggestions(
-        self, symbols: List[str], interval: str
-    ) -> List[Dict[str, str]]:
+        self, symbols: list[str], interval: str
+    ) -> list[dict[str, str]]:
         try:
             from backend.services.alert_service import alert_service as shared_alert_service
         except ImportError:  # pragma: no cover - evitar fallos en modo standalone
             return []
 
-        suggestions: List[Dict[str, str]] = []
+        suggestions: list[dict[str, str]] = []
         for symbol in symbols[:2]:
             try:
                 result = await shared_alert_service.suggest_alert_condition(symbol, interval)
@@ -606,10 +608,10 @@ class AIService:
                 logger.warning("Alert suggestion failed for %s: %s", symbol, exc)
         return suggestions
 
-    async def _collect_forex_quotes(self, pairs: List[str]) -> List[str]:
+    async def _collect_forex_quotes(self, pairs: list[str]) -> list[str]:
         if forex_service is None:
             return []
-        summaries: List[str] = []
+        summaries: list[str] = []
         for pair in pairs[:3]:
             try:
                 quote = await forex_service.get_quote(pair)
@@ -631,11 +633,11 @@ class AIService:
             summaries.append(f"{formatted_pair}: {price_str} ({change_str}) — {source}")
         return summaries
 
-    def _summarize_market_context(self, market_context: Dict[str, Any]) -> List[str]:
+    def _summarize_market_context(self, market_context: dict[str, Any]) -> list[str]:
         if not market_context:
             return []
         market_data = market_context.get("market_data") or {}
-        lines: List[str] = []
+        lines: list[str] = []
         for symbol, payload in market_data.items():
             raw_price = payload.get("raw_price")
             price = (
@@ -653,11 +655,11 @@ class AIService:
             lines.append(f"{symbol}: precio {price or 'n/d'} ({change or 'n/d'}) — {source}")
         return lines
 
-    def _summarize_indicators(self, indicator_map: Dict[str, Any]) -> List[str]:
-        lines: List[str] = []
+    def _summarize_indicators(self, indicator_map: dict[str, Any]) -> list[str]:
+        lines: list[str] = []
         for symbol, payload in indicator_map.items():
             indicators = payload.get("indicators", {})
-            parts: List[str] = []
+            parts: list[str] = []
             rsi = indicators.get("rsi", {}).get("value")
             if isinstance(rsi, int | float):
                 parts.append(f"RSI {rsi:.1f}")
@@ -682,16 +684,16 @@ class AIService:
             lines.append(f"{symbol} ({interval}): {', '.join(parts)}")
         return lines
 
-    def _summarize_news(self, news_items: List[Dict[str, Any]]) -> List[str]:
-        lines: List[str] = []
+    def _summarize_news(self, news_items: list[dict[str, Any]]) -> list[str]:
+        lines: list[str] = []
         for item in news_items:
             title = item.get("title") or "Sin título"
             source = item.get("source") or "News"
             lines.append(f"{title} — {source}")
         return lines
 
-    def _summarize_alerts(self, suggestions: List[Dict[str, str]]) -> List[str]:
-        lines: List[str] = []
+    def _summarize_alerts(self, suggestions: list[dict[str, str]]) -> list[str]:
+        lines: list[str] = []
         for item in suggestions:
             symbol = item.get("symbol", "Activo")
             suggestion = item.get("suggestion")
@@ -704,10 +706,10 @@ class AIService:
                 lines.append(f"{symbol}: {suggestion}")
         return lines
 
-    def _build_enrichment_summary(self, enrichment: Dict[str, List[str]]) -> str:
+    def _build_enrichment_summary(self, enrichment: dict[str, list[str]]) -> str:
         if not enrichment:
             return ""
-        sections: List[str] = []
+        sections: list[str] = []
         if enrichment.get("prices"):
             sections.append(
                 "📈 Datos de mercado:\n" + "\n".join(f"- {line}" for line in enrichment["prices"])
@@ -731,9 +733,7 @@ class AIService:
         if "/" in symbol:
             parts = symbol.split("/")
             return len(parts) == 2 and all(len(p) == 3 for p in parts)
-        if len(symbol) == 6 and symbol.isalpha():
-            return True
-        return False
+        return bool(len(symbol) == 6 and symbol.isalpha())
 
     def _format_forex_symbol(self, symbol: str) -> str:
         if "/" in symbol:
@@ -742,7 +742,7 @@ class AIService:
             return f"{symbol[:3]}/{symbol[3:]}".upper()
         return symbol.upper()
 
-    async def _resolve_asset_type(self, symbol: str) -> Optional[str]:
+    async def _resolve_asset_type(self, symbol: str) -> str | None:
         """Determina tipo de activo combinando heurísticas con MarketService."""
         # [Codex] nuevo
         symbol_up = symbol.upper()
@@ -769,13 +769,13 @@ class AIService:
             return symbol_up.replace('/', '')
         return symbol_up
 
-    def _extract_interval(self, message: str) -> Optional[str]:
+    def _extract_interval(self, message: str) -> str | None:
         """Busca intervalos soportados (1h, 4h, 1d) dentro del mensaje."""
         # [Codex] nuevo
         match = re.search(r"\b(1h|4h|1d)\b", message, flags=re.IGNORECASE)
         return match.group(1).lower() if match else None
 
-    def _merge_indicator_response(self, ai_response: str, indicator_map: Dict[str, Any]) -> str:
+    def _merge_indicator_response(self, ai_response: str, indicator_map: dict[str, Any]) -> str:
         """Combina la respuesta textual del modelo con un resumen de indicadores."""
         # [Codex] nuevo
         if not indicator_map:
@@ -784,7 +784,7 @@ class AIService:
         lines = ["", "📊 Indicadores recientes:"]
         for symbol, payload in indicator_map.items():
             data = payload.get('indicators', {})
-            summary_parts: List[str] = []
+            summary_parts: list[str] = []
 
             rsi_data = data.get('rsi')
             if rsi_data and rsi_data.get('value') is not None:
@@ -845,9 +845,9 @@ class AIService:
         words = message.upper().split()
         for word in words:
             cleaned_word = word.strip('.,!?;:()[]{}')
-            if cleaned_word in crypto_symbols:
-                found_symbols.add(cleaned_word)
-            elif len(cleaned_word) in [3, 4, 5] and cleaned_word.isalpha():
+            if cleaned_word in crypto_symbols or (
+                len(cleaned_word) in [3, 4, 5] and cleaned_word.isalpha()
+            ):
                 found_symbols.add(cleaned_word)
         
         # Buscar con patrones regex
@@ -998,7 +998,7 @@ Mientras tanto, te sugiero:
 
 ¿Hay algo más en lo que pueda ayudarte?"""
 
-    async def analyze_sentiment(self, text: str) -> Dict[str, float]:
+    async def analyze_sentiment(self, text: str) -> dict[str, float]:
         """Analizar sentimiento de texto (para noticias)"""
         try:
             if self.use_real_ai:

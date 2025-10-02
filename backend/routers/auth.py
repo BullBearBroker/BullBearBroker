@@ -1,43 +1,43 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
-from uuid import UUID, uuid4
-
 import asyncio
 import hashlib
+import re
 import time
 from contextlib import nullcontext
+from datetime import datetime, timedelta
+
+# [Codex] cambiado - se añaden tipos para risk profile
+from typing import Annotated, Literal
+from uuid import UUID, uuid4
 
 import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy.orm import Session
-from typing import Dict, Literal, Optional  # [Codex] cambiado - se añaden tipos para risk profile
-import re
-
 from pydantic import BaseModel, field_validator
+from sqlalchemy.orm import Session
 
 import backend.core.login_backoff as login_backoff_module
+from backend.core.logging_config import get_logger, log_event
 from backend.core.login_backoff import login_backoff
 from backend.core.metrics import LOGIN_ATTEMPTS, LOGIN_DURATION, LOGIN_RATE_LIMITED
-from backend.core.logging_config import get_logger, log_event
 from backend.core.rate_limit import login_rate_limiter, rate_limit
 from backend.core.security import create_access_token, create_refresh_token, decode_refresh
 from backend.database import get_db
 from backend.models.refresh_token import RefreshToken
 from backend.schemas.auth import RefreshRequest, TokenPair
-from backend.utils.config import Config
 from backend.services.captcha_service import (
     CaptchaVerificationError,
     verify_captcha,
 )
+from backend.services.password_guard import is_password_compromised
 from backend.services.user_service import (
     InvalidCredentialsError,
     InvalidTokenError,
     UserAlreadyExistsError,
     user_service,
 )
-from backend.services.password_guard import is_password_compromised
+from backend.utils.config import Config
 
 try:  # pragma: no cover - tracing opcional
     from opentelemetry import trace
@@ -71,7 +71,7 @@ _MIN_INVALID_DELAY_SECONDS = 0.1
 
 def _record_login_rate_limit(request: Request, dimension: str) -> None:
     client_ip = request.client.host if request.client else "unknown"
-    payload: Dict[str, object] = {
+    payload: dict[str, object] = {
         "service": "auth_router",
         "event": "login_rate_limited",
         "level": "warning",
@@ -96,7 +96,10 @@ _login_ip_rate_limit = rate_limit(
     times=_LOGIN_IP_LIMIT_REQUESTS,
     seconds=_LOGIN_IP_LIMIT_WINDOW_SECONDS,
     identifier="auth_login_ip",
-    detail="Demasiadas solicitudes de inicio de sesión desde esta IP. Espera antes de volver a intentarlo.",
+    detail=(
+        "Demasiadas solicitudes de inicio de sesión desde esta IP. "
+        "Espera antes de volver a intentarlo."
+    ),
     on_limit=_record_login_rate_limit,
     on_limit_dimension="ip",
     state_attribute="login_limited_ip",
@@ -119,7 +122,7 @@ def _validate_email(value: str) -> str:
         from email_validator import EmailNotValidError, validate_email  # type: ignore
     except Exception:  # pragma: no cover - dependencia opcional ausente en tests
         if not EMAIL_REGEX.fullmatch(value):
-            raise ValueError("Correo electrónico inválido")
+            raise ValueError("Correo electrónico inválido") from None
         return value.lower()
 
     try:
@@ -132,7 +135,7 @@ def _validate_email(value: str) -> str:
 class UserCreate(BaseModel):
     email: str
     password: str
-    risk_profile: Optional[Literal["conservador", "moderado", "agresivo"]] = None  # [Codex] nuevo
+    risk_profile: Literal["conservador", "moderado", "agresivo"] | None = None  # [Codex] nuevo
 
     @field_validator("email")
     @classmethod
@@ -141,7 +144,7 @@ class UserCreate(BaseModel):
 
     @field_validator("risk_profile")  # [Codex] nuevo
     @classmethod
-    def _normalize_risk_profile(cls, value: Optional[str]) -> Optional[str]:
+    def _normalize_risk_profile(cls, value: str | None) -> str | None:
         if value is None:
             return None
         return value.lower()
@@ -150,7 +153,7 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
     email: str
     password: str
-    captcha_token: Optional[str] = None
+    captcha_token: str | None = None
 
     @field_validator("email")
     @classmethod
@@ -166,7 +169,10 @@ class LogoutRequest(BaseModel):
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(user_data: UserCreate):
     if len(user_data.password) < 6:
-        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 6 caracteres")
+        raise HTTPException(
+            status_code=400,
+            detail="La contraseña debe tener al menos 6 caracteres",
+        )
 
     if Config.ENABLE_PASSWORD_BREACH_CHECK and is_password_compromised(user_data.password):
         email_hash = hashlib.sha256(user_data.email.encode("utf-8")).hexdigest()[:8]
@@ -222,7 +228,7 @@ async def register(user_data: UserCreate):
 async def login(
     credentials: UserLogin,
     request: Request,
-    db: Session = Depends(get_db),
+    db: Annotated[Session, Depends(get_db)],
 ) -> TokenPair:
     start = time.perf_counter()
     limited_email = bool(getattr(request.state, "login_limited_email", False))
@@ -231,7 +237,7 @@ async def login(
     normalized_email = credentials.email.strip().lower()
     if not email_hash:
         email_hash = hashlib.sha256(normalized_email.encode("utf-8")).hexdigest()[:8]
-        setattr(request.state, "login_email_hash", email_hash)
+        request.state.login_email_hash = email_hash
 
     span_manager = _TRACER.start_as_current_span("auth.login") if _TRACER else nullcontext()
     outcome = "ok"
@@ -448,13 +454,15 @@ async def login(
         jti = str(uuid4())
         refresh_token = create_refresh_token(sub=sub, jti=jti)
         refresh_payload = decode_refresh(refresh_token)
-        refresh_expires = datetime.fromtimestamp(refresh_payload["exp"], tz=timezone.utc)
+        refresh_expires = datetime.fromtimestamp(
+            refresh_payload["exp"], tz=datetime.UTC
+        )
 
         # ⬇️ Persistimos el refresh token siempre con nuestro servicio
         user_service.store_refresh_token(user.id, refresh_token)
 
         access_token = create_access_token(sub=sub, extra={"jti": str(uuid4())})
-        access_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
+        access_expires = datetime.now(datetime.UTC) + timedelta(minutes=15)
         user_service.register_external_session(user.id, access_token, access_expires)
         await login_backoff.clear(email_hash)
 
@@ -477,7 +485,9 @@ async def login(
     response_model=TokenPair,
     dependencies=[Depends(_refresh_rate_limit)],
 )
-def refresh_token(req: RefreshRequest, db: Session = Depends(get_db)) -> TokenPair:
+def refresh_token(
+    req: RefreshRequest, db: Annotated[Session, Depends(get_db)]
+) -> TokenPair:
     token_str = req.refresh_token
     db_token = None
     if db is not None:
@@ -488,9 +498,12 @@ def refresh_token(req: RefreshRequest, db: Session = Depends(get_db)) -> TokenPa
             payload = decode_refresh(token_str)
             sub = payload.get("sub")
             if not sub:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token payload",
+                )
             sub_uuid = UUID(sub)
-        except (jwt.PyJWTError, ValueError):
+        except (jwt.PyJWTError, ValueError) as err:
             log_event(
                 logger,
                 service="auth_router",
@@ -500,14 +513,19 @@ def refresh_token(req: RefreshRequest, db: Session = Depends(get_db)) -> TokenPa
             )
             db.delete(db_token)
             db.commit()
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token",
+            ) from err
 
         db.delete(db_token)
         db.commit()
 
         new_refresh = create_refresh_token(sub=sub, jti=str(uuid4()))
         refresh_payload = decode_refresh(new_refresh)
-        refresh_expires = datetime.fromtimestamp(refresh_payload["exp"], tz=timezone.utc)
+        refresh_expires = datetime.fromtimestamp(
+            refresh_payload["exp"], tz=datetime.UTC
+        )
         db.add(
             RefreshToken(
                 user_id=sub_uuid,
@@ -517,7 +535,7 @@ def refresh_token(req: RefreshRequest, db: Session = Depends(get_db)) -> TokenPa
         )
         db.commit()
         access_token = create_access_token(sub=sub)
-        access_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
+        access_expires = datetime.now(datetime.UTC) + timedelta(minutes=15)
         user_service.register_external_session(sub_uuid, access_token, access_expires)
         return TokenPair(
             access_token=access_token,
@@ -539,7 +557,7 @@ def refresh_token(req: RefreshRequest, db: Session = Depends(get_db)) -> TokenPa
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
     access_token = create_access_token(sub=str(user.id), extra={"jti": str(uuid4())})
-    access_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
+    access_expires = datetime.now(datetime.UTC) + timedelta(minutes=15)
     user_service.register_external_session(user.id, access_token, access_expires)
     return TokenPair(
         access_token=access_token,
@@ -550,7 +568,9 @@ def refresh_token(req: RefreshRequest, db: Session = Depends(get_db)) -> TokenPa
 
 
 @router.post("/logout")
-def logout(req: LogoutRequest, db: Session = Depends(get_db)) -> Dict[str, str]:
+def logout(
+    req: LogoutRequest, db: Annotated[Session, Depends(get_db)]
+) -> dict[str, str]:
     if req.revoke_all:
         if not req.refresh_token:
             raise HTTPException(status_code=400, detail="refresh_token required")
@@ -560,8 +580,8 @@ def logout(req: LogoutRequest, db: Session = Depends(get_db)) -> Dict[str, str]:
             if not sub:
                 raise HTTPException(status_code=400, detail="refresh_token invalid")
             sub_uuid = UUID(sub)
-        except (jwt.PyJWTError, ValueError):
-            raise HTTPException(status_code=400, detail="refresh_token invalid")
+        except (jwt.PyJWTError, ValueError) as err:
+            raise HTTPException(status_code=400, detail="refresh_token invalid") from err
 
         if db is not None:
             db.query(RefreshToken).filter(RefreshToken.user_id == sub_uuid).delete()
@@ -583,7 +603,9 @@ def logout(req: LogoutRequest, db: Session = Depends(get_db)) -> Dict[str, str]:
 
 
 @router.get("/me")
-async def get_current_user(token: HTTPAuthorizationCredentials = Depends(security)):
+async def get_current_user(
+    token: Annotated[HTTPAuthorizationCredentials, Depends(security)]
+):
     try:
         user = user_service.get_current_user(token.credentials)
         user_service.register_session_activity(token.credentials)

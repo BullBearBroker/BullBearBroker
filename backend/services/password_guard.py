@@ -4,7 +4,6 @@ import hashlib
 import string
 from pathlib import Path
 from threading import RLock
-from typing import Optional, Set, Tuple
 
 from backend.utils.config import Config
 
@@ -12,21 +11,21 @@ from backend.utils.config import Config
 class PasswordBreachDetector:
     """Offline detector that checks passwords against a local dataset."""
 
-    def __init__(self, dataset_path: Optional[str] = None) -> None:
+    def __init__(self, dataset_path: str | None = None) -> None:
         self._dataset_path = dataset_path
-        self._plain_passwords: Optional[Set[str]] = None
-        self._sha1_passwords: Optional[Set[str]] = None
+        self._plain_passwords: set[str] | None = None
+        self._sha1_passwords: set[str] | None = None
         self._lock = RLock()
 
-    def configure(self, dataset_path: Optional[str]) -> None:
+    def configure(self, dataset_path: str | None) -> None:
         with self._lock:
             self._dataset_path = dataset_path
             self._plain_passwords = None
             self._sha1_passwords = None
 
-    def _load_dataset(self) -> Tuple[Set[str], Set[str]]:
-        plain: Set[str] = set()
-        hashed: Set[str] = set()
+    def _load_dataset(self) -> tuple[set[str], set[str]]:
+        plain: set[str] = set()
+        hashed: set[str] = set()
         if not self._dataset_path:
             return plain, hashed
 
@@ -75,10 +74,10 @@ class PasswordBreachDetector:
             return True
 
         sha1_hash = hashlib.sha1(candidate.encode("utf-8")).hexdigest()
-        if sha1_hash in self._sha1_passwords or sha1_hash.upper() in self._sha1_passwords:
-            return True
-
-        return False
+        return bool(
+            sha1_hash in self._sha1_passwords
+            or sha1_hash.upper() in self._sha1_passwords
+        )
 
 
 _default_dataset = Config.PASSWORD_BREACH_DATASET_PATH
@@ -90,7 +89,7 @@ if not _default_dataset:
 password_breach_detector = PasswordBreachDetector(_default_dataset)
 
 
-def configure_password_detector(dataset_path: Optional[str]) -> None:
+def configure_password_detector(dataset_path: str | None) -> None:
     password_breach_detector.configure(dataset_path)
 
 

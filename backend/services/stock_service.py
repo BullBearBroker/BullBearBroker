@@ -1,6 +1,6 @@
 import asyncio
 from json import JSONDecodeError
-from typing import Any, Dict, Optional
+from typing import Any
 
 import aiohttp
 from aiohttp import ClientError, ClientTimeout, ContentTypeError
@@ -19,7 +19,7 @@ class StockService:
 
     def __init__(
         self,
-        cache_client: Optional[CacheClient] = None,
+        cache_client: CacheClient | None = None,
         session_factory=aiohttp.ClientSession,
     ) -> None:
         self.cache = cache_client or CacheClient("stock-prices", ttl=45)
@@ -46,7 +46,7 @@ class StockService:
             },
         ]
 
-    async def get_price(self, symbol: str) -> Optional[Dict[str, Any]]:
+    async def get_price(self, symbol: str) -> dict[str, Any] | None:
         """Obtiene precio, variación y fuente de un símbolo bursátil."""
 
         cache_key = symbol.upper()
@@ -63,7 +63,11 @@ class StockService:
                     api["callable"], session, symbol, api["name"]
                 )
                 if result:
-                    payload = {"price": result["price"], "change": result["change"], "source": api["name"]}
+                    payload = {
+                        "price": result["price"],
+                        "change": result["change"],
+                        "source": api["name"],
+                    }
                     await self.cache.set(cache_key, payload)
                     print(f"StockService: usando {api['name']} para {symbol}")
                     return payload
@@ -76,13 +80,13 @@ class StockService:
         session: aiohttp.ClientSession,
         symbol: str,
         source_name: str,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         backoff = self.RETRY_BACKOFF
         for attempt in range(1, self.RETRY_ATTEMPTS + 1):
             try:
                 return await handler(session, symbol)
             except (
-                asyncio.TimeoutError,
+                TimeoutError,
                 JSONDecodeError,
                 KeyError,
                 ClientError,
@@ -91,7 +95,8 @@ class StockService:
                 ValueError,
             ) as exc:
                 print(
-                    f"StockService: intento {attempt} fallido con {source_name} para {symbol}: {exc}"
+                    "StockService: intento "
+                    f"{attempt} fallido con {source_name} para {symbol}: {exc}"
                 )
             except Exception as exc:  # pragma: no cover - errores inesperados
                 print(
@@ -107,10 +112,10 @@ class StockService:
         session: aiohttp.ClientSession,
         url: str,
         *,
-        params: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
         source_name: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         async with session.get(url, params=params, headers=headers) as response:
             if response.status >= 400:
                 raise ClientError(f"{source_name} devolvió estado {response.status}")
@@ -122,7 +127,7 @@ class StockService:
 
     async def _fetch_twelvedata(
         self, session: aiohttp.ClientSession, symbol: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         if not Config.TWELVEDATA_API_KEY:
             raise KeyError("TWELVEDATA_API_KEY no configurada")
         url = "https://api.twelvedata.com/quote"
@@ -135,7 +140,7 @@ class StockService:
 
     async def _fetch_yahoo_finance(
         self, session: aiohttp.ClientSession, symbol: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
         data = await self._fetch_json(session, url, source_name="Yahoo Finance")
         meta = data["chart"]["result"][0]["meta"]
@@ -145,7 +150,7 @@ class StockService:
 
     async def _fetch_alpha_vantage(
         self, session: aiohttp.ClientSession, symbol: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         if not Config.ALPHA_VANTAGE_API_KEY:
             raise KeyError("ALPHA_VANTAGE_API_KEY no configurada")
         url = "https://www.alphavantage.co/query"
