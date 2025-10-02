@@ -6,6 +6,7 @@ from .refresh_token import RefreshToken
 from .portfolio import PortfolioItem
 from .chat import ChatSession, ChatMessage
 from .push_subscription import PushSubscription
+from .push_preference import PushNotificationPreference
 
 __all__ = [
     "Alert",
@@ -17,4 +18,5 @@ __all__ = [
     "ChatSession",
     "ChatMessage",
     "PushSubscription",
+    "PushNotificationPreference",
 ]

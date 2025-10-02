@@ -14,6 +14,7 @@ if TYPE_CHECKING:
     from .portfolio import PortfolioItem
     from .chat import ChatSession
     from .push_subscription import PushSubscription
+    from .push_preference import PushNotificationPreference
 
 try:  # pragma: no cover
     from .base import Base
@@ -72,6 +73,12 @@ class User(Base):
     )
     push_subscriptions: Mapped[list["PushSubscription"]] = relationship(
         "PushSubscription", back_populates="user", cascade="all, delete-orphan"
+    )
+    push_preferences: Mapped[Optional["PushNotificationPreference"]] = relationship(
+        "PushNotificationPreference",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        uselist=False,
     )
 
     def verify_password(self, password: str) -> bool:

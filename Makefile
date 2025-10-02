@@ -1,6 +1,6 @@
 COMPOSE ?= docker compose
 
-.PHONY: validate up up-local up-supabase up-staging down down-v down-staging clean logs logs-local logs-supabase logs-staging migrate test test-backend test-frontend check-all
+.PHONY: validate up up-local up-supabase up-staging down down-v down-staging clean logs logs-local logs-supabase logs-staging migrate test test-backend test-frontend check-all lint
 
 validate:
 	$(COMPOSE) -f docker-compose.yml config
@@ -67,3 +67,6 @@ test-frontend:
 test: test-backend test-frontend
 
 check-all: migrate test-backend test-frontend
+
+lint:
+	pre-commit run --all-files

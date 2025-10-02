@@ -16,6 +16,7 @@ except ImportError:  # pragma: no cover - provide graceful fallback for tests
         raise WebPushException("pywebpush package is not installed")
 
 from backend.models.push_subscription import PushSubscription
+from backend.models.push_preference import PushNotificationPreference
 from backend.utils.config import Config
 
 
@@ -69,11 +70,38 @@ class PushService:
             LOGGER.warning("Web push delivery failed: %s", exc)
             raise RuntimeError("Failed to deliver push notification") from exc
 
+    def _is_category_allowed(
+        self, subscription: PushSubscription, category: Optional[str]
+    ) -> bool:
+        if category is None:
+            return True
+
+        user = getattr(subscription, "user", None)
+        preferences: Optional[PushNotificationPreference] = None
+        if user is not None:
+            preferences = getattr(user, "push_preferences", None)
+
+        if preferences is None:
+            return True
+
+        mapping = {
+            "alerts": preferences.alerts_enabled,
+            "news": preferences.news_enabled,
+            "system": preferences.system_enabled,
+        }
+        return mapping.get(category, True)
+
     def broadcast(
-        self, subscriptions: Iterable[PushSubscription], payload: Dict[str, Any]
+        self,
+        subscriptions: Iterable[PushSubscription],
+        payload: Dict[str, Any],
+        *,
+        category: Optional[str] = None,
     ) -> int:
         delivered = 0
         for subscription in subscriptions:
+            if not self._is_category_allowed(subscription, category):
+                continue
             try:
                 self.send_notification(subscription, payload)
             except RuntimeError:

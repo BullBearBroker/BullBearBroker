@@ -12,6 +12,7 @@ ruff==0.7.4
 flake8==7.1.1
 isort==5.13.2
 mypy==1.11.2
+pre-commit==4.0.1
 
 # Herramientas adicionales
 httpx==0.27.0        # útil para pruebas de API

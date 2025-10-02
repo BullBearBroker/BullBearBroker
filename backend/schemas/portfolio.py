@@ -42,11 +42,31 @@ class PortfolioImportError(BaseModel):
     row: int
     message: str
 
+    model_config = {
+        "json_schema_extra": {
+            "example": {"row": 5, "message": "La cantidad debe ser numérica"}
+        }
+    }
+
 
 class PortfolioImportResult(BaseModel):
     created: int
     items: List[PortfolioItemResponse]
     errors: List[PortfolioImportError]
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "created": 1,
+                "items": [
+                    {"id": "6b2c6d4d-5b2f-4cd0-9e10-0afadf7c6c71", "symbol": "AAPL", "amount": 3.0}
+                ],
+                "errors": [
+                    {"row": 4, "message": "El símbolo ya existe en tu portafolio"}
+                ],
+            }
+        }
+    }
 
 
 __all__ = [

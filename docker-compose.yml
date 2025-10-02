@@ -1,34 +1,7 @@
-# docker-compose.yml
-
-x-backend-base: &backend-base
-  build:
-    context: ./backend
-    dockerfile: Dockerfile
-  env_file:
-    - ${ENV_FILE:-.env.local}
-  environment:
-    DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://app:app@db:5432/bullbear}
-    REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
-    BULLBEAR_DEFAULT_USER: ${BULLBEAR_DEFAULT_USER:-test@bullbear.ai}
-    BULLBEAR_DEFAULT_PASSWORD: ${BULLBEAR_DEFAULT_PASSWORD:-Test1234!}
-    PYTHONPATH: ${PYTHONPATH:-/app}
-  depends_on:
-    db:
-      condition: service_healthy
-    redis:
-      condition: service_healthy
-
-x-frontend-base: &frontend-base
-  build:
-    context: ./frontend
-    dockerfile: Dockerfile
-  env_file:
-    - ${ENV_FILE:-.env.local}
+version: "3.9"
 
 services:
-  db:
-    container_name: bullbear-db
-    profiles: ["", "default", "staging"]
+  postgres:
     image: postgres:15-alpine
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-app}
@@ -36,17 +9,15 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-bullbear}
     ports:
       - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
+    tmpfs:
+      - /var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bullbear}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app}"]
       interval: 10s
       timeout: 5s
       retries: 5
 
   redis:
-    container_name: bullbear-redis
-    profiles: ["", "default", "staging"]
     image: redis:7-alpine
     ports:
       - "6379:6379"
@@ -56,64 +27,26 @@ services:
       timeout: 5s
       retries: 5
 
-  backend:
-    <<: *backend-base
-    container_name: bullbear-backend
-    profiles: ["", "default"]
-    command: ["sh", "-c", "ln -sfn /app /app/backend && uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000"]
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./backend:/app
-      - ./alembic.ini:/app/alembic.ini
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  backend-staging:
-    <<: *backend-base
-    container_name: bullbear-backend-staging
-    profiles: ["staging"]
-    command: ["sh", "-c", "ln -sfn /app /app/backend && uvicorn backend.main:app --host 0.0.0.0 --port 8000"]
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file:
+      - ${ENV_FILE:-.env.local}
+    environment:
+      DATABASE_URL: ${DATABASE_URL:-postgresql+psycopg2://app:app@postgres:5432/bullbear}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      READINESS_PROBE_PATH: "/health"
+      PYTHONPATH: /app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "8000:8000"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
       timeout: 5s
       retries: 5
-
-  frontend:
-    <<: *frontend-base
-    container_name: bullbear-frontend
-    profiles: ["", "default"]
-    command: npm run dev -- --hostname 0.0.0.0 --port 3000
-    environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://backend:8000}
-    depends_on:
-      backend:
-        condition: service_healthy
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./frontend:/app
-      - frontend_node_modules:/app/node_modules
-
-  frontend-staging:
-    <<: *frontend-base
-    container_name: bullbear-frontend-staging
-    profiles: ["staging"]
-    command: npm start
-    environment:
-      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://backend-staging:8000}
-    depends_on:
-      backend-staging:
-        condition: service_healthy
-    ports:
-      - "3000:3000"
-
-volumes:
-  postgres_data:
-  frontend_node_modules:

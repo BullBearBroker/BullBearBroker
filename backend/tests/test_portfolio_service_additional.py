@@ -52,6 +52,16 @@ def test_create_item_invalid_inputs_raise(
     assert expected in str(exc_info.value)
 
 
+def test_create_item_rejects_duplicates(portfolio_service: PortfolioService) -> None:
+    user_id = uuid4()
+    portfolio_service.create_item(user_id, symbol="AAPL", amount=1)
+
+    with pytest.raises(ValueError) as exc_info:
+        portfolio_service.create_item(user_id, symbol="aapl", amount=2)
+
+    assert "El símbolo ya existe en tu portafolio" in str(exc_info.value)
+
+
 @pytest.mark.asyncio()
 async def test_portfolio_overview_handles_atypical_prices(
     portfolio_service: PortfolioService, monkeypatch: pytest.MonkeyPatch
