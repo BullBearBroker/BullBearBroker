@@ -89,7 +89,11 @@ async def get_current_user(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
 
-@router.post("/subscribe", response_model=PushSubscriptionResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/subscribe",
+    response_model=PushSubscriptionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
 async def subscribe_push(
     payload: PushSubscriptionPayload,
     db: Session = Depends(get_db),

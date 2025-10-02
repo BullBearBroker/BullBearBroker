@@ -300,7 +300,11 @@ class NewsService:
             url_value = article.get("url")
             articles.append(
                 {
-                    "source": source_info.get("name") or self._extract_domain(url_value) or "NewsAPI",
+                    "source": (
+                        source_info.get("name")
+                        or self._extract_domain(url_value)
+                        or "NewsAPI"
+                    ),
                     "title": article.get("title")
                     or article.get("description")
                     or "Untitled",

@@ -9,8 +9,9 @@ from sqlalchemy.orm import sessionmaker
 
 from backend.models.alert import Alert
 from backend.models.base import Base
+
 alert_service_module = import_module("backend.services.alert_service")
-from backend.services.alert_service import AlertService
+from backend.services.alert_service import AlertService  # noqa: E402
 
 
 @pytest.fixture()
@@ -200,9 +201,7 @@ async def test_evaluate_alerts_skips_alerts_deactivated_during_resolution(
     notifier.assert_not_awaited()
 
 
-def test_fetch_alerts_reflects_reactivation(
-    service: AlertService, in_memory_factory
-) -> None:
+def test_fetch_alerts_reflects_reactivation(service: AlertService, in_memory_factory) -> None:
     user_id = uuid4()
     with in_memory_factory() as session:
         alert = Alert(

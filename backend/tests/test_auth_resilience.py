@@ -14,10 +14,12 @@ from backend.tests._dependency_stubs import ensure as ensure_test_dependencies
 
 ensure_test_dependencies()
 
-from backend.main import app
-from backend.database import get_db
-from backend.routers import auth as auth_router
-from backend.tests.test_api_endpoints import DummyUserService as BaseUserService
+from backend.main import app  # noqa: E402
+from backend.database import get_db  # noqa: E402
+from backend.routers import auth as auth_router  # noqa: E402
+from backend.tests.test_api_endpoints import (  # noqa: E402
+    DummyUserService as BaseUserService,
+)
 
 
 class AuthDummyUserService(BaseUserService):
@@ -39,8 +41,12 @@ def in_memory_user_service(monkeypatch: pytest.MonkeyPatch) -> AuthDummyUserServ
     service = AuthDummyUserService()
     monkeypatch.setattr(auth_router, "user_service", service)
     monkeypatch.setattr("backend.main.user_service", service)
-    monkeypatch.setattr(auth_router, "UserAlreadyExistsError", service.UserAlreadyExistsError)
-    monkeypatch.setattr(auth_router, "InvalidCredentialsError", service.InvalidCredentialsError)
+    monkeypatch.setattr(
+        auth_router, "UserAlreadyExistsError", service.UserAlreadyExistsError
+    )
+    monkeypatch.setattr(
+        auth_router, "InvalidCredentialsError", service.InvalidCredentialsError
+    )
     monkeypatch.setattr(auth_router, "InvalidTokenError", service.InvalidTokenError)
 
     app.dependency_overrides[get_db] = lambda: None
@@ -51,7 +57,9 @@ def in_memory_user_service(monkeypatch: pytest.MonkeyPatch) -> AuthDummyUserServ
 
 
 @pytest_asyncio.fixture()
-async def client(in_memory_user_service: AuthDummyUserService) -> AsyncClient:  # type: ignore[name-defined]
+async def client(
+    in_memory_user_service: AuthDummyUserService,
+) -> AsyncClient:  # type: ignore[name-defined]
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as client:
         yield client
