@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-import argparse
-import json
 import sys
 from pathlib import Path
-
-from fastapi.openapi.utils import get_openapi
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-# Importa la app principal
 from backend.main import app  # si no existe aquí, ajusta a la ruta real sin romper el proyecto
 
+import argparse
+import json
+
+from fastapi.openapi.utils import get_openapi
 
 def export_openapi(dest: Path) -> dict:
     schema = get_openapi(

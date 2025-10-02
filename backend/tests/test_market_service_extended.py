@@ -867,7 +867,13 @@ async def test_get_crypto_price_returns_none_when_no_data(monkeypatch: pytest.Mo
 @pytest.mark.asyncio
 async def test_get_stock_price_handles_non_numeric_change(monkeypatch: pytest.MonkeyPatch) -> None:
     service = MarketService()
-    service.stock_service.get_price = AsyncMock(return_value={"price": 200.0, "change": "bad", "source": "Test"})  # type: ignore[assignment]
+    service.stock_service.get_price = AsyncMock(
+        return_value={
+            "price": 200.0,
+            "change": "bad",
+            "source": "Test",
+        }
+    )  # type: ignore[assignment]
 
     result = await service.get_stock_price("aapl")
     assert result["raw_change"] is None
