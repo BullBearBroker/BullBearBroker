@@ -22,6 +22,19 @@ def _get_env(name: str, default: Optional[str] = None) -> Optional[str]:
     return value
 
 
+def _get_int_env(name: str, default: int) -> int:
+    """Return an integer environment variable with graceful fallback."""
+
+    raw_value = _get_env(name)
+    if raw_value is None:
+        return default
+    try:
+        return int(raw_value)
+    except ValueError:
+        LOGGER.warning("Invalid int for %s: %s", name, raw_value)
+        return default
+
+
 def _require_env(name: str) -> str:
     """Return an environment variable or raise a descriptive error."""
 
@@ -69,6 +82,8 @@ class Config:
     # Authentication / security
     JWT_SECRET_KEY = _get_env("BULLBEARBROKER_SECRET_KEY") or token_urlsafe(64)
     JWT_ALGORITHM = _get_env("BULLBEARBROKER_JWT_ALGORITHM", "HS256")
+    LOGIN_IP_LIMIT_TIMES = _get_int_env("LOGIN_IP_LIMIT_TIMES", 20)
+    LOGIN_IP_LIMIT_SECONDS = _get_int_env("LOGIN_IP_LIMIT_SECONDS", 60)
 
     # Notifications
     TELEGRAM_BOT_TOKEN = _get_env("TELEGRAM_BOT_TOKEN")

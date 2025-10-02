@@ -3,8 +3,12 @@ from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 from uuid import UUID, uuid4
 
+import hashlib
+import time
+from contextlib import nullcontext
+
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 from typing import Dict, Literal, Optional  # [Codex] cambiado - se añaden tipos para risk profile
@@ -12,6 +16,7 @@ import re
 
 from pydantic import BaseModel, field_validator
 
+from backend.core.metrics import LOGIN_ATTEMPTS, LOGIN_DURATION, LOGIN_RATE_LIMITED
 from backend.core.logging_config import get_logger, log_event
 from backend.core.rate_limit import login_rate_limiter, rate_limit
 from backend.core.security import create_access_token, create_refresh_token, decode_refresh
@@ -19,6 +24,7 @@ from backend.database import get_db
 from backend.models import User
 from backend.models.refresh_token import RefreshToken
 from backend.schemas.auth import RefreshRequest, TokenPair
+from backend.utils.config import Config
 from backend.services.user_service import (
     InvalidCredentialsError,
     InvalidTokenError,
@@ -26,11 +32,53 @@ from backend.services.user_service import (
     user_service,
 )
 
+try:  # pragma: no cover - tracing opcional
+    from opentelemetry import trace
+except Exception:  # pragma: no cover - entorno sin tracing
+    trace = None  # type: ignore[assignment]
+
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 security = HTTPBearer()
 logger = get_logger(service="auth_router")
 
-_login_rate_limit = login_rate_limiter(times=5, seconds=60)
+_TRACER = trace.get_tracer("backend.auth") if trace else None
+
+_LOGIN_IP_LIMIT_TIMES = getattr(Config, "LOGIN_IP_LIMIT_TIMES", 20)
+_LOGIN_IP_LIMIT_SECONDS = getattr(Config, "LOGIN_IP_LIMIT_SECONDS", 60)
+
+
+def _record_login_rate_limit(request: Request, dimension: str) -> None:
+    client_ip = request.client.host if request.client else "unknown"
+    payload: Dict[str, object] = {
+        "service": "auth_router",
+        "event": "login_rate_limited",
+        "level": "warning",
+        "dimension": dimension,
+        "client_ip": client_ip,
+    }
+    email_hash = getattr(request.state, "login_email_hash", None)
+    if dimension == "email" and email_hash:
+        payload["email_hash"] = email_hash
+    log_event(logger, **payload)
+    LOGIN_ATTEMPTS.labels(outcome=f"limited_{dimension}").inc()
+    LOGIN_RATE_LIMITED.labels(dimension=dimension).inc()
+
+
+_login_rate_limit = login_rate_limiter(
+    times=5,
+    seconds=60,
+    on_limit=_record_login_rate_limit,
+    state_attribute="login_limited_email",
+)
+_login_ip_rate_limit = rate_limit(
+    times=_LOGIN_IP_LIMIT_TIMES,
+    seconds=_LOGIN_IP_LIMIT_SECONDS,
+    identifier="auth_login_ip",
+    detail="Demasiadas solicitudes de inicio de sesión desde esta IP. Espera antes de volver a intentarlo.",
+    on_limit=_record_login_rate_limit,
+    on_limit_dimension="ip",
+    state_attribute="login_limited_ip",
+)
 _refresh_rate_limit = rate_limit(
     times=10,
     seconds=120,
@@ -134,43 +182,75 @@ async def register(user_data: UserCreate):
 @router.post(
     "/login",
     response_model=TokenPair,
-    dependencies=[Depends(_login_rate_limit)],
+    dependencies=[Depends(_login_rate_limit), Depends(_login_ip_rate_limit)],
 )
-async def login(credentials: UserLogin, db: Session = Depends(get_db)) -> TokenPair:
-    try:
-        user = user_service.authenticate_user(
-            email=credentials.email,
-            password=credentials.password,
+async def login(
+    credentials: UserLogin,
+    request: Request,
+    db: Session = Depends(get_db),
+) -> TokenPair:
+    start = time.perf_counter()
+    limited_email = bool(getattr(request.state, "login_limited_email", False))
+    limited_ip = bool(getattr(request.state, "login_limited_ip", False))
+    email_hash = getattr(request.state, "login_email_hash", None)
+    if not email_hash:
+        email_hash = hashlib.sha256(credentials.email.encode("utf-8")).hexdigest()[:12]
+
+    span_manager = _TRACER.start_as_current_span("auth.login") if _TRACER else nullcontext()
+    outcome = "ok"
+    with span_manager as span:
+        if span is not None:
+            span.set_attribute("limited.email", limited_email)
+            span.set_attribute("limited.ip", limited_ip)
+            span.set_attribute("user.email_hash", email_hash)
+
+        try:
+            user = user_service.authenticate_user(
+                email=credentials.email,
+                password=credentials.password,
+            )
+        except InvalidCredentialsError as exc:
+            outcome = "invalid"
+            duration = time.perf_counter() - start
+            LOGIN_DURATION.observe(duration)
+            LOGIN_ATTEMPTS.labels(outcome=outcome).inc()
+            if span is not None:
+                span.set_attribute("outcome", outcome)
+            log_event(
+                logger,
+                service="auth_router",
+                event="login_failed",
+                level="warning",
+                email=credentials.email,
+                email_hash=email_hash,
+            )
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+        sub = str(user.id)
+        jti = str(uuid4())
+        refresh_token = create_refresh_token(sub=sub, jti=jti)
+        refresh_payload = decode_refresh(refresh_token)
+        refresh_expires = datetime.fromtimestamp(refresh_payload["exp"], tz=timezone.utc)
+
+        # ⬇️ Persistimos el refresh token siempre con nuestro servicio
+        user_service.store_refresh_token(user.id, refresh_token)
+
+        access_token = create_access_token(sub=sub, extra={"jti": str(uuid4())})
+        access_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
+        user_service.register_external_session(user.id, access_token, access_expires)
+
+        duration = time.perf_counter() - start
+        LOGIN_DURATION.observe(duration)
+        LOGIN_ATTEMPTS.labels(outcome=outcome).inc()
+        if span is not None:
+            span.set_attribute("outcome", outcome)
+
+        return TokenPair(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            access_expires_at=access_expires.isoformat(),
+            refresh_expires_at=refresh_expires.isoformat(),
         )
-    except InvalidCredentialsError as exc:
-        log_event(
-            logger,
-            service="auth_router",
-            event="login_failed",
-            level="warning",
-            email=credentials.email,
-        )
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
-
-    sub = str(user.id)
-    jti = str(uuid4())
-    refresh_token = create_refresh_token(sub=sub, jti=jti)
-    refresh_payload = decode_refresh(refresh_token)
-    refresh_expires = datetime.fromtimestamp(refresh_payload["exp"], tz=timezone.utc)
-
-    # ⬇️ Persistimos el refresh token siempre con nuestro servicio
-    user_service.store_refresh_token(user.id, refresh_token)
-
-    access_token = create_access_token(sub=sub, extra={"jti": str(uuid4())})
-    access_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
-    user_service.register_external_session(user.id, access_token, access_expires)
-
-    return TokenPair(
-        access_token=access_token,
-        refresh_token=refresh_token,
-        access_expires_at=access_expires.isoformat(),
-        refresh_expires_at=refresh_expires.isoformat(),
-    )
 
 
 @router.post(

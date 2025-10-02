@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
 import time
 from collections import defaultdict
-from typing import Awaitable, Callable, Dict
+from typing import Awaitable, Callable, Dict, Optional
 
 from fastapi import HTTPException, Request, Response
 from fastapi_limiter import FastAPILimiter
 from fastapi_limiter.depends import RateLimiter
 
 _IN_MEMORY_BUCKETS: Dict[str, list[float]] = defaultdict(list)
+
+LimitCallback = Callable[[Request, str], None]
 
 
 async def identifier_login_by_email(request: Request) -> str:
@@ -35,28 +38,51 @@ def login_rate_limiter(
     seconds: int = 60,
     *,
     detail: str = "Demasiados intentos de inicio de sesión. Intenta nuevamente más tarde.",
+    on_limit: LimitCallback | None = None,
+    state_attribute: str | None = None,
 ) -> Callable[[Request, Response], Awaitable[None]]:
     """Factory that enforces login rate limits keyed by email with graceful fallbacks."""
 
     limiter = RateLimiter(times=times, seconds=seconds, identifier=identifier_login_by_email)
 
     async def _dependency(request: Request, response: Response) -> None:
+        identifier = await identifier_login_by_email(request)
+        email_hash: Optional[str] = None
+        if identifier.startswith("login:"):
+            raw_email = identifier.split(":", 1)[1]
+            email_hash = hashlib.sha256(raw_email.encode("utf-8")).hexdigest()[:12]
+        setattr(request.state, "login_email_hash", email_hash)
+
+        if state_attribute:
+            setattr(request.state, state_attribute, False)
+
         redis_client = getattr(FastAPILimiter, "redis", None)
         if redis_client is not None:
             try:
                 await limiter(request, response)
                 return
+            except HTTPException:
+                if state_attribute:
+                    setattr(request.state, state_attribute, True)
+                if on_limit:
+                    on_limit(request, "email")
+                raise HTTPException(status_code=429, detail=detail)
             except Exception:
                 pass
 
-        identifier = await identifier_login_by_email(request)
         bucket_key = f"{identifier}:{times}:{seconds}"
         window = _IN_MEMORY_BUCKETS[bucket_key]
         now = time.monotonic()
         window[:] = [tick for tick in window if now - tick < seconds]
         if len(window) >= times:
+            if state_attribute:
+                setattr(request.state, state_attribute, True)
+            if on_limit:
+                on_limit(request, "email")
             raise HTTPException(status_code=429, detail=detail)
         window.append(now)
+        if state_attribute:
+            setattr(request.state, state_attribute, False)
 
     return _dependency
 
@@ -68,6 +94,9 @@ def rate_limit(
     identifier: str,
     detail: str = "Too Many Requests",
     fallback_times: int | None = None,
+    on_limit: LimitCallback | None = None,
+    on_limit_dimension: str | None = None,
+    state_attribute: str | None = None,
 ) -> Callable[[Request, Response], Awaitable[None]]:
     """Return a dependency that enforces rate limits with Redis or an in-memory fallback."""
 
@@ -76,11 +105,20 @@ def rate_limit(
     fallback_limit = fallback_times or times
 
     async def _dependency(request: Request, response: Response) -> None:
+        if state_attribute:
+            setattr(request.state, state_attribute, False)
         redis_client = getattr(FastAPILimiter, "redis", None)
         if redis_client is not None:
             try:
                 await limiter(request, response)
                 return
+            except HTTPException:
+                if state_attribute:
+                    setattr(request.state, state_attribute, True)
+                if on_limit:
+                    dimension = on_limit_dimension or identifier
+                    on_limit(request, dimension)
+                raise HTTPException(status_code=429, detail=detail)
             except Exception:
                 # Redis sin inicializar; cae al modo en memoria
                 pass
@@ -91,8 +129,15 @@ def rate_limit(
         now = time.monotonic()
         window[:] = [tick for tick in window if now - tick < seconds]
         if len(window) >= fallback_limit:
+            if state_attribute:
+                setattr(request.state, state_attribute, True)
+            if on_limit:
+                dimension = on_limit_dimension or identifier
+                on_limit(request, dimension)
             raise HTTPException(status_code=429, detail=detail)
         window.append(now)
+        if state_attribute:
+            setattr(request.state, state_attribute, False)
 
     return _dependency
 
