@@ -13,6 +13,54 @@ from fastapi_limiter.depends import RateLimiter
 _IN_MEMORY_BUCKETS: Dict[str, list[float]] = defaultdict(list)
 
 
+async def identifier_login_by_email(request: Request) -> str:
+    """Return an identifier for login rate limiting keyed by email when available."""
+
+    email = ""
+    try:
+        data = await request.json()
+        email = str(data.get("email", "")).strip().lower()
+    except Exception:  # pragma: no cover - body parsing failures fall back to IP
+        pass
+
+    if email:
+        return f"login:{email}"
+
+    host = request.client.host if request.client else "unknown"
+    return f"login-ip:{host}"
+
+
+def login_rate_limiter(
+    times: int = 5,
+    seconds: int = 60,
+    *,
+    detail: str = "Demasiados intentos de inicio de sesión. Intenta nuevamente más tarde.",
+) -> Callable[[Request, Response], Awaitable[None]]:
+    """Factory that enforces login rate limits keyed by email with graceful fallbacks."""
+
+    limiter = RateLimiter(times=times, seconds=seconds, identifier=identifier_login_by_email)
+
+    async def _dependency(request: Request, response: Response) -> None:
+        redis_client = getattr(FastAPILimiter, "redis", None)
+        if redis_client is not None:
+            try:
+                await limiter(request, response)
+                return
+            except Exception:
+                pass
+
+        identifier = await identifier_login_by_email(request)
+        bucket_key = f"{identifier}:{times}:{seconds}"
+        window = _IN_MEMORY_BUCKETS[bucket_key]
+        now = time.monotonic()
+        window[:] = [tick for tick in window if now - tick < seconds]
+        if len(window) >= times:
+            raise HTTPException(status_code=429, detail=detail)
+        window.append(now)
+
+    return _dependency
+
+
 def rate_limit(
     *,
     times: int,
@@ -61,4 +109,9 @@ def reset_rate_limiter_cache(identifier: str | None = None) -> None:
         _IN_MEMORY_BUCKETS.pop(key, None)
 
 
-__all__ = ["rate_limit", "reset_rate_limiter_cache"]
+__all__ = [
+    "identifier_login_by_email",
+    "login_rate_limiter",
+    "rate_limit",
+    "reset_rate_limiter_cache",
+]

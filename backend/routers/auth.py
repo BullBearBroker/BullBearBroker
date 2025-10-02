@@ -13,7 +13,7 @@ import re
 from pydantic import BaseModel, field_validator
 
 from backend.core.logging_config import get_logger, log_event
-from backend.core.rate_limit import rate_limit
+from backend.core.rate_limit import login_rate_limiter, rate_limit
 from backend.core.security import create_access_token, create_refresh_token, decode_refresh
 from backend.database import get_db
 from backend.models import User
@@ -30,12 +30,7 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 security = HTTPBearer()
 logger = get_logger(service="auth_router")
 
-_login_rate_limit = rate_limit(
-    times=5,
-    seconds=60,
-    identifier="auth_login",
-    detail="Demasiados intentos de inicio de sesión. Intenta nuevamente más tarde.",
-)
+_login_rate_limit = login_rate_limiter(times=5, seconds=60)
 _refresh_rate_limit = rate_limit(
     times=10,
     seconds=120,
