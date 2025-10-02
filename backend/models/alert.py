@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime
 import uuid
+from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, DateTime, Float, ForeignKey, String  # [Codex] cambiado - añadir Boolean
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+if TYPE_CHECKING:
+    from backend.models.user import User
 
 try:  # pragma: no cover - compatibilidad con distintos puntos de entrada
     from .base import Base

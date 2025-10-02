@@ -10,11 +10,13 @@ from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
+    from .alert import Alert
     from .refresh_token import RefreshToken
     from .portfolio import PortfolioItem
     from .chat import ChatSession
     from .push_subscription import PushSubscription
     from .push_preference import PushNotificationPreference
+    from .session import Session
 
 try:  # pragma: no cover
     from .base import Base
