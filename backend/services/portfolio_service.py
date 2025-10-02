@@ -7,7 +7,7 @@ import csv
 import io
 from contextlib import contextmanager
 from decimal import Decimal
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional, Set
 from uuid import UUID
 
 from sqlalchemy import delete, select
@@ -33,6 +33,9 @@ class PortfolioItemNotFoundError(Exception):
 
 class PortfolioService:
     """High level operations for managing user portfolios."""
+
+    MAX_IMPORT_ROWS = 500
+    MAX_IMPORT_BYTES = 256 * 1024  # 256 KiB
 
     def __init__(self, session_factory: sessionmaker = SessionLocal) -> None:
         self._session_factory = session_factory
@@ -65,10 +68,15 @@ class PortfolioService:
                 session.expunge(record)
             return records
 
-    def create_item(self, user_id: UUID, *, symbol: str, amount: float) -> PortfolioItem:
-        normalized_symbol = symbol.strip().upper()
-        if not normalized_symbol:
+    @staticmethod
+    def _normalize_symbol(symbol: str) -> str:
+        cleaned = str(symbol or "").strip().upper()
+        if not cleaned:
             raise ValueError("El símbolo es obligatorio")
+        return cleaned
+
+    def create_item(self, user_id: UUID, *, symbol: str, amount: float) -> PortfolioItem:
+        normalized_symbol = self._normalize_symbol(symbol)
         try:
             normalized_amount = float(amount)
         except (TypeError, ValueError) as exc:  # pragma: no cover - defensive
@@ -77,6 +85,14 @@ class PortfolioService:
             raise ValueError("La cantidad debe ser mayor que cero")
 
         with self._session_scope() as session:
+            existing = session.scalar(
+                select(PortfolioItem.id)
+                .where(PortfolioItem.user_id == user_id)
+                .where(PortfolioItem.symbol == normalized_symbol)
+            )
+            if existing is not None:
+                raise ValueError("El símbolo ya existe en tu portafolio")
+
             item = PortfolioItem(
                 user_id=user_id,
                 symbol=normalized_symbol,
@@ -114,12 +130,27 @@ class PortfolioService:
         if not content.strip():
             raise ValueError("El archivo CSV está vacío")
 
+        content = content.lstrip("\ufeff")
+
+        if len(content.encode("utf-8")) > self.MAX_IMPORT_BYTES:
+            raise ValueError(
+                "El archivo CSV supera el tamaño máximo permitido de 256KB"
+            )
+
         stream = io.StringIO(content)
-        reader = csv.DictReader(stream)
+        sample = stream.read(1024)
+        stream.seek(0)
+        try:
+            dialect = csv.Sniffer().sniff(sample, delimiters=",;|\t")
+        except csv.Error:
+            dialect = csv.excel
+        reader = csv.DictReader(stream, dialect=dialect)
         if not reader.fieldnames:
             raise ValueError("El CSV debe incluir encabezados")
 
-        normalized_headers = {name.strip().lower(): name for name in reader.fieldnames if name}
+        normalized_headers = {
+            name.strip().lower().lstrip("\ufeff"): name for name in reader.fieldnames if name
+        }
         required = {"symbol", "amount"}
         missing = required - normalized_headers.keys()
         if missing:
@@ -129,34 +160,86 @@ class PortfolioService:
 
         errors: List[Dict[str, Any]] = []
         created_items: List[PortfolioItem] = []
+        seen_symbols: Set[str] = set()
 
-        for index, row in enumerate(reader, start=2):
-            if not row:
-                continue
-
-            raw_symbol = row.get(normalized_headers["symbol"], "")
-            raw_amount = row.get(normalized_headers["amount"], "")
-
-            if raw_symbol is None and raw_amount is None:
-                continue
-
-            try:
-                amount_value = float(str(raw_amount).strip())
-            except (TypeError, ValueError):
-                errors.append({"row": index, "message": "La cantidad debe ser numérica"})
-                continue
-
-            try:
-                item = self.create_item(
-                    user_id,
-                    symbol=str(raw_symbol or "").strip(),
-                    amount=amount_value,
+        with self._session_scope() as session:
+            existing_symbols: Set[str] = {
+                row[0]
+                for row in session.execute(
+                    select(PortfolioItem.symbol).where(PortfolioItem.user_id == user_id)
                 )
-            except Exception as exc:  # noqa: BLE001 - propagamos mensaje claro
-                errors.append({"row": index, "message": str(exc)})
-                continue
+            }
 
-            created_items.append(item)
+            for index, row in enumerate(reader, start=2):
+                if index - 1 > self.MAX_IMPORT_ROWS:
+                    errors.append(
+                        {
+                            "row": index,
+                            "message": "El archivo CSV supera el máximo de 500 filas",
+                        }
+                    )
+                    break
+
+                if not row:
+                    continue
+
+                raw_symbol = row.get(normalized_headers["symbol"], "")
+                raw_amount = row.get(normalized_headers["amount"], "")
+
+                if raw_symbol is None and raw_amount is None:
+                    continue
+
+                try:
+                    normalized_symbol = self._normalize_symbol(raw_symbol)
+                except ValueError as exc:
+                    errors.append({"row": index, "message": str(exc)})
+                    continue
+
+                duplicate_in_file = normalized_symbol in seen_symbols
+                seen_symbols.add(normalized_symbol)
+
+                if normalized_symbol in existing_symbols:
+                    errors.append(
+                        {
+                            "row": index,
+                            "message": "El símbolo ya existe en tu portafolio",
+                        }
+                    )
+                    continue
+
+                if duplicate_in_file:
+                    errors.append(
+                        {
+                            "row": index,
+                            "message": "Símbolo duplicado en el archivo",
+                        }
+                    )
+                    continue
+
+                try:
+                    amount_value = float(str(raw_amount).strip())
+                except (TypeError, ValueError):
+                    errors.append({"row": index, "message": "La cantidad debe ser numérica"})
+                    continue
+
+                if amount_value <= 0:
+                    errors.append(
+                        {"row": index, "message": "La cantidad debe ser mayor que cero"}
+                    )
+                    continue
+
+                item = PortfolioItem(
+                    user_id=user_id,
+                    symbol=normalized_symbol,
+                    amount=Decimal(str(amount_value)),
+                )
+                session.add(item)
+                session.flush()
+                session.refresh(item)
+                session.expunge(item)
+
+                created_items.append(item)
+                existing_symbols.add(normalized_symbol)
 
         return {
             "created": len(created_items),

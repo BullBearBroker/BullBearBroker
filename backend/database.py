@@ -9,6 +9,7 @@ from typing import Generator
 from sqlalchemy import create_engine, inspect, text  # [Codex] cambiado - inspección de columnas
 from sqlalchemy.orm import sessionmaker
 
+from backend.core.logging_config import log_event
 from backend.models.base import Base
 from backend.utils.config import ENV, Config
 
@@ -31,7 +32,11 @@ SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, futu
 
 LOGGER = logging.getLogger(__name__)
 
-should_autocreate = ENV == "local" and os.environ.get("BULLBEAR_SKIP_AUTOCREATE", "0") != "1"
+should_autocreate = (
+    ENV == "local"
+    and os.environ.get("BULLBEAR_SKIP_AUTOCREATE", "0") != "1"
+    and not getattr(Config, "TESTING", False)
+)
 
 if should_autocreate:
     try:
@@ -44,11 +49,17 @@ if should_autocreate:
                     connection.execute(
                         text("ALTER TABLE users ADD COLUMN IF NOT EXISTS risk_profile VARCHAR(20)")
                     )
-        LOGGER.info("database_autocreate_complete", env=ENV)
+        log_event(LOGGER, service="database", event="database_autocreate_complete", env=ENV)
     except Exception as exc:  # pragma: no cover - logging manual para depurar entornos sin DB
-        LOGGER.error("database_autocreate_failed", error=str(exc))
+        log_event(
+            LOGGER,
+            service="database",
+            event="database_autocreate_failed",
+            level="error",
+            error=str(exc),
+        )
 else:
-    LOGGER.debug("database_autocreate_skipped", env=ENV)
+    log_event(LOGGER, service="database", event="database_autocreate_skipped", env=ENV)
 
 
 def get_db() -> Generator:

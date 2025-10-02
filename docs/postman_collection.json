@@ -1,0 +1,987 @@
+{
+  "info": {
+    "name": "BullBearBroker API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "ai",
+      "item": [
+        {
+          "name": "Chat Endpoint",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ai/chat",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "ai",
+                "chat"
+              ]
+            },
+            "description": "Chat Endpoint"
+          },
+          "response": []
+        },
+        {
+          "name": "Get History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/ai/history/{session_id}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "ai",
+                "history",
+                "{session_id}"
+              ]
+            },
+            "description": "Get History"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "alerts",
+      "item": [
+        {
+          "name": "Create Alert",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/alerts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "alerts"
+              ]
+            },
+            "description": "Create Alert"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Alert",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/alerts/{alert_id}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "alerts",
+                "{alert_id}"
+              ]
+            },
+            "description": "Delete Alert"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete All Alerts",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/alerts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "alerts"
+              ]
+            },
+            "description": "Delete All Alerts"
+          },
+          "response": []
+        },
+        {
+          "name": "List Alerts",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/alerts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "alerts"
+              ]
+            },
+            "description": "List Alerts"
+          },
+          "response": []
+        },
+        {
+          "name": "Send Alert Notification",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/alerts/send",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "alerts",
+                "send"
+              ]
+            },
+            "description": "Send Alert Notification"
+          },
+          "response": []
+        },
+        {
+          "name": "Suggest Alert Condition",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/alerts/suggest",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "alerts",
+                "suggest"
+              ]
+            },
+            "description": "Suggest Alert Condition"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Alert",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/alerts/{alert_id}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "alerts",
+                "{alert_id}"
+              ]
+            },
+            "description": "Update Alert"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "auth",
+      "item": [
+        {
+          "name": "Get Current User",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "Get Current User"
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Login"
+          },
+          "response": []
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Logout"
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh Token",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "refresh"
+              ]
+            },
+            "description": "Refresh Token"
+          },
+          "response": []
+        },
+        {
+          "name": "Register",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/register",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "register"
+              ]
+            },
+            "description": "Register"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "general",
+      "item": [
+        {
+          "name": "Read Root",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": []
+            },
+            "description": "Read Root"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "health",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health/",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "health"
+              ]
+            },
+            "description": "Health"
+          },
+          "response": []
+        },
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "health"
+              ]
+            },
+            "description": "Health"
+          },
+          "response": []
+        },
+        {
+          "name": "Ping",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health/ping",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "health",
+                "ping"
+              ]
+            },
+            "description": "Ping"
+          },
+          "response": []
+        },
+        {
+          "name": "Version",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health/version",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "health",
+                "version"
+              ]
+            },
+            "description": "Version"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "markets",
+      "item": [
+        {
+          "name": "Get Crypto",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/markets/crypto/{symbol}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "markets",
+                "crypto",
+                "{symbol}"
+              ]
+            },
+            "description": "Get Crypto"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Crypto Prices",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/markets/crypto/prices",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "markets",
+                "crypto",
+                "prices"
+              ],
+              "query": [
+                {
+                  "key": "symbols",
+                  "value": "",
+                  "description": "Lista de símbolos separados por coma"
+                }
+              ]
+            },
+            "description": "Get Crypto Prices"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Forex",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/markets/forex/{pair}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "markets",
+                "forex",
+                "{pair}"
+              ]
+            },
+            "description": "Get Forex"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Forex Rates",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/markets/forex/rates",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "markets",
+                "forex",
+                "rates"
+              ],
+              "query": [
+                {
+                  "key": "pairs",
+                  "value": "",
+                  "description": "Pares FX separados por coma"
+                }
+              ]
+            },
+            "description": "Get Forex Rates"
+          },
+          "response": []
+        },
+        {
+          "name": "Get History",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/markets/history/{symbol}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "markets",
+                "history",
+                "{symbol}"
+              ],
+              "query": [
+                {
+                  "key": "interval",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "market",
+                  "value": "",
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Get History"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Indicators",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/markets/indicators",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "markets",
+                "indicators"
+              ],
+              "query": [
+                {
+                  "key": "type",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "symbol",
+                  "value": "",
+                  "description": "Ej: BTCUSDT, AAPL, EURUSD"
+                },
+                {
+                  "key": "interval",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "rsi_period",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "ema_periods",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "macd_fast",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "macd_slow",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "macd_signal",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "bb_period",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "bb_mult",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "include_atr",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "atr_period",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "include_stoch_rsi",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "stoch_rsi_period",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "stoch_rsi_k",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "stoch_rsi_d",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "include_ichimoku",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "ichimoku_conversion",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "ichimoku_base",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "ichimoku_span_b",
+                  "value": "",
+                  "description": ""
+                },
+                {
+                  "key": "include_vwap",
+                  "value": "",
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Get Indicators"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Stock",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/markets/stock/{symbol}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "markets",
+                "stock",
+                "{symbol}"
+              ]
+            },
+            "description": "Get Stock"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Stock Quotes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/markets/stocks/quotes",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "markets",
+                "stocks",
+                "quotes"
+              ],
+              "query": [
+                {
+                  "key": "symbols",
+                  "value": "",
+                  "description": "Lista de tickers separados por coma"
+                }
+              ]
+            },
+            "description": "Get Stock Quotes"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "news",
+      "item": [
+        {
+          "name": "Get Crypto News",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/news/crypto",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "news",
+                "crypto"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Get Crypto News"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Finance News",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/news/finance",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "news",
+                "finance"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Get Finance News"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Latest News",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/news/latest",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "news",
+                "latest"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "",
+                  "description": ""
+                }
+              ]
+            },
+            "description": "Get Latest News"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "portfolio",
+      "item": [
+        {
+          "name": "Create Portfolio Item",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/portfolio",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "portfolio"
+              ]
+            },
+            "description": "Create Portfolio Item"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Portfolio Item",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/portfolio/{item_id}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "portfolio",
+                "{item_id}"
+              ]
+            },
+            "description": "Delete Portfolio Item"
+          },
+          "response": []
+        },
+        {
+          "name": "Export Portfolio",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/portfolio/export",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "portfolio",
+                "export"
+              ]
+            },
+            "description": "Export Portfolio"
+          },
+          "response": []
+        },
+        {
+          "name": "Import Portfolio",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/portfolio/import",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "portfolio",
+                "import"
+              ]
+            },
+            "description": "Import Portfolio"
+          },
+          "response": []
+        },
+        {
+          "name": "List Portfolio",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/portfolio",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "portfolio"
+              ]
+            },
+            "description": "List Portfolio"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "push",
+      "item": [
+        {
+          "name": "Send Test Notification",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/push/send-test",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "push",
+                "send-test"
+              ]
+            },
+            "description": "Send Test Notification"
+          },
+          "response": []
+        },
+        {
+          "name": "Subscribe Push",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/push/subscribe",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "push",
+                "subscribe"
+              ]
+            },
+            "description": "Subscribe Push"
+          },
+          "response": []
+        },
+        {
+          "name": "Update Preferences",
+          "request": {
+            "method": "PUT",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/push/preferences",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "push",
+                "preferences"
+              ]
+            },
+            "description": "Update Preferences"
+          },
+          "response": []
+        }
+      ]
+    }
+  ],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000"
+    }
+  ]
+}

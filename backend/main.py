@@ -5,6 +5,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi_limiter import FastAPILimiter
 import redis.asyncio as redis
 
@@ -164,11 +165,23 @@ async def lifespan(app: FastAPI):
 # ========================
 # App principal
 # ========================
+OPENAPI_TAGS = [
+    {"name": "health", "description": "Monitoreo y diagnósticos de la API."},
+    {"name": "alerts", "description": "Gestión de alertas financieras en tiempo real."},
+    {"name": "markets", "description": "Consulta de datos de mercados bursátiles."},
+    {"name": "news", "description": "Noticias financieras relevantes."},
+    {"name": "auth", "description": "Autenticación y manejo de sesiones."},
+    {"name": "ai", "description": "Interacciones con el asistente de IA."},
+    {"name": "push", "description": "Suscripciones y preferencias de notificaciones push."},
+    {"name": "portfolio", "description": "Importación, exportación y consulta de portafolios."},
+]
+
 app = FastAPI(
     title="BullBearBroker API",
     version="0.1.0",
     description="🚀 API conversacional para análisis financiero en tiempo real",
     lifespan=lifespan,
+    openapi_tags=OPENAPI_TAGS,
 )
 
 try:  # pragma: no cover - tracing may be optional during tests
@@ -211,6 +224,21 @@ app.include_router(portfolio.router, prefix="/api/portfolio", tags=["portfolio"]
 alerts_ws_manager = AlertWebSocketManager()
 alert_service.register_websocket_manager(alerts_ws_manager)
 app.state.alerts_ws_manager = alerts_ws_manager
+
+_readiness_path = os.getenv("READINESS_PROBE_PATH", "/health")
+if not _readiness_path.startswith("/"):
+    _readiness_path = f"/{_readiness_path}"
+
+if _readiness_path != "/api/health":
+
+    @app.get(_readiness_path, include_in_schema=False)
+    async def readiness_probe() -> JSONResponse:
+        """Ruta liviana para sondas de readiness."""
+
+        result = await health.health()
+        if isinstance(result, JSONResponse):
+            return result
+        return JSONResponse(content=result)
 
 
 @app.websocket("/ws/alerts")
