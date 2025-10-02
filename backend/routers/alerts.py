@@ -6,11 +6,12 @@ import asyncio
 from typing import Dict, Optional, List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator
 
 from backend.core.logging_config import get_logger, log_event
+from backend.core.metrics import ALERTS_RATE_LIMITED
 from backend.core.rate_limit import rate_limit
 
 USER_SERVICE_ERROR: Optional[Exception] = None
@@ -62,18 +63,33 @@ router = APIRouter(tags=["alerts"])
 security = HTTPBearer()
 logger = get_logger(service="alerts_router")
 
+def _record_alert_rate_limit(request: Request, action: str) -> None:
+    payload: Dict[str, object] = {
+        "service": "alerts_router",
+        "event": "alerts_rate_limited",
+        "level": "warning",
+        "action": action,
+        "client_ip": request.client.host if request.client else "unknown",
+    }
+    log_event(logger, **payload)
+    ALERTS_RATE_LIMITED.labels(action=action).inc()
+
 _create_alert_rate_limit = rate_limit(
     times=10,
     seconds=60,
     identifier="alerts_create",
     detail="Demasiadas alertas creadas. Intenta más tarde.",
     fallback_times=50,
+    on_limit=_record_alert_rate_limit,
+    on_limit_dimension="create",
 )
 _dispatch_alert_rate_limit = rate_limit(
     times=5,
     seconds=60,
     identifier="alerts_dispatch",
     detail="Demasiadas alertas enviadas. Reduce la frecuencia.",
+    on_limit=_record_alert_rate_limit,
+    on_limit_dimension="dispatch",
 )
 
 

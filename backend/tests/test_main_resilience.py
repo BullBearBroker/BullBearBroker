@@ -10,6 +10,8 @@ os.environ.setdefault("BULLBEAR_SKIP_AUTOCREATE", "1")
 
 from backend.database import Base
 from backend.main import app
+from backend.core import tracing
+from backend.utils.config import Config
 
 
 class DummyRedis:
@@ -146,3 +148,101 @@ async def test_lifespan_logs_database_setup_error(monkeypatch: pytest.MonkeyPatc
     messages = " ".join(record.getMessage() for record in caplog.records)
     assert "database_setup_error" in messages
     assert fake_engine.disposed is True
+
+
+@pytest.mark.asyncio
+async def test_tracing_configuration_is_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    tracing.reset_tracing_state_for_tests()
+
+    monkeypatch.setattr(Config, "ENABLE_TRACING", True, raising=False)
+    monkeypatch.setattr(Config, "OTEL_SERVICE_NAME", "test-service", raising=False)
+    monkeypatch.setattr(Config, "OTEL_EXPORTER_OTLP_ENDPOINT", None, raising=False)
+    monkeypatch.setattr(Config, "OTEL_EXPORTER_OTLP_HEADERS", "x-token=abc", raising=False)
+    monkeypatch.setattr(Config, "OTEL_EXPORTER_OTLP_TIMEOUT", 5, raising=False)
+
+    class DummyResource:
+        def __init__(self, attributes):
+            self.attributes = dict(attributes)
+
+        @classmethod
+        def create(cls, attributes):
+            return cls(attributes)
+
+        def merge(self, other):
+            merged = dict(self.attributes)
+            merged.update(getattr(other, "attributes", {}))
+            return DummyResource(merged)
+
+    class DummyTracerProvider:
+        def __init__(self, resource=None):
+            self.resource = resource
+            self.processors: list = []
+
+        def add_span_processor(self, processor):  # noqa: ANN001 - mimic OTEL API
+            self.processors.append(processor)
+
+    class DummyTrace:
+        def __init__(self) -> None:
+            self.provider = None
+
+        def get_tracer_provider(self):  # noqa: D401 - mimic OTEL API
+            return self.provider
+
+        def set_tracer_provider(self, provider):  # noqa: D401 - mimic OTEL API
+            self.provider = provider
+
+    trace_module = DummyTrace()
+    instrumentation_calls: list = []
+
+    class DummyFastAPIInstrumentor:
+        @staticmethod
+        def instrument_app(app, tracer_provider=None):  # noqa: ANN001 - mimic OTEL API
+            instrumentation_calls.append((app, tracer_provider))
+
+    class DummyHTTPXClientInstrumentor:
+        def __init__(self) -> None:
+            self._instrumented = False
+
+        def instrument(self, tracer_provider=None):  # noqa: ANN001 - mimic OTEL API
+            self._instrumented = True
+            instrumentation_calls.append(("httpx", tracer_provider))
+
+        def uninstrument(self) -> None:
+            self._instrumented = False
+
+    class DummyBatchSpanProcessor:
+        def __init__(self, exporter) -> None:  # noqa: ANN001 - mimic OTEL API
+            self.exporter = exporter
+
+    class DummyExporter:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    monkeypatch.setattr(
+        tracing,
+        "_load_tracing_dependencies",
+        lambda: (
+            trace_module,
+            DummyFastAPIInstrumentor,
+            DummyHTTPXClientInstrumentor,
+            DummyResource,
+            DummyTracerProvider,
+            DummyBatchSpanProcessor,
+            DummyExporter,
+        ),
+    )
+
+    configured = tracing.configure_tracing(app)
+    assert configured is True
+    assert instrumentation_calls[0][0] is app
+    tracer_provider = instrumentation_calls[0][1]
+    assert isinstance(tracer_provider, DummyTracerProvider)
+    assert instrumentation_calls[1] == ("httpx", tracer_provider)
+    assert tracer_provider.processors
+    exporter_kwargs = tracer_provider.processors[0].exporter.kwargs
+    assert exporter_kwargs["timeout"] == 5
+    assert exporter_kwargs["headers"] == {"x-token": "abc"}
+
+    assert tracing.configure_tracing(app) is False
+
+    tracing.reset_tracing_state_for_tests()

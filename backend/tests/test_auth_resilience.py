@@ -191,3 +191,38 @@ async def test_revoke_all_refresh_tokens_invalidates_existing_ones(client: Async
         json={"refresh_token": second_refresh},
     )
     assert reuse_second.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_login_returns_service_unavailable_on_dependency_failure(
+    client: AsyncClient,
+    in_memory_user_service: AuthDummyUserService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    email = f"down_{uuid.uuid4().hex}@example.com"
+    password = "Valid123!"
+    in_memory_user_service.ensure_user(email, password)
+
+    events: list[dict] = []
+
+    def _capture_event(logger, **payload):  # noqa: ANN001
+        events.append(payload)
+
+    monkeypatch.setattr(auth_router, "log_event", _capture_event)
+
+    def _fail_auth(*_args, **_kwargs):  # noqa: ANN001 - mimic service signature
+        raise RuntimeError("db offline")
+
+    monkeypatch.setattr(in_memory_user_service, "authenticate_user", _fail_auth)
+
+    response = await client.post(
+        "/api/auth/login",
+        json={"email": email, "password": password},
+    )
+
+    assert response.status_code == 503
+    assert response.json()["detail"] == "Servicio de usuarios no disponible"
+    assert any(
+        evt.get("event") == "dependency_unavailable" and evt.get("dependency") == "database"
+        for evt in events
+    )

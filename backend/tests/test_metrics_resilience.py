@@ -27,8 +27,37 @@ def reset_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
         ["method", "path"],
         registry=registry,
     )
+    login_attempts = Counter(
+        "login_attempts_total",
+        "Total login attempts grouped by outcome.",
+        ["outcome"],
+        registry=registry,
+    )
+    login_rate_limited = Counter(
+        "login_rate_limited_total",
+        "Login requests blocked by rate limiting.",
+        ["dimension"],
+        registry=registry,
+    )
+    alerts_rate_limited = Counter(
+        "alerts_rate_limited_total",
+        "Alert operations blocked by rate limiting.",
+        ["action"],
+        registry=registry,
+    )
+    ai_failover = Counter(
+        "ai_provider_failover_total",
+        "Total AI provider failovers.",
+        ["provider"],
+        registry=registry,
+    )
     monkeypatch.setattr(metrics, "REQUEST_COUNT", request_count)
     monkeypatch.setattr(metrics, "REQUEST_LATENCY", request_latency)
+    monkeypatch.setattr(metrics, "LOGIN_ATTEMPTS_TOTAL", login_attempts)
+    monkeypatch.setattr(metrics, "LOGIN_ATTEMPTS", login_attempts)
+    monkeypatch.setattr(metrics, "LOGIN_RATE_LIMITED", login_rate_limited)
+    monkeypatch.setattr(metrics, "ALERTS_RATE_LIMITED", alerts_rate_limited)
+    monkeypatch.setattr(metrics, "AI_PROVIDER_FAILOVER_TOTAL", ai_failover)
 
 
 def _make_request(path: str = "/metrics") -> Request:

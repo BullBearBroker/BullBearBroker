@@ -109,6 +109,13 @@ class Config:
     ENABLE_CAPTCHA_ON_LOGIN = _get_bool_env("ENABLE_CAPTCHA_ON_LOGIN", False)
     LOGIN_CAPTCHA_THRESHOLD = _get_int_env("LOGIN_CAPTCHA_THRESHOLD", 3)
     LOGIN_CAPTCHA_TEST_SECRET = _get_env("LOGIN_CAPTCHA_TEST_SECRET", "pass")
+    LOGIN_SOFT_LOCK_THRESHOLD = _get_int_env("LOGIN_SOFT_LOCK_THRESHOLD", 5)
+    LOGIN_SOFT_LOCK_COOLDOWN = _get_int_env("LOGIN_SOFT_LOCK_COOLDOWN", 900)
+
+    MAX_CONCURRENT_SESSIONS = _get_int_env("MAX_CONCURRENT_SESSIONS", 5)
+
+    ENABLE_PASSWORD_BREACH_CHECK = _get_bool_env("ENABLE_PASSWORD_BREACH_CHECK", False)
+    PASSWORD_BREACH_DATASET_PATH = _get_env("PASSWORD_BREACH_DATASET_PATH")
 
     # Notifications
     TELEGRAM_BOT_TOKEN = _get_env("TELEGRAM_BOT_TOKEN")
@@ -120,6 +127,20 @@ class Config:
     PUSH_CONTACT_EMAIL = _get_env("PUSH_CONTACT_EMAIL", "support@bullbear.ai")
 
     API_BASE_URL = _get_env("BULLBEAR_API_URL", "http://localhost:8000")  # [Codex] nuevo
+
+    ENABLE_TRACING = _get_bool_env("ENABLE_TRACING", False)
+    OTEL_SERVICE_NAME = _get_env("OTEL_SERVICE_NAME", "bullbearbroker-backend")
+    OTEL_EXPORTER_OTLP_ENDPOINT = _get_env("OTEL_EXPORTER_OTLP_ENDPOINT")
+    OTEL_EXPORTER_OTLP_HEADERS = _get_env("OTEL_EXPORTER_OTLP_HEADERS")
+    OTEL_EXPORTER_OTLP_TIMEOUT = _get_int_env("OTEL_EXPORTER_OTLP_TIMEOUT", 10)
+
+    DB_POOL_SIZE = _get_int_env("DB_POOL_SIZE", 5)
+    DB_MAX_OVERFLOW = _get_int_env("DB_MAX_OVERFLOW", 10)
+    DB_POOL_RECYCLE = _get_int_env("DB_POOL_RECYCLE", 1800)
+    DB_POOL_TIMEOUT = _get_int_env("DB_POOL_TIMEOUT", 30)
+
+    HTTPX_TIMEOUT_TIMESERIES = _get_int_env("HTTPX_TIMEOUT_TIMESERIES", 15)
+    HTTPX_CONNECT_TIMEOUT_TIMESERIES = _get_int_env("HTTPX_CONNECT_TIMEOUT_TIMESERIES", 10)
 
     require_env = staticmethod(_require_env)
 

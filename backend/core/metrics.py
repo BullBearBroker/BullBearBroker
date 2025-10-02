@@ -46,19 +46,32 @@ REQUEST_LATENCY = Histogram(
     ["method", "path"],
 )
 
-LOGIN_ATTEMPTS = Counter(
-    "login_attempts",
+LOGIN_ATTEMPTS_TOTAL = Counter(
+    "login_attempts_total",
     "Total login attempts grouped by outcome.",
     ["outcome"],
 )
+LOGIN_ATTEMPTS = LOGIN_ATTEMPTS_TOTAL
 LOGIN_RATE_LIMITED = Counter(
-    "login_rate_limited",
+    "login_rate_limited_total",
     "Login requests blocked by rate limiting.",
     ["dimension"],
 )
 LOGIN_DURATION = Histogram(
     "login_duration_seconds",
     "Duration of the login handler in seconds.",
+)
+
+ALERTS_RATE_LIMITED = Counter(
+    "alerts_rate_limited_total",
+    "Alert operations blocked by rate limiting.",
+    ["action"],
+)
+
+AI_PROVIDER_FAILOVER_TOTAL = Counter(
+    "ai_provider_failover_total",
+    "Total AI provider failovers.",
+    ["provider"],
 )
 
 

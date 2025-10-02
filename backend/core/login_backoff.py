@@ -15,12 +15,20 @@ _CACHE_TTL = int(max(BACKOFF_WINDOWS[-1] * 2, 1800))
 class LoginBackoffState:
     failures: int = 0
     locked_until: Optional[float] = None
+    cooldown_until: Optional[float] = None
 
     @property
     def remaining(self) -> float:
         if self.locked_until is None:
             return 0.0
         delta = self.locked_until - time.time()
+        return max(0.0, delta)
+
+    @property
+    def cooldown_remaining(self) -> float:
+        if self.cooldown_until is None:
+            return 0.0
+        delta = self.cooldown_until - time.time()
         return max(0.0, delta)
 
 
@@ -37,12 +45,19 @@ class LoginBackoffManager:
             locked_until=float(payload.get("locked_until"))
             if payload.get("locked_until") is not None
             else None,
+            cooldown_until=float(payload.get("cooldown_until"))
+            if payload.get("cooldown_until") is not None
+            else None,
         )
 
     async def _save(self, email_hash: str, state: LoginBackoffState) -> None:
         await self._cache.set(
             email_hash,
-            {"failures": state.failures, "locked_until": state.locked_until},
+            {
+                "failures": state.failures,
+                "locked_until": state.locked_until,
+                "cooldown_until": state.cooldown_until,
+            },
             ttl=_CACHE_TTL,
         )
 
@@ -83,6 +98,30 @@ class LoginBackoffManager:
 
     async def required_wait_seconds(self, email_hash: str) -> int:
         remaining = await self.remaining_seconds(email_hash)
+        if remaining <= 0:
+            return 0
+        return max(1, math.ceil(remaining))
+
+    async def activate_cooldown(self, email_hash: str, seconds: int) -> bool:
+        if seconds <= 0:
+            return False
+        state = await self._load(email_hash)
+        now = time.time()
+        cooldown_until = now + float(seconds)
+        if state.cooldown_until is not None and state.cooldown_until > now:
+            if state.cooldown_until >= cooldown_until:
+                return False
+        state.cooldown_until = cooldown_until
+        await self._save(email_hash, state)
+        return True
+
+    async def cooldown_remaining_seconds(self, email_hash: str) -> int:
+        state = await self._load(email_hash)
+        remaining = state.cooldown_remaining
+        if remaining <= 0 and state.cooldown_until is not None:
+            state.cooldown_until = None
+            await self._save(email_hash, state)
+            return 0
         if remaining <= 0:
             return 0
         return max(1, math.ceil(remaining))
