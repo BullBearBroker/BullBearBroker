@@ -19,7 +19,6 @@ if str(ROOT_DIR) not in sys.path:
 
 from backend.main import app
 
-
 def _build_url(path: str) -> Dict[str, Any]:
     parts = [segment for segment in path.strip("/").split("/") if segment]
     return {
