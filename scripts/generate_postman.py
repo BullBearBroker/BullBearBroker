@@ -2,7 +2,12 @@
 import json
 import argparse
 from pathlib import Path
+import sys
 from fastapi.openapi.utils import get_openapi
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 # Importa la app principal
 from backend.main import app  # si no existe aquí, ajusta a la ruta real sin romper el proyecto
