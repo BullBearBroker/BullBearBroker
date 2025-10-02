@@ -13,7 +13,7 @@ from backend.core.http_logging import RequestLogMiddleware
 from backend.core.metrics import MetricsMiddleware, metrics_router
 from backend import database as database_module
 from backend.models.base import Base
-from backend.utils.config import ENV
+from backend.utils.config import Config, ENV
 
 # Routers de la app
 from backend.routers import alerts, markets, news, auth, ai, portfolio, push
@@ -52,6 +52,11 @@ async def lifespan(app: FastAPI):
             redis_client = None
             raise RuntimeError("Redis no disponible") from exc
         await FastAPILimiter.init(redis_client)
+        if getattr(Config, "TESTING", False):
+            try:
+                await FastAPILimiter.redis.flushdb()
+            except Exception:  # pragma: no cover - limpieza defensiva
+                pass
         logger.info("fastapi_limiter_initialized")
     except Exception as exc:  # pragma: no cover - redis opcional en tests
         logger.warning("fastapi_limiter_unavailable", error=str(exc))
