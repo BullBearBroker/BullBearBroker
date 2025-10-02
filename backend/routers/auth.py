@@ -12,6 +12,8 @@ import re
 
 from pydantic import BaseModel, field_validator
 
+from backend.core.logging_config import get_logger, log_event
+from backend.core.rate_limit import rate_limit
 from backend.core.security import create_access_token, create_refresh_token, decode_refresh
 from backend.database import get_db
 from backend.models import User
@@ -26,6 +28,20 @@ from backend.services.user_service import (
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 security = HTTPBearer()
+logger = get_logger(service="auth_router")
+
+_login_rate_limit = rate_limit(
+    times=5,
+    seconds=60,
+    identifier="auth_login",
+    detail="Demasiados intentos de inicio de sesión. Intenta nuevamente más tarde.",
+)
+_refresh_rate_limit = rate_limit(
+    times=10,
+    seconds=120,
+    identifier="auth_refresh",
+    detail="Demasiadas solicitudes de refresco. Espera antes de volver a intentarlo.",
+)
 
 
 EMAIL_REGEX = re.compile(r"^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$", re.IGNORECASE)
@@ -98,6 +114,13 @@ async def register(user_data: UserCreate):
             password=user_data.password,
         )
     except UserAlreadyExistsError as exc:  # pragma: no cover - tests cubren el éxito
+        log_event(
+            logger,
+            service="auth_router",
+            event="user_registration_conflict",
+            level="warning",
+            email=user_data.email,
+        )
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:  # [Codex] nuevo - valida perfil de riesgo
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -113,7 +136,11 @@ async def register(user_data: UserCreate):
     return payload
 
 
-@router.post("/login", response_model=TokenPair)
+@router.post(
+    "/login",
+    response_model=TokenPair,
+    dependencies=[Depends(_login_rate_limit)],
+)
 async def login(credentials: UserLogin, db: Session = Depends(get_db)) -> TokenPair:
     try:
         user = user_service.authenticate_user(
@@ -121,6 +148,13 @@ async def login(credentials: UserLogin, db: Session = Depends(get_db)) -> TokenP
             password=credentials.password,
         )
     except InvalidCredentialsError as exc:
+        log_event(
+            logger,
+            service="auth_router",
+            event="login_failed",
+            level="warning",
+            email=credentials.email,
+        )
         raise HTTPException(status_code=401, detail=str(exc)) from exc
 
     sub = str(user.id)
@@ -144,7 +178,11 @@ async def login(credentials: UserLogin, db: Session = Depends(get_db)) -> TokenP
     )
 
 
-@router.post("/refresh", response_model=TokenPair)
+@router.post(
+    "/refresh",
+    response_model=TokenPair,
+    dependencies=[Depends(_refresh_rate_limit)],
+)
 def refresh_token(req: RefreshRequest, db: Session = Depends(get_db)) -> TokenPair:
     token_str = req.refresh_token
     db_token = None
@@ -159,6 +197,13 @@ def refresh_token(req: RefreshRequest, db: Session = Depends(get_db)) -> TokenPa
                 raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
             sub_uuid = UUID(sub)
         except (jwt.PyJWTError, ValueError):
+            log_event(
+                logger,
+                service="auth_router",
+                event="refresh_token_invalid",
+                level="warning",
+                refresh_id=str(getattr(db_token, "id", "")),
+            )
             db.delete(db_token)
             db.commit()
             raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
@@ -190,6 +235,13 @@ def refresh_token(req: RefreshRequest, db: Session = Depends(get_db)) -> TokenPa
     try:
         user, new_refresh, refresh_expires = user_service.rotate_refresh_token(token_str)
     except InvalidTokenError as exc:
+        log_event(
+            logger,
+            service="auth_router",
+            event="refresh_token_rotation_failed",
+            level="warning",
+            reason=str(exc),
+        )
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
     access_token = create_access_token(sub=str(user.id), extra={"jti": str(uuid4())})

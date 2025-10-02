@@ -6,7 +6,8 @@ import asyncio
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi.responses import Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 USER_SERVICE_ERROR: Optional[Exception] = None
@@ -43,6 +44,8 @@ from backend.schemas.portfolio import (
     PortfolioCreate,
     PortfolioItemResponse,
     PortfolioSummaryResponse,
+    PortfolioImportError,
+    PortfolioImportResult,
 )
 
 router = APIRouter(tags=["portfolio"])
@@ -85,6 +88,66 @@ async def list_portfolio(
         for item in summary["items"]
     ]
     return PortfolioSummaryResponse(items=items, total_value=summary["total_value"])
+
+
+@router.get("/export", response_class=Response)
+async def export_portfolio(
+    current_user: User = Depends(get_current_user),
+) -> Response:
+    csv_payload = await asyncio.to_thread(
+        portfolio_service.export_to_csv, current_user.id
+    )
+    headers = {"Content-Disposition": 'attachment; filename="portfolio.csv"'}
+    return Response(
+        content=csv_payload,
+        media_type="text/csv; charset=utf-8",
+        headers=headers,
+    )
+
+
+@router.post("/import", response_model=PortfolioImportResult)
+async def import_portfolio(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+) -> PortfolioImportResult:
+    content_type = file.content_type or "text/csv"
+    if "csv" not in content_type:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Debes subir un archivo CSV válido",
+        )
+
+    raw_data = await file.read()
+    try:
+        decoded = raw_data.decode("utf-8-sig")
+    except UnicodeDecodeError as exc:  # pragma: no cover - defensivo
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El archivo CSV debe estar codificado en UTF-8",
+        ) from exc
+
+    try:
+        result = await asyncio.to_thread(
+            portfolio_service.import_from_csv,
+            current_user.id,
+            content=decoded,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    items = [
+        PortfolioItemResponse(
+            id=entry["id"],
+            symbol=entry["symbol"],
+            amount=float(entry["amount"]),
+            price=None,
+            value=None,
+        )
+        for entry in result["items"]
+    ]
+
+    errors = [PortfolioImportError(**error) for error in result["errors"]]
+    return PortfolioImportResult(created=result["created"], items=items, errors=errors)
 
 
 @router.post("", response_model=PortfolioItemResponse, status_code=status.HTTP_201_CREATED)

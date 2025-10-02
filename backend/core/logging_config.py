@@ -63,5 +63,9 @@ def log_event(
     if extra:
         payload.update(extra)
 
-    log_method = logger.warning if level == "warning" else logger.info
+    normalized_level = level.lower()
+    log_method = getattr(logger, normalized_level, None)
+    if not callable(log_method):
+        log_method = logger.info
+
     log_method(payload)

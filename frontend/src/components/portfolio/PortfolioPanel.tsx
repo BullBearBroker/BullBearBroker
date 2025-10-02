@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { type ChangeEvent, useCallback, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { PlusCircle, Trash2 } from "lucide-react";
 
@@ -9,8 +9,12 @@ import {
   PortfolioSummary,
   createPortfolioItem,
   deletePortfolioItem,
+  exportPortfolioCsv,
+  importPortfolioCsv,
   listPortfolio,
 } from "@/lib/api";
+import { getFeatureFlag } from "@/lib/featureFlags";
+import { cn } from "@/lib/utils";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Skeleton } from "@/components/common/Skeleton";
@@ -38,6 +42,18 @@ function PortfolioPanelContent({ token }: PortfolioPanelProps) {
   const [amount, setAmount] = useState<string>("");
   const [formError, setFormError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const csvEnabled = useMemo(() => getFeatureFlag("portfolio-csv"), []);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const [csvFeedback, setCsvFeedback] = useState<
+    | {
+        variant: "success" | "error" | "warning";
+        message: string;
+        details?: string[];
+      }
+    | null
+  >(null);
+  const [exporting, setExporting] = useState(false);
+  const [importingCsv, setImportingCsv] = useState(false);
 
   const totalValue = data?.total_value ?? 0;
   const formattedTotal = useMemo(() => currencyFormatter.format(totalValue), [totalValue]);
@@ -106,6 +122,95 @@ function PortfolioPanelContent({ token }: PortfolioPanelProps) {
     [mutate, token]
   );
 
+  const handleExportCsv = useCallback(async () => {
+    if (!token) return;
+    setCsvFeedback(null);
+    setExporting(true);
+    try {
+      const csv = await exportPortfolioCsv(token);
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = "portfolio.csv";
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(url);
+      setCsvFeedback({
+        variant: "success",
+        message: "Exportación completada. Revisa tu archivo \"portfolio.csv\".",
+      });
+    } catch (err) {
+      setCsvFeedback({
+        variant: "error",
+        message:
+          err instanceof Error
+            ? err.message
+            : "No se pudo exportar el portafolio.",
+      });
+    } finally {
+      setExporting(false);
+    }
+  }, [token]);
+
+  const handleImportTrigger = useCallback(() => {
+    if (!token) return;
+    fileInputRef.current?.click();
+  }, [token]);
+
+  const handleImportFile = useCallback(
+    async (event: ChangeEvent<HTMLInputElement>) => {
+      if (!token) return;
+      const file = event.target.files?.[0];
+      if (!file) return;
+
+      setCsvFeedback(null);
+      setImportingCsv(true);
+      try {
+        const result = await importPortfolioCsv(token, file);
+        const errorMessages = (result.errors ?? []).map(
+          (error) => `Fila ${error.row}: ${error.message}`
+        );
+        const baseMessage = `Se importaron ${result.created} activos.`;
+        setCsvFeedback({
+          variant: errorMessages.length ? "warning" : "success",
+          message:
+            errorMessages.length > 0
+              ? `${baseMessage} ${errorMessages.length} filas no se procesaron.`
+              : baseMessage,
+          details: errorMessages,
+        });
+        await mutate();
+      } catch (err) {
+        setCsvFeedback({
+          variant: "error",
+          message:
+            err instanceof Error
+              ? err.message
+              : "No se pudo importar el CSV.",
+        });
+      } finally {
+        setImportingCsv(false);
+        event.target.value = "";
+      }
+    },
+    [mutate, token]
+  );
+
+  const handleDownloadTemplate = useCallback(() => {
+    const template = "symbol,amount\nAAPL,10\nBTCUSDT,0.5\n";
+    const blob = new Blob([template], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "portfolio_template.csv";
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+  }, []);
+
   return (
     <Card className="flex flex-col">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
@@ -118,6 +223,66 @@ function PortfolioPanelContent({ token }: PortfolioPanelProps) {
         <Badge variant="secondary">Total: {formattedTotal}</Badge>
       </CardHeader>
       <CardContent className="space-y-4">
+        {csvEnabled && (
+          <div className="space-y-3 rounded-lg border border-dashed p-3">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div className="space-y-1">
+                <p className="text-sm font-medium">Importar / exportar cartera</p>
+                <p className="text-xs text-muted-foreground">
+                  Trabaja con archivos CSV usando las columnas <code>symbol</code> y <code>amount</code>.
+                </p>
+              </div>
+              <div className="flex flex-col gap-2 md:flex-row">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleExportCsv}
+                  disabled={!token || exporting}
+                >
+                  {exporting ? "Exportando..." : "Exportar CSV"}
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleImportTrigger}
+                  disabled={!token || importingCsv}
+                >
+                  {importingCsv ? "Importando..." : "Importar CSV"}
+                </Button>
+                <Button type="button" variant="ghost" onClick={handleDownloadTemplate}>
+                  Plantilla
+                </Button>
+              </div>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv,text/csv"
+              className="hidden"
+              onChange={handleImportFile}
+            />
+            {csvFeedback && (
+              <div
+                role="status"
+                className={cn(
+                  "rounded-md border p-3 text-sm",
+                  csvFeedback.variant === "error" && "border-destructive/40 text-destructive",
+                  csvFeedback.variant === "warning" && "border-yellow-500/50 text-yellow-600",
+                  csvFeedback.variant === "success" && "border-emerald-500/40 text-emerald-600"
+                )}
+              >
+                <p>{csvFeedback.message}</p>
+                {csvFeedback.details && csvFeedback.details.length > 0 && (
+                  <ul className="mt-2 list-disc space-y-1 pl-4">
+                    {csvFeedback.details.map((detail) => (
+                      <li key={detail}>{detail}</li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="grid gap-2 md:grid-cols-2">
             <Input

@@ -1,5 +1,4 @@
 import uuid
-import uuid
 from dataclasses import dataclass
 from typing import Optional
 
@@ -133,3 +132,44 @@ async def test_portfolio_crud_and_summary(
     assert len(remaining["items"]) == 1
     assert remaining["items"][0]["symbol"] == "AAPL"
     assert pytest.approx(remaining["total_value"], rel=1e-3) == 1800.0
+
+
+@pytest.mark.asyncio()
+async def test_portfolio_export_returns_csv(client: AsyncClient) -> None:
+    headers = {"Authorization": "Bearer valid-token"}
+
+    await client.post(
+        "/api/portfolio",
+        json={"symbol": "BTCUSDT", "amount": 1},
+        headers=headers,
+    )
+
+    response = await client.get("/api/portfolio/export", headers=headers)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert "BTCUSDT" in response.text
+
+
+@pytest.mark.asyncio()
+async def test_portfolio_import_creates_items_and_reports_errors(
+    client: AsyncClient,
+) -> None:
+    headers = {"Authorization": "Bearer valid-token"}
+
+    payload = "symbol,amount\nETHUSDT,2\n,0\nAAPL,not-a-number\n"
+    response = await client.post(
+        "/api/portfolio/import",
+        headers=headers,
+        files={"file": ("portfolio.csv", payload, "text/csv")},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["created"] == 1
+    assert any(error["row"] == 3 for error in body["errors"])
+    assert any("numérica" in error["message"] for error in body["errors"])
+
+    listing = await client.get("/api/portfolio", headers=headers)
+    assert listing.status_code == 200
+    items = listing.json()["items"]
+    assert any(item["symbol"] == "ETHUSDT" for item in items)
