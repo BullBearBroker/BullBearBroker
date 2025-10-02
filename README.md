@@ -47,6 +47,8 @@ Campos destacados:
 - **DATABASE_URL**: apunta por defecto al contenedor de PostgreSQL lanzado vía
   Docker Compose (`postgresql+psycopg2://bullbear:bullbear@db:5432/bullbear`).
 - **REDIS_URL**: requerido para rate limiting y futuras colas de tareas.
+- **LOGIN_IP_LIMIT_TIMES / LOGIN_IP_LIMIT_SECONDS**: controlan el límite suave por IP
+  para `/api/auth/login`.
 - **BULLBEAR_DEFAULT_USER / PASSWORD**: credenciales sembradas automáticamente para pruebas.
 - **NEXT_PUBLIC_API_URL**: URL base que consume el frontend (en Docker se
   resuelve a `http://backend:8000`).

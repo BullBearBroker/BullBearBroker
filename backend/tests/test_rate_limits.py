@@ -1,15 +1,24 @@
 import uuid
+from types import SimpleNamespace
+from typing import Mapping
 
 import pytest
 import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
 from fastapi import HTTPException, Request
+from httpx import ASGITransport, AsyncClient
+from prometheus_client import REGISTRY
 from starlette.responses import Response
 
+import backend.core.rate_limit as rate_limit_module
 from backend.core.rate_limit import reset_rate_limiter_cache
 from backend.main import app
 from backend.routers import alerts as alerts_router
 from backend.routers import auth as auth_router
+
+
+def _metric_value(name: str, labels: Mapping[str, str] | None = None) -> float:
+    value = REGISTRY.get_sample_value(name, labels or {})
+    return float(value) if value is not None else 0.0
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -19,14 +28,115 @@ async def _reset_rate_limits() -> None:
     reset_rate_limiter_cache()
 
 
-class _StubUserService:
-    def authenticate_user(self, *args, **kwargs):  # noqa: ANN001, D401 - simple stub
+class _AlwaysInvalidUserService:
+    def authenticate_user(self, *args, **kwargs):  # noqa: ANN001 - compat with prod svc
         raise auth_router.InvalidCredentialsError("Credenciales inválidas")
+
+
+class _SuccessfulUserService:
+    def __init__(self) -> None:
+        self.email = "valid@example.com"
+        self.password = "secret123"
+        self.user_id = uuid.uuid4()
+        self.refresh_tokens: list[str] = []
+        self.sessions: list[tuple[uuid.UUID, str, object]] = []
+
+    def authenticate_user(self, email: str, password: str) -> SimpleNamespace:
+        if email != self.email or password != self.password:
+            raise auth_router.InvalidCredentialsError("Credenciales inválidas")
+        return SimpleNamespace(id=self.user_id, email=email)
+
+    def store_refresh_token(self, user_id: uuid.UUID, refresh_token: str) -> None:
+        self.refresh_tokens.append(refresh_token)
+
+    def register_external_session(
+        self,
+        user_id: uuid.UUID,
+        token: str,
+        expires_at: object,
+    ) -> None:
+        self.sessions.append((user_id, token, expires_at))
+
+
+@pytest.mark.asyncio()
+async def test_login_ip_rate_limit_unit_window(monkeypatch: pytest.MonkeyPatch) -> None:
+    limiter = rate_limit_module.rate_limit(
+        times=2,
+        seconds=60,
+        identifier="unit_login_ip",
+        state_attribute="limited",
+    )
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/auth/login",
+        "headers": [(b"host", b"testserver")],
+        "client": ("192.0.2.10", 1234),
+        "scheme": "http",
+        "server": ("testserver", 80),
+    }
+    request = Request(scope)
+    response = Response()
+
+    ticks = iter([0.0, 1.0, 2.0, 65.0])
+    monkeypatch.setattr(
+        rate_limit_module,
+        "time",
+        SimpleNamespace(monotonic=lambda: next(ticks)),
+    )
+    monkeypatch.setattr(rate_limit_module.FastAPILimiter, "redis", None, raising=False)
+
+    await limiter(request, response)
+    await limiter(request, response)
+    with pytest.raises(HTTPException):
+        await limiter(request, response)
+    await limiter(request, response)
+
+
+@pytest.mark.asyncio()
+async def test_login_success_updates_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = _SuccessfulUserService()
+    monkeypatch.setattr(auth_router, "user_service", service)
+
+    ok_before = _metric_value("login_attempts_total", {"outcome": "ok"})
+    invalid_before = _metric_value("login_attempts_total", {"outcome": "invalid"})
+    duration_sum_before = _metric_value("login_duration_seconds_sum")
+    duration_count_before = _metric_value("login_duration_seconds_count")
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app, client=("203.0.113.55", 80)),
+        base_url="http://testserver",
+    ) as client:
+        success = await client.post(
+            "/api/auth/login",
+            json={"email": service.email, "password": service.password},
+        )
+        assert success.status_code == 200, success.text
+
+        failure = await client.post(
+            "/api/auth/login",
+            json={"email": service.email, "password": "wrong"},
+        )
+        assert failure.status_code == 401
+
+    ok_after = _metric_value("login_attempts_total", {"outcome": "ok"})
+    invalid_after = _metric_value("login_attempts_total", {"outcome": "invalid"})
+    duration_sum_after = _metric_value("login_duration_seconds_sum")
+    duration_count_after = _metric_value("login_duration_seconds_count")
+
+    assert ok_after - ok_before == 1
+    assert invalid_after - invalid_before == 1
+    assert duration_count_after - duration_count_before == 2
+    assert duration_sum_after > duration_sum_before
 
 
 @pytest.mark.asyncio()
 async def test_login_rate_limit_returns_429(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(auth_router, "user_service", _StubUserService())
+    monkeypatch.setattr(auth_router, "user_service", _AlwaysInvalidUserService())
+
+    invalid_before = _metric_value("login_attempts_total", {"outcome": "invalid"})
+    limited_email_before = _metric_value("login_attempts_total", {"outcome": "limited_email"})
+    rate_email_before = _metric_value("login_rate_limited_total", {"dimension": "email"})
 
     async with AsyncClient(
         transport=ASGITransport(app=app, client=(f"auth-rate-{uuid.uuid4()}", 80)),
@@ -45,6 +155,50 @@ async def test_login_rate_limit_returns_429(monkeypatch: pytest.MonkeyPatch) -> 
         )
 
     assert final.status_code == 429
+
+    invalid_after = _metric_value("login_attempts_total", {"outcome": "invalid"})
+    limited_email_after = _metric_value("login_attempts_total", {"outcome": "limited_email"})
+    rate_email_after = _metric_value("login_rate_limited_total", {"dimension": "email"})
+
+    assert invalid_after - invalid_before == 5
+    assert limited_email_after - limited_email_before == 1
+    assert rate_email_after - rate_email_before == 1
+
+
+@pytest.mark.asyncio()
+async def test_login_rate_limit_by_ip(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(auth_router, "user_service", _AlwaysInvalidUserService())
+
+    limit = getattr(auth_router, "_LOGIN_IP_LIMIT_TIMES", 20)
+    invalid_before = _metric_value("login_attempts_total", {"outcome": "invalid"})
+    limited_ip_before = _metric_value("login_attempts_total", {"outcome": "limited_ip"})
+    rate_ip_before = _metric_value("login_rate_limited_total", {"dimension": "ip"})
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app, client=("198.51.100.77", 80)),
+        base_url="http://testserver",
+    ) as client:
+        for idx in range(limit):
+            resp = await client.post(
+                "/api/auth/login",
+                json={"email": f"user{idx}@example.com", "password": "invalid"},
+            )
+            assert resp.status_code == 401
+
+        final = await client.post(
+            "/api/auth/login",
+            json={"email": "final@example.com", "password": "invalid"},
+        )
+
+    assert final.status_code == 429
+
+    invalid_after = _metric_value("login_attempts_total", {"outcome": "invalid"})
+    limited_ip_after = _metric_value("login_attempts_total", {"outcome": "limited_ip"})
+    rate_ip_after = _metric_value("login_rate_limited_total", {"dimension": "ip"})
+
+    assert invalid_after - invalid_before == limit
+    assert limited_ip_after - limited_ip_before == 1
+    assert rate_ip_after - rate_ip_before == 1
 
 
 @pytest.mark.asyncio()

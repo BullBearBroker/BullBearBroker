@@ -46,6 +46,21 @@ REQUEST_LATENCY = Histogram(
     ["method", "path"],
 )
 
+LOGIN_ATTEMPTS = Counter(
+    "login_attempts",
+    "Total login attempts grouped by outcome.",
+    ["outcome"],
+)
+LOGIN_RATE_LIMITED = Counter(
+    "login_rate_limited",
+    "Login requests blocked by rate limiting.",
+    ["dimension"],
+)
+LOGIN_DURATION = Histogram(
+    "login_duration_seconds",
+    "Duration of the login handler in seconds.",
+)
+
 
 class MetricsMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
