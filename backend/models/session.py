@@ -2,10 +2,14 @@ from __future__ import annotations
 
 from datetime import datetime
 import uuid
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, String
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+if TYPE_CHECKING:
+    from backend.models.user import User
 
 try:  # pragma: no cover
     from .base import Base

@@ -122,7 +122,7 @@ class DummyUserService:
         exp = payload.get("exp")
         if isinstance(exp, datetime):
             return exp
-        if isinstance(exp, (int, float)):
+        if isinstance(exp, int | float):
             return datetime.utcfromtimestamp(exp)
         raise DummyUserService.InvalidTokenError("Token inválido")
 
