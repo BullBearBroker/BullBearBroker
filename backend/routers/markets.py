@@ -3,21 +3,22 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
 from backend.core.logging_config import get_logger, log_event
 from backend.services.timeseries_service import get_closes
-from backend.utils.indicators import average_true_range  # [Codex] nuevo
-from backend.utils.indicators import ichimoku_cloud  # [Codex] nuevo
-from backend.utils.indicators import stochastic_rsi  # [Codex] nuevo
-from backend.utils.indicators import volume_weighted_average_price  # [Codex] nuevo
 from backend.utils.indicators import (
+    average_true_range,  # [Codex] nuevo
     bollinger,
     ema,
+    ichimoku_cloud,  # [Codex] nuevo
     macd,
     rsi,
+    stochastic_rsi,  # [Codex] nuevo
+    volume_weighted_average_price,  # [Codex] nuevo
 )
 
 try:  # pragma: no cover - allow running from different entrypoints
@@ -31,7 +32,7 @@ router = APIRouter(tags=["Markets"])
 logger = get_logger(service="markets_router")
 
 
-def _parse_symbols(raw: Sequence[str] | str) -> List[str]:
+def _parse_symbols(raw: Sequence[str] | str) -> list[str]:
     if isinstance(raw, str):
         items = [item.strip() for item in raw.split(",")]
     else:
@@ -45,12 +46,14 @@ def _parse_symbols(raw: Sequence[str] | str) -> List[str]:
 async def _collect_quotes(
     symbols: Sequence[str],
     fetcher,
-) -> Tuple[List[Dict[str, Any]], List[str]]:
+) -> tuple[list[dict[str, Any]], list[str]]:
     tasks = [asyncio.create_task(fetcher(symbol)) for symbol in symbols]
-    results: List[Dict[str, Any]] = []
-    missing: List[str] = []
+    results: list[dict[str, Any]] = []
+    missing: list[str] = []
 
-    for symbol, task in zip(symbols, await asyncio.gather(*tasks, return_exceptions=True)):
+    for symbol, task in zip(
+        symbols, await asyncio.gather(*tasks, return_exceptions=True), strict=False
+    ):
         if isinstance(task, Exception):
             log_event(
                 logger,
@@ -75,7 +78,7 @@ async def _collect_quotes(
     return results, missing
 
 
-def _to_float(value: Any) -> Optional[float]:
+def _to_float(value: Any) -> float | None:
     if value is None:
         return None
     try:
@@ -84,7 +87,7 @@ def _to_float(value: Any) -> Optional[float]:
         return None
 
 
-def _normalize_candle(entry: Any) -> Optional[Dict[str, Any]]:
+def _normalize_candle(entry: Any) -> dict[str, Any] | None:
     if isinstance(entry, dict):
         timestamp = entry.get("timestamp") or entry.get("time")
         open_ = _to_float(entry.get("open") or entry.get("o"))
@@ -115,13 +118,13 @@ def _normalize_candle(entry: Any) -> Optional[Dict[str, Any]]:
     }
 
 
-def _normalize_history_payload(payload: Any) -> Dict[str, Any]:
+def _normalize_history_payload(payload: Any) -> dict[str, Any]:
     if not isinstance(payload, dict):
         return {}
 
     values = payload.get("values")
     if not isinstance(values, list):
-        normalized_values: List[Dict[str, Any]] = []
+        normalized_values: list[dict[str, Any]] = []
     else:
         normalized_values = []
         for entry in values:
@@ -129,7 +132,7 @@ def _normalize_history_payload(payload: Any) -> Dict[str, Any]:
             if candle is not None:
                 normalized_values.append(candle)
 
-    normalized: Dict[str, Any] = dict(payload)
+    normalized: dict[str, Any] = dict(payload)
     normalized["values"] = normalized_values
     return normalized
 
@@ -137,7 +140,7 @@ def _normalize_history_payload(payload: Any) -> Dict[str, Any]:
 @router.get("/crypto/prices")
 async def get_crypto_prices(
     symbols: str = Query(..., description="Lista de símbolos separados por coma")
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Return crypto prices for the provided symbols."""
 
     parsed = _parse_symbols(symbols)
@@ -148,7 +151,7 @@ async def get_crypto_prices(
 @router.get("/stocks/quotes")
 async def get_stock_quotes(
     symbols: str = Query(..., description="Lista de tickers separados por coma"),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Return stock prices for the provided tickers."""
 
     parsed = _parse_symbols(symbols)
@@ -159,7 +162,7 @@ async def get_stock_quotes(
 @router.get("/forex/rates")
 async def get_forex_rates(
     pairs: str = Query(..., description="Pares FX separados por coma"),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Return forex rates for the given currency pairs."""
 
     parsed = _parse_symbols(pairs)
@@ -168,7 +171,7 @@ async def get_forex_rates(
 
 
 @router.get("/crypto/{symbol}")
-async def get_crypto(symbol: str) -> Dict[str, Any]:
+async def get_crypto(symbol: str) -> dict[str, Any]:
     """Retrieve crypto pricing information ensuring service fallback order."""
 
     try:
@@ -179,9 +182,9 @@ async def get_crypto(symbol: str) -> Dict[str, Any]:
             detail=f"Error obteniendo precio de {symbol}: {exc}",
         ) from exc
 
-    binance_data: Optional[Dict[str, Any]] = await market_service.get_binance_price(symbol)
+    binance_data: dict[str, Any] | None = await market_service.get_binance_price(symbol)
 
-    price: Optional[float] = primary_price if primary_price is not None else None
+    price: float | None = primary_price if primary_price is not None else None
     if price is None and binance_data:
         try:
             price = (
@@ -198,7 +201,7 @@ async def get_crypto(symbol: str) -> Dict[str, Any]:
             detail=f"No se encontró información para {symbol}",
         )
 
-    response: Dict[str, Any] = {
+    response: dict[str, Any] = {
         "symbol": symbol.upper(),
         "type": "crypto",
         "price": float(price),
@@ -232,7 +235,7 @@ async def get_history(
     interval: str = Query("1h"),
     limit: int = Query(300, ge=10, le=1000),
     market: str = Query("auto", pattern="^(auto|crypto|stock|equity|forex)$"),
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     try:
         raw = await market_service.get_historical_ohlc(
             symbol, interval=interval, limit=limit, market=market
@@ -252,7 +255,7 @@ async def get_history(
 
 
 @router.get("/stock/{symbol}")
-async def get_stock(symbol: str) -> Dict[str, Any]:
+async def get_stock(symbol: str) -> dict[str, Any]:
     """Retrieve stock pricing information delegating to the StockService cascade."""
 
     try:
@@ -273,7 +276,7 @@ async def get_stock(symbol: str) -> Dict[str, Any]:
 
 
 @router.get("/forex/{pair}")
-async def get_forex(pair: str) -> Dict[str, Any]:
+async def get_forex(pair: str) -> dict[str, Any]:
     """Retrieve forex quote information honouring the configured fallback chain."""
 
     try:
@@ -328,8 +331,8 @@ async def get_indicators(
     """
     try:
         closes, meta = await get_closes(type, symbol, interval, limit)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as err:
+        raise HTTPException(status_code=400, detail=str(err)) from err
 
     if not closes or len(closes) < 30:
         raise HTTPException(
@@ -337,7 +340,7 @@ async def get_indicators(
             detail="No hay suficientes datos para calcular indicadores",
         )
 
-    indicators: Dict[str, Any] = {"last_close": closes[-1]}
+    indicators: dict[str, Any] = {"last_close": closes[-1]}
 
     highs = meta.get("highs") or []  # [Codex] nuevo
     lows = meta.get("lows") or []   # [Codex] nuevo

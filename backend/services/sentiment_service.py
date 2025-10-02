@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import json
-from typing import Any, Dict, Optional
+from typing import Any
 
 import aiohttp
 
@@ -24,8 +23,8 @@ class SentimentService:
     def __init__(
         self,
         *,
-        market_cache: Optional[CacheClient] = None,
-        text_cache: Optional[CacheClient] = None,
+        market_cache: CacheClient | None = None,
+        text_cache: CacheClient | None = None,
         session_factory=aiohttp.ClientSession,
     ) -> None:
         self.market_cache = market_cache or CacheClient("fear-greed", ttl=300)
@@ -33,18 +32,19 @@ class SentimentService:
         self._session_factory = session_factory
         self._timeout = aiohttp.ClientTimeout(total=10)
 
-    async def get_market_sentiment(self) -> Optional[Dict[str, Any]]:
+    async def get_market_sentiment(self) -> dict[str, Any] | None:
         """Obtiene el índice Fear & Greed de Alternative.me."""
 
         cached = await self.market_cache.get("fear-greed")
         if cached is not None:
             return cached
 
-        async with self._session_factory(timeout=self._timeout) as session:
-            async with session.get(FNG_API_URL) as response:
-                if response.status >= 400:
-                    return None
-                data = await response.json()
+        async with self._session_factory(timeout=self._timeout) as session, session.get(
+            FNG_API_URL
+        ) as response:
+            if response.status >= 400:
+                return None
+            data = await response.json()
 
         payload = {
             "value": data.get("data", [{}])[0].get("value"),
@@ -54,7 +54,7 @@ class SentimentService:
         await self.market_cache.set("fear-greed", payload)
         return payload
 
-    async def analyze_text(self, text: str) -> Optional[Dict[str, Any]]:
+    async def analyze_text(self, text: str) -> dict[str, Any] | None:
         """Analiza texto usando el modelo de HuggingFace configurado."""
 
         normalized = text.strip()
@@ -73,18 +73,20 @@ class SentimentService:
         payload = json.dumps({"inputs": normalized})
         url = f"{Config.HUGGINGFACE_API_URL}/{Config.HUGGINGFACE_SENTIMENT_MODEL}"
 
-        async with self._session_factory(timeout=self._timeout) as session:
-            async with session.post(url, data=payload, headers=headers) as response:
-                if response.status >= 400:
-                    return None
-                data = await response.json()
+        async with self._session_factory(timeout=self._timeout) as session, session.post(
+            url, data=payload, headers=headers
+        ) as response:
+            if response.status >= 400:
+                return None
+            data = await response.json()
 
         if isinstance(data, list) and data:
             candidate = data[0]
-            if isinstance(candidate, list) and candidate:
-                sentiment = candidate[0]
-            else:
-                sentiment = candidate
+            sentiment = (
+                candidate[0]
+                if isinstance(candidate, list) and candidate
+                else candidate
+            )
         elif isinstance(data, dict) and "label" in data:
             sentiment = data
         else:
@@ -102,8 +104,8 @@ class SentimentService:
         return result
 
     async def get_sentiment(
-        self, symbol: str, *, text: Optional[str] = None
-    ) -> Dict[str, Any]:
+        self, symbol: str, *, text: str | None = None
+    ) -> dict[str, Any]:
         """Devuelve la información de sentimiento para ``symbol``."""
 
         market = await self.get_market_sentiment()

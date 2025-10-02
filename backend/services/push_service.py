@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, Dict, Iterable, Optional
+from collections.abc import Iterable
+from typing import Any
 
 try:  # pragma: no cover - optional dependency in some environments
     from pywebpush import WebPushException, webpush
@@ -15,10 +16,9 @@ except ImportError:  # pragma: no cover - provide graceful fallback for tests
     def webpush(**_: Any) -> None:  # type: ignore
         raise WebPushException("pywebpush package is not installed")
 
-from backend.models.push_subscription import PushSubscription
 from backend.models.push_preference import PushNotificationPreference
+from backend.models.push_subscription import PushSubscription
 from backend.utils.config import Config
-
 
 LOGGER = logging.getLogger(__name__)
 
@@ -29,9 +29,9 @@ class PushService:
     def __init__(
         self,
         *,
-        vapid_private_key: Optional[str] = None,
-        vapid_public_key: Optional[str] = None,
-        contact_email: Optional[str] = None,
+        vapid_private_key: str | None = None,
+        vapid_public_key: str | None = None,
+        contact_email: str | None = None,
     ) -> None:
         self._vapid_private_key = vapid_private_key or Config.PUSH_VAPID_PRIVATE_KEY
         self._vapid_public_key = vapid_public_key or Config.PUSH_VAPID_PUBLIC_KEY
@@ -41,14 +41,14 @@ class PushService:
     def is_configured(self) -> bool:
         return bool(self._vapid_private_key and self._vapid_public_key)
 
-    def _build_claims(self) -> Dict[str, str]:
+    def _build_claims(self) -> dict[str, str]:
         contact = self._contact_email or "support@bullbear.ai"
         if not contact.startswith("mailto:"):
             contact = f"mailto:{contact}"
         return {"sub": contact}
 
     def send_notification(
-        self, subscription: PushSubscription, payload: Dict[str, Any]
+        self, subscription: PushSubscription, payload: dict[str, Any]
     ) -> None:
         if not self.is_configured:
             raise RuntimeError("Web Push configuration missing VAPID keys")
@@ -71,13 +71,13 @@ class PushService:
             raise RuntimeError("Failed to deliver push notification") from exc
 
     def _is_category_allowed(
-        self, subscription: PushSubscription, category: Optional[str]
+        self, subscription: PushSubscription, category: str | None
     ) -> bool:
         if category is None:
             return True
 
         user = getattr(subscription, "user", None)
-        preferences: Optional[PushNotificationPreference] = None
+        preferences: PushNotificationPreference | None = None
         if user is not None:
             preferences = getattr(user, "push_preferences", None)
 
@@ -94,9 +94,9 @@ class PushService:
     def broadcast(
         self,
         subscriptions: Iterable[PushSubscription],
-        payload: Dict[str, Any],
+        payload: dict[str, Any],
         *,
-        category: Optional[str] = None,
+        category: str | None = None,
     ) -> int:
         delivered = 0
         for subscription in subscriptions:

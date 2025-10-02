@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -11,7 +12,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.models import PushSubscription, PushNotificationPreference, User
+from backend.models import PushNotificationPreference, PushSubscription, User
 from backend.services.push_service import push_service
 
 try:  # pragma: no cover - optional when running tests without user_service
@@ -75,7 +76,9 @@ class PushPreferencesResponse(BaseModel):
     }
 
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> User:
+async def get_current_user(
+    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)]
+) -> User:
     if user_service is None:
         raise HTTPException(status_code=503, detail="Servicio de usuarios no disponible")
 
@@ -94,8 +97,8 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
 )
 async def subscribe_push(
     payload: PushSubscriptionPayload,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> PushSubscriptionResponse:
     if user_service is None:
         raise HTTPException(status_code=503, detail="Servicio de usuarios no disponible")
@@ -141,8 +144,8 @@ def _get_preferences(db: Session, user_id: UUID) -> PushNotificationPreference:
 @router.put("/preferences", response_model=PushPreferencesResponse)
 async def update_preferences(
     payload: PushPreferencesPayload,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> PushPreferencesResponse:
     preferences = _get_preferences(db, current_user.id)
 
@@ -166,8 +169,8 @@ async def update_preferences(
 
 @router.post("/send-test", status_code=status.HTTP_202_ACCEPTED)
 async def send_test_notification(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> dict:
     subscriptions = (
         db.query(PushSubscription)

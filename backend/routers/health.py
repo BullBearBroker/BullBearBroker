@@ -1,15 +1,15 @@
 import asyncio
 import os
-from typing import Any, Dict
+from typing import Any
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
 from fastapi_limiter import FastAPILimiter
 from sqlalchemy import text
 
+from backend import database as database_module
 from backend.core.logging_config import get_logger, log_event
 from backend.core.rate_limit import rate_limit
-from backend import database as database_module
 
 # No necesitamos poner prefix aquí, ya lo maneja main.py
 router = APIRouter(tags=["health"])
@@ -22,7 +22,7 @@ _health_rate_limit = rate_limit(
 )
 
 
-async def _check_redis() -> Dict[str, Any]:
+async def _check_redis() -> dict[str, Any]:
     client = getattr(FastAPILimiter, "redis", None)
     if client is None:
         return {"status": "skipped", "detail": "redis_not_configured"}
@@ -42,7 +42,7 @@ async def _check_redis() -> Dict[str, Any]:
     return {"status": "ok"}
 
 
-async def _check_database() -> Dict[str, Any]:
+async def _check_database() -> dict[str, Any]:
     engine = getattr(database_module, "engine", None)
     if engine is None:
         return {"status": "skipped", "detail": "engine_not_configured"}

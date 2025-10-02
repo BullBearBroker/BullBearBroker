@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import List, Set
+from contextlib import suppress
 
 from fastapi import WebSocket
 
@@ -15,7 +15,7 @@ class AlertWebSocketManager:
     """Stores active WebSocket connections and broadcasts alert payloads."""
 
     def __init__(self) -> None:
-        self._connections: Set[WebSocket] = set()
+        self._connections: set[WebSocket] = set()
         self._lock = asyncio.Lock()
 
     async def connect(self, websocket: WebSocket) -> None:
@@ -27,7 +27,7 @@ class AlertWebSocketManager:
         async with self._lock:
             self._connections.discard(websocket)
 
-    async def _snapshot(self) -> List[WebSocket]:
+    async def _snapshot(self) -> list[WebSocket]:
         async with self._lock:
             return list(self._connections)
 
@@ -47,10 +47,8 @@ class AlertWebSocketManager:
         """Close all active connections (used during shutdown/tests)."""
         recipients = await self._snapshot()
         for connection in recipients:
-            try:
+            with suppress(Exception):  # pragma: no cover - best effort cleanup
                 await connection.close()
-            except Exception:  # pragma: no cover - best effort cleanup
-                pass
 
     async def count(self) -> int:
         async with self._lock:

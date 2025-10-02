@@ -3,10 +3,11 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+from collections.abc import Iterable
 from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any
 from uuid import UUID, uuid4
 
 import jwt
@@ -23,9 +24,8 @@ from backend.core.security import (
     decode_refresh,
 )
 from backend.database import SessionLocal
-from backend.models import Alert
+from backend.models import Alert, User
 from backend.models import Session as SessionModel
-from backend.models import User
 from backend.models.refresh_token import RefreshToken
 from backend.models.user import RiskProfile  # [Codex] nuevo
 from backend.utils.config import Config, password_context
@@ -56,15 +56,15 @@ class InvalidTokenError(Exception):
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def _as_aware_utc(dt: datetime | None) -> datetime | None:
     if dt is None:
         return None
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 class UserService:
@@ -72,15 +72,15 @@ class UserService:
         self,
         session_factory: sessionmaker = SessionLocal,
         *,
-        secret_key: Optional[str] = None,
-        algorithm: Optional[str] = None,
+        secret_key: str | None = None,
+        algorithm: str | None = None,
         default_session_ttl: timedelta = DEFAULT_SESSION_TTL,
     ):
         self._session_factory = session_factory
         self._jwt_secret_key = secret_key or Config.JWT_SECRET_KEY
         self._jwt_algorithm = algorithm or Config.JWT_ALGORITHM
         self._default_session_ttl = default_session_ttl
-        self._in_memory_refresh_tokens: Dict[str, SimpleNamespace] = {}
+        self._in_memory_refresh_tokens: dict[str, SimpleNamespace] = {}
 
     @contextmanager
     def _session_scope(self) -> Iterable[OrmSession]:
@@ -108,9 +108,9 @@ class UserService:
         )
         return self._detach_entity(session, user)
 
-    def create_user(self, email: str, password: str, *, risk_profile: Optional[str] = None) -> User:
+    def create_user(self, email: str, password: str, *, risk_profile: str | None = None) -> User:
         hashed_password = password_context.hash(password)
-        normalized_profile: Optional[str] = None
+        normalized_profile: str | None = None
         if risk_profile:
             candidate = risk_profile.lower()
             valid_values = {item.value for item in RiskProfile}
@@ -149,7 +149,7 @@ class UserService:
             session.flush()
             return self._user_with_relationships(session, user)
 
-    def get_user_by_email(self, email: str) -> Optional[User]:
+    def get_user_by_email(self, email: str) -> User | None:
         with self._session_scope() as session:
             user = (
                 session.query(User)
@@ -168,7 +168,7 @@ class UserService:
             raise InvalidCredentialsError("Credenciales inválidas")
         return user
 
-    def _compute_expiration(self, expires_in: Optional[timedelta]) -> datetime:
+    def _compute_expiration(self, expires_in: timedelta | None) -> datetime:
         delta = expires_in or self._default_session_ttl
         return _utcnow() + delta
 
@@ -193,7 +193,7 @@ class UserService:
         raise InvalidTokenError("Token inválido: expiración ausente")
 
     @staticmethod
-    def _extract_identity(payload: dict[str, Any]) -> Tuple[UUID, Optional[str]]:
+    def _extract_identity(payload: dict[str, Any]) -> tuple[UUID, str | None]:
         raw_user_id = payload.get("user_id") or payload.get("sub")
         email = payload.get("email")  # puede venir o no
         if not raw_user_id:
@@ -204,8 +204,8 @@ class UserService:
             raise InvalidTokenError("Token inválido") from exc
 
     def create_access_token(
-        self, user: User, expires_in: Optional[timedelta] = None
-    ) -> Tuple[str, datetime]:
+        self, user: User, expires_in: timedelta | None = None
+    ) -> tuple[str, datetime]:
         expires_in = expires_in or ACCESS_TOKEN_TTL
         expires_at = _utcnow() + expires_in
         token = core_create_access_token(sub=str(user.id), extra={"user_id": str(user.id)})
@@ -214,9 +214,9 @@ class UserService:
     def create_session(
         self,
         user_id: UUID,
-        token: Optional[str] = None,
+        token: str | None = None,
         expires_in: timedelta | None = None,
-    ) -> Tuple[str, SessionModel]:
+    ) -> tuple[str, SessionModel]:
         with self._session_scope() as session:
             user = session.get(User, user_id)
             if not user:
@@ -245,8 +245,8 @@ class UserService:
     def create_refresh_token(
         self,
         user_id: UUID,
-        expires_in: Optional[timedelta] = None,
-    ) -> Tuple[str, datetime]:
+        expires_in: timedelta | None = None,
+    ) -> tuple[str, datetime]:
         expires_in = expires_in or REFRESH_TOKEN_TTL
         expires_at = _utcnow() + expires_in
         token_value = core_create_refresh_token(sub=str(user_id))
@@ -337,7 +337,7 @@ class UserService:
 
             new_payload = decode_refresh(new_refresh)
             refresh_expires = datetime.fromtimestamp(
-                int(new_payload["exp"]), tz=timezone.utc
+                int(new_payload["exp"]), tz=UTC
             )
 
             user = db.get(User, user_id)
@@ -373,7 +373,7 @@ class UserService:
         try:
             payload = decode_refresh(token)  # valida firma y decodifica JWT
             exp = int(payload["exp"])
-            expires_dt = datetime.fromtimestamp(exp, tz=timezone.utc)
+            expires_dt = datetime.fromtimestamp(exp, tz=UTC)
         except Exception:
             # No bloquear guardado si no pudimos decodificar por alguna razón
             expires_dt = None
@@ -457,7 +457,7 @@ class UserService:
         *,
         title: str,
         asset: str,
-        value: Optional[float] = None,
+        value: float | None = None,
         condition: str = ">",
         active: bool = True,
     ) -> Alert:
@@ -511,11 +511,11 @@ class UserService:
         user_id: UUID,
         alert_id: UUID,
         *,
-        title: Optional[str] = None,
-        asset: Optional[str] = None,
-        value: Optional[float] = None,
-        condition: Optional[str] = None,
-        active: Optional[bool] = None,
+        title: str | None = None,
+        asset: str | None = None,
+        value: float | None = None,
+        condition: str | None = None,
+        active: bool | None = None,
     ) -> Alert:
         """Actualizar los campos de una alerta existente."""
         with self._session_scope() as session:
