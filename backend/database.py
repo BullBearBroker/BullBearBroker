@@ -8,54 +8,59 @@ from typing import Generator
 from sqlalchemy import create_engine, inspect, text  # [Codex] cambiado - inspección de columnas
 from sqlalchemy.orm import sessionmaker
 
-# --- BEGIN PATCH: local auto-create ---
-from backend.core.logging_config import get_logger
+from backend.core.logging_config import get_logger, log_event
 from backend.models.base import Base
-from backend.utils.config import Config, ENV
+from backend.utils.config import Config
 
 logger = get_logger(service="database")
 
 
 def _current_env() -> str:
-    # Soporta ambos nombres por compatibilidad
-    env = getattr(Config, "ENV", None) or getattr(Config, "ENVIRONMENT", None) or ENV or "prod"
-    return str(env).lower()
+    """Resuelve el entorno desde ENV o ENVIRONMENT (default: 'local')."""
+
+    return (os.getenv("ENV") or os.getenv("ENVIRONMENT") or "local").strip().lower()
 
 
 def create_all_if_local(engine) -> None:
-    """Crea las tablas automáticamente sólo en entorno local."""
+    """Crea tablas sólo en 'local'."""
+
     env = _current_env()
-    if env == "local":
-        try:
-            Base.metadata.create_all(bind=engine)
-        except Exception as exc:  # pragma: no cover - logging manual para depurar entornos sin DB
-            logger.error(
-                {
-                    "service": "database",
-                    "event": "database_autocreate_failed",
-                    "env": env,
-                    "error": str(exc),
-                }
-            )
-        else:
-            logger.info(
-                {
-                    "service": "database",
-                    "event": "database_autocreate_executed",
-                    "env": env,
-                }
-            )
-    else:
-        logger.warning(
-            {
-                "service": "database",
-                "event": "database_autocreate_skipped",
-                "env": env,
-            }
+    if env != "local":
+        log_event(logger, service="database", event="database_autocreate_skipped", level="info", env=env)
+        return
+
+    try:
+        Base.metadata.create_all(bind=engine)
+        log_event(logger, service="database", event="database_autocreate_executed", level="info", env=env)
+    except Exception as exc:  # pragma: no cover - logging manual para depurar entornos sin DB
+        log_event(
+            logger,
+            service="database",
+            event="database_autocreate_failed",
+            level="error",
+            env=env,
+            error=str(exc),
         )
+        return
 
-
-# --- END PATCH: local auto-create ---
+    try:
+        inspector = inspect(engine)  # [Codex] nuevo - verificación de columnas adicionales
+        if "users" in inspector.get_table_names():
+            existing_columns = {col["name"] for col in inspector.get_columns("users")}
+            if "risk_profile" not in existing_columns:
+                with engine.begin() as connection:
+                    connection.execute(
+                        text("ALTER TABLE users ADD COLUMN IF NOT EXISTS risk_profile VARCHAR(20)")
+                    )
+    except Exception as exc:  # pragma: no cover - logging manual para depurar entornos sin DB
+        log_event(
+            logger,
+            service="database",
+            event="risk_profile_migration_failed",
+            level="error",
+            env=env,
+            error=str(exc),
+        )
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./bullbearbroker.db")
 
@@ -75,26 +80,6 @@ engine = create_engine(DATABASE_URL, **engine_kwargs)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, future=True)
 
 create_all_if_local(engine)
-
-if _current_env() == "local":
-    try:
-        inspector = inspect(engine)  # [Codex] nuevo - verificación de columnas adicionales
-        if "users" in inspector.get_table_names():
-            existing_columns = {col["name"] for col in inspector.get_columns("users")}
-            if "risk_profile" not in existing_columns:
-                with engine.begin() as connection:
-                    connection.execute(
-                        text("ALTER TABLE users ADD COLUMN IF NOT EXISTS risk_profile VARCHAR(20)")
-                    )
-    except Exception as exc:  # pragma: no cover - logging manual para depurar entornos sin DB
-        logger.error(
-            {
-                "service": "database",
-                "event": "database_autocreate_column_update_failed",
-                "env": _current_env(),
-                "error": str(exc),
-            }
-        )
 
 
 def get_db() -> Generator:
