@@ -95,10 +95,12 @@ Campos destacados:
    ```bash
    python -m venv .venv
    source .venv/bin/activate
-   pip install -r backend/requirements.txt
-   export $(grep -v '^#' .env | xargs)  # o configura variables manualmente
+   python -m pip install -r backend/requirements.txt
+   export $(grep -v '^#' .env | xargs)
    uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
    ```
+
+   Configurá las variables manualmente si preferís otro enfoque.
 
 2. **Frontend**
    ```bash
