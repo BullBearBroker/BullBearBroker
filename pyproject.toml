@@ -18,7 +18,7 @@ skip_glob = ["backend/alembic/*"]
 line-length = 100
 target-version = "py312"
 src = ["backend"]
-extend-exclude = [".venv", "backend/alembic", "alembic"]
+extend-exclude = [".venv", "alembic", "backend/alembic"]
 select = ["E", "F", "I", "UP", "B", "SIM", "PIE"]
 ignore = []
 
