@@ -75,9 +75,7 @@ class PushPreferencesResponse(BaseModel):
     }
 
 
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-) -> User:
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> User:
     if user_service is None:
         raise HTTPException(status_code=503, detail="Servicio de usuarios no disponible")
 
