@@ -29,11 +29,6 @@ def anyio_backend() -> str:  # pragma: no cover
 
 
 @pytest.fixture()
-def anyio_backend() -> str:  # pragma: no cover
-    return "asyncio"
-
-
-@pytest.fixture()
 def service(monkeypatch: pytest.MonkeyPatch) -> StockService:
     monkeypatch.setattr(StockService, "RETRY_ATTEMPTS", 2, raising=False)
     monkeypatch.setattr(StockService, "RETRY_BACKOFF", 0.01, raising=False)

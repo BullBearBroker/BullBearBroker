@@ -108,9 +108,12 @@ class LoginBackoffManager:
         state = await self._load(email_hash)
         now = time.time()
         cooldown_until = now + float(seconds)
-        if state.cooldown_until is not None and state.cooldown_until > now:
-            if state.cooldown_until >= cooldown_until:
-                return False
+        if (
+            state.cooldown_until is not None
+            and state.cooldown_until > now
+            and state.cooldown_until >= cooldown_until
+        ):
+            return False
         state.cooldown_until = cooldown_until
         await self._save(email_hash, state)
         return True

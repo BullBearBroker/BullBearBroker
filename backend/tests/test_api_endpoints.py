@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import importlib
+import asyncio
 import os
 import uuid
 import sys

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import time
 from collections import defaultdict
@@ -25,11 +26,9 @@ async def identifier_login_by_email(request: Request) -> str:
     """Return an identifier for login rate limiting keyed by email when available."""
 
     email = ""
-    try:
+    with contextlib.suppress(Exception):  # pragma: no cover - body parsing failures fall back to IP
         data = await request.json()
         email = str(data.get("email", "")).strip().lower()
-    except Exception:  # pragma: no cover - body parsing failures fall back to IP
-        pass
 
     if email:
         return f"login:{email}"
@@ -66,12 +65,12 @@ def login_rate_limiter(
             try:
                 await limiter(request, response)
                 return
-            except HTTPException:
+            except HTTPException as err:
                 if state_attribute:
                     setattr(request.state, state_attribute, True)
                 if on_limit:
                     on_limit(request, "email")
-                raise HTTPException(status_code=429, detail=detail)
+                raise HTTPException(status_code=429, detail=detail) from err
             except Exception as exc:
                 payload = {
                     "service": "rate_limit",
@@ -135,13 +134,13 @@ def rate_limit(
             try:
                 await limiter(request, response)
                 return
-            except HTTPException:
+            except HTTPException as err:
                 if state_attribute:
                     setattr(request.state, state_attribute, True)
                 if on_limit:
                     dimension = on_limit_dimension or identifier
                     on_limit(request, dimension)
-                raise HTTPException(status_code=429, detail=detail)
+                raise HTTPException(status_code=429, detail=detail) from err
             except Exception as exc:
                 log_event(
                     LOGGER,
@@ -193,17 +192,13 @@ async def clear_testing_state() -> None:
 
     redis_client = getattr(FastAPILimiter, "redis", None)
     if redis_client is not None:
-        try:
+        with contextlib.suppress(Exception):  # pragma: no cover - limpieza defensiva
             login_ip_pattern = "auth_login_ip*"
             keys = await redis_client.keys(login_ip_pattern)
             if keys:
                 await redis_client.delete(*keys)
-        except Exception:  # pragma: no cover - limpieza defensiva
-            pass
-        try:
+        with contextlib.suppress(Exception):  # pragma: no cover - limpieza defensiva
             await redis_client.flushdb()
-        except Exception:  # pragma: no cover - limpieza defensiva
-            pass
     reset_rate_limiter_cache()
 
 
