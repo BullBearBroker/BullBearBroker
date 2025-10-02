@@ -87,6 +87,7 @@ async def lifespan(app: FastAPI):
                 Base.metadata.create_all(bind=database_engine, checkfirst=True)
                 logger.info("database_ready")
             except Exception as exc:
+                logger.error("database_setup_error", exc_info=True)
                 database_ready = False
                 database_setup_failed = True
                 database_setup_error_message = str(exc)
