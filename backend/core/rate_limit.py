@@ -50,7 +50,7 @@ def login_rate_limiter(
         email_hash: Optional[str] = None
         if identifier.startswith("login:"):
             raw_email = identifier.split(":", 1)[1]
-            email_hash = hashlib.sha256(raw_email.encode("utf-8")).hexdigest()[:12]
+            email_hash = hashlib.sha256(raw_email.encode("utf-8")).hexdigest()[:8]
         setattr(request.state, "login_email_hash", email_hash)
 
         if state_attribute:

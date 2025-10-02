@@ -7,6 +7,7 @@ import { useAuth } from "@/components/providers/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { authMessages } from "@/lib/i18n/auth";
 
 interface FieldErrors {
   name?: string;
@@ -75,13 +76,13 @@ export default function RegisterForm() {
     if (!trimmedEmail) {
       fieldErrors.email = "El correo es obligatorio";
     } else if (!validateEmail(trimmedEmail)) {
-      fieldErrors.email = "Debe ingresar un correo válido";
+      fieldErrors.email = authMessages.validation.email;
     }
 
     if (!trimmedPassword) {
       fieldErrors.password = "La contraseña es obligatoria";
     } else if (trimmedPassword.length < 6) {
-      fieldErrors.password = "La contraseña debe tener al menos 6 caracteres";
+      fieldErrors.password = authMessages.validation.password;
     }
 
     if (!trimmedConfirm) {
@@ -137,11 +138,11 @@ export default function RegisterForm() {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="email">Correo electrónico</Label>
+        <Label htmlFor="email">{authMessages.labels.email}</Label>
         <Input
           id="email"
           type="email"
-          placeholder="Correo electrónico"
+          placeholder={authMessages.placeholders.email}
           value={email}
           onChange={(event) => {
             setEmail(event.target.value);
@@ -159,11 +160,11 @@ export default function RegisterForm() {
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="password">Contraseña</Label>
+        <Label htmlFor="password">{authMessages.labels.password}</Label>
         <Input
           id="password"
           type="password"
-          placeholder="Contraseña"
+          placeholder={authMessages.placeholders.password}
           value={password}
           onChange={(event) => {
             setPassword(event.target.value);

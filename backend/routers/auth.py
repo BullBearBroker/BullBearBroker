@@ -16,15 +16,19 @@ import re
 
 from pydantic import BaseModel, field_validator
 
+from backend.core.login_backoff import login_backoff
 from backend.core.metrics import LOGIN_ATTEMPTS, LOGIN_DURATION, LOGIN_RATE_LIMITED
 from backend.core.logging_config import get_logger, log_event
 from backend.core.rate_limit import login_rate_limiter, rate_limit
 from backend.core.security import create_access_token, create_refresh_token, decode_refresh
 from backend.database import get_db
-from backend.models import User
 from backend.models.refresh_token import RefreshToken
 from backend.schemas.auth import RefreshRequest, TokenPair
 from backend.utils.config import Config
+from backend.services.captcha_service import (
+    CaptchaVerificationError,
+    verify_captcha,
+)
 from backend.services.user_service import (
     InvalidCredentialsError,
     InvalidTokenError,
@@ -45,6 +49,9 @@ _TRACER = trace.get_tracer("backend.auth") if trace else None
 
 _LOGIN_IP_LIMIT_TIMES = getattr(Config, "LOGIN_IP_LIMIT_TIMES", 20)
 _LOGIN_IP_LIMIT_SECONDS = getattr(Config, "LOGIN_IP_LIMIT_SECONDS", 60)
+_EMAIL_BACKOFF_DETAIL = (
+    "Demasiados intentos de inicio de sesión. Intenta nuevamente más tarde."
+)
 
 
 def _record_login_rate_limit(request: Request, dimension: str) -> None:
@@ -128,6 +135,7 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
     email: str
     password: str
+    captcha_token: Optional[str] = None
 
     @field_validator("email")
     @classmethod
@@ -157,12 +165,13 @@ async def register(user_data: UserCreate):
             password=user_data.password,
         )
     except UserAlreadyExistsError as exc:  # pragma: no cover - tests cubren el éxito
+        email_hash = hashlib.sha256(user_data.email.encode("utf-8")).hexdigest()[:8]
         log_event(
             logger,
             service="auth_router",
             event="user_registration_conflict",
             level="warning",
-            email=user_data.email,
+            email_hash=email_hash,
         )
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:  # [Codex] nuevo - valida perfil de riesgo
@@ -193,8 +202,12 @@ async def login(
     limited_email = bool(getattr(request.state, "login_limited_email", False))
     limited_ip = bool(getattr(request.state, "login_limited_ip", False))
     email_hash = getattr(request.state, "login_email_hash", None)
+    normalized_email = credentials.email.strip().lower()
     if not email_hash:
-        email_hash = hashlib.sha256(credentials.email.encode("utf-8")).hexdigest()[:12]
+        email_hash = hashlib.sha256(normalized_email.encode("utf-8")).hexdigest()[:8]
+        setattr(request.state, "login_email_hash", email_hash)
+
+    wait_seconds = await login_backoff.required_wait_seconds(email_hash)
 
     span_manager = _TRACER.start_as_current_span("auth.login") if _TRACER else nullcontext()
     outcome = "ok"
@@ -203,6 +216,56 @@ async def login(
             span.set_attribute("limited.email", limited_email)
             span.set_attribute("limited.ip", limited_ip)
             span.set_attribute("user.email_hash", email_hash)
+
+        if wait_seconds > 0:
+            outcome = "rate_limited"
+            duration = time.perf_counter() - start
+            LOGIN_DURATION.observe(duration)
+            LOGIN_ATTEMPTS.labels(outcome=outcome).inc()
+            LOGIN_RATE_LIMITED.labels(dimension="email_backoff").inc()
+            if span is not None:
+                span.set_attribute("outcome", outcome)
+            log_event(
+                logger,
+                service="auth_router",
+                event="login_failed",
+                level="warning",
+                email_hash=email_hash,
+                reason="rate_limited",
+            )
+            raise HTTPException(
+                status_code=429,
+                detail=_EMAIL_BACKOFF_DETAIL,
+                headers={"Retry-After": str(wait_seconds)},
+            )
+
+        if Config.ENABLE_CAPTCHA_ON_LOGIN:
+            failure_count = await login_backoff.failure_count(email_hash)
+            captcha_required = (
+                failure_count >= Config.LOGIN_CAPTCHA_THRESHOLD or limited_ip
+            )
+            if captcha_required:
+                try:
+                    verify_captcha(credentials.captcha_token)
+                except CaptchaVerificationError as exc:
+                    outcome = "captcha_required"
+                    duration = time.perf_counter() - start
+                    LOGIN_DURATION.observe(duration)
+                    LOGIN_ATTEMPTS.labels(outcome=outcome).inc()
+                    if span is not None:
+                        span.set_attribute("outcome", outcome)
+                    log_event(
+                        logger,
+                        service="auth_router",
+                        event="login_failed",
+                        level="warning",
+                        email_hash=email_hash,
+                        reason="captcha_required",
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Se requiere verificación adicional antes de continuar.",
+                    ) from exc
 
         try:
             user = user_service.authenticate_user(
@@ -216,13 +279,15 @@ async def login(
             LOGIN_ATTEMPTS.labels(outcome=outcome).inc()
             if span is not None:
                 span.set_attribute("outcome", outcome)
+            backoff_seconds = await login_backoff.register_failure(email_hash)
             log_event(
                 logger,
                 service="auth_router",
                 event="login_failed",
                 level="warning",
-                email=credentials.email,
                 email_hash=email_hash,
+                reason="invalid",
+                backoff_seconds=backoff_seconds,
             )
             raise HTTPException(status_code=401, detail=str(exc)) from exc
 
@@ -238,6 +303,7 @@ async def login(
         access_token = create_access_token(sub=sub, extra={"jti": str(uuid4())})
         access_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
         user_service.register_external_session(user.id, access_token, access_expires)
+        await login_backoff.clear(email_hash)
 
         duration = time.perf_counter() - start
         LOGIN_DURATION.observe(duration)
