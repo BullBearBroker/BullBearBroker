@@ -2,14 +2,15 @@ import { act, customRender, screen, waitFor, within } from "@/tests/utils/render
 import userEvent from "@testing-library/user-event";
 import useSWR from "swr";
 
-import {
-  PortfolioPanel
-} from "../PortfolioPanel";
+import { PortfolioPanel } from "../PortfolioPanel";
 import {
   createPortfolioItem,
   deletePortfolioItem,
+  exportPortfolioCsv,
+  importPortfolioCsv,
   listPortfolio,
 } from "@/lib/api";
+import { getFeatureFlag } from "@/lib/featureFlags";
 
 jest.mock("swr", () => {
   const actual = jest.requireActual("swr");
@@ -24,7 +25,13 @@ jest.mock("swr", () => {
 jest.mock("@/lib/api", () => ({
   createPortfolioItem: jest.fn(),
   deletePortfolioItem: jest.fn(),
+  exportPortfolioCsv: jest.fn(),
+  importPortfolioCsv: jest.fn(),
   listPortfolio: jest.fn(),
+}));
+
+jest.mock("@/lib/featureFlags", () => ({
+  getFeatureFlag: jest.fn(),
 }));
 
 const mockedUseSWR = useSWR as jest.MockedFunction<typeof useSWR>;
@@ -32,7 +39,12 @@ const mockedCreatePortfolioItem =
   createPortfolioItem as jest.MockedFunction<typeof createPortfolioItem>;
 const mockedDeletePortfolioItem =
   deletePortfolioItem as jest.MockedFunction<typeof deletePortfolioItem>;
+const mockedExportPortfolioCsv =
+  exportPortfolioCsv as jest.MockedFunction<typeof exportPortfolioCsv>;
+const mockedImportPortfolioCsv =
+  importPortfolioCsv as jest.MockedFunction<typeof importPortfolioCsv>;
 const mockedListPortfolio = listPortfolio as jest.MockedFunction<typeof listPortfolio>;
+const mockedGetFeatureFlag = getFeatureFlag as jest.MockedFunction<typeof getFeatureFlag>;
 
 describe("PortfolioPanel", () => {
   beforeEach(() => {
@@ -43,6 +55,7 @@ describe("PortfolioPanel", () => {
       mutate: jest.fn().mockResolvedValue(undefined),
       isLoading: false,
     } as any);
+    mockedGetFeatureFlag.mockReturnValue(false);
   });
 
   it("no consulta el portafolio cuando falta el token", () => {
@@ -279,5 +292,103 @@ describe("PortfolioPanel", () => {
     } finally {
       consoleSpy.mockRestore();
     }
+  });
+
+  it("muestra acciones de CSV cuando la bandera está activa", () => {
+    mockedGetFeatureFlag.mockReturnValue(true);
+    mockedUseSWR.mockReturnValue({
+      data: { total_value: 0, items: [] },
+      error: undefined,
+      mutate: jest.fn(),
+      isLoading: false,
+    } as any);
+
+    customRender(<PortfolioPanel token="secure" />);
+
+    expect(screen.getByRole("button", { name: /exportar csv/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /importar csv/i })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /plantilla/i })).toBeInTheDocument();
+  });
+
+  it("descarga el CSV al exportar", async () => {
+    mockedGetFeatureFlag.mockReturnValue(true);
+    const mutate = jest.fn().mockResolvedValue(undefined);
+    mockedUseSWR.mockReturnValue({
+      data: { total_value: 0, items: [] },
+      error: undefined,
+      mutate,
+      isLoading: false,
+    } as any);
+
+    mockedExportPortfolioCsv.mockResolvedValue("symbol,amount\nAAPL,1\n");
+
+    const anchor = document.createElement("a");
+    const clickSpy = jest.spyOn(anchor, "click").mockImplementation(() => {});
+    const createSpy = jest.spyOn(document, "createElement").mockReturnValue(anchor as any);
+    const appendSpy = jest.spyOn(document.body, "appendChild");
+    const removeSpy = jest.spyOn(document.body, "removeChild");
+    const urlCreateSpy = jest
+      .spyOn(URL, "createObjectURL")
+      .mockReturnValue("blob:mock-url");
+    const urlRevokeSpy = jest.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+
+    const user = userEvent.setup();
+    customRender(<PortfolioPanel token="secure" />);
+
+    try {
+      await act(async () => {
+        await user.click(screen.getByRole("button", { name: /exportar csv/i }));
+      });
+    } finally {
+      createSpy.mockRestore();
+      appendSpy.mockRestore();
+      removeSpy.mockRestore();
+      urlCreateSpy.mockRestore();
+      urlRevokeSpy.mockRestore();
+      clickSpy.mockRestore();
+    }
+
+    expect(mockedExportPortfolioCsv).toHaveBeenCalledWith("secure");
+    expect(clickSpy).toHaveBeenCalled();
+    expect(appendSpy).toHaveBeenCalled();
+    expect(removeSpy).toHaveBeenCalled();
+    expect(screen.getByText(/Exportación completada/i)).toBeInTheDocument();
+  });
+
+  it("procesa el CSV importado y muestra errores", async () => {
+    mockedGetFeatureFlag.mockReturnValue(true);
+    const mutate = jest.fn().mockResolvedValue(undefined);
+    mockedUseSWR.mockReturnValue({
+      data: { total_value: 0, items: [] },
+      error: undefined,
+      mutate,
+      isLoading: false,
+    } as any);
+
+    mockedImportPortfolioCsv.mockResolvedValue({
+      created: 1,
+      items: [],
+      errors: [{ row: 3, message: "La cantidad debe ser numérica" }],
+    });
+
+    const user = userEvent.setup();
+    const { container } = customRender(<PortfolioPanel token="secure" />);
+
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+    const file = new File(["symbol,amount\nAAPL,1\n"], "portfolio.csv", {
+      type: "text/csv",
+    });
+
+    await act(async () => {
+      await user.upload(input, file);
+    });
+
+    await waitFor(() => {
+      expect(mockedImportPortfolioCsv).toHaveBeenCalledWith("secure", file);
+      expect(mutate).toHaveBeenCalled();
+    });
+
+    expect(screen.getByText(/Se importaron 1 activos/)).toBeInTheDocument();
+    expect(screen.getByText(/Fila 3: La cantidad debe ser numérica/)).toBeInTheDocument();
   });
 });

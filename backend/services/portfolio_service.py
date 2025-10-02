@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import csv
+import io
 from contextlib import contextmanager
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional
@@ -95,6 +97,79 @@ class PortfolioService:
             )
             result = session.execute(stmt)
             return result.rowcount > 0
+
+    # ------------------------------
+    # CSV helpers
+    # ------------------------------
+    def export_to_csv(self, user_id: UUID) -> str:
+        items = self.list_items(user_id)
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        writer.writerow(["symbol", "amount"])
+        for item in items:
+            writer.writerow([item.symbol, float(item.amount)])
+        return buffer.getvalue()
+
+    def import_from_csv(self, user_id: UUID, *, content: str) -> Dict[str, Any]:
+        if not content.strip():
+            raise ValueError("El archivo CSV está vacío")
+
+        stream = io.StringIO(content)
+        reader = csv.DictReader(stream)
+        if not reader.fieldnames:
+            raise ValueError("El CSV debe incluir encabezados")
+
+        normalized_headers = {name.strip().lower(): name for name in reader.fieldnames if name}
+        required = {"symbol", "amount"}
+        missing = required - normalized_headers.keys()
+        if missing:
+            raise ValueError(
+                "Faltan columnas requeridas en el CSV: " + ", ".join(sorted(missing))
+            )
+
+        errors: List[Dict[str, Any]] = []
+        created_items: List[PortfolioItem] = []
+
+        for index, row in enumerate(reader, start=2):
+            if not row:
+                continue
+
+            raw_symbol = row.get(normalized_headers["symbol"], "")
+            raw_amount = row.get(normalized_headers["amount"], "")
+
+            if raw_symbol is None and raw_amount is None:
+                continue
+
+            try:
+                amount_value = float(str(raw_amount).strip())
+            except (TypeError, ValueError):
+                errors.append({"row": index, "message": "La cantidad debe ser numérica"})
+                continue
+
+            try:
+                item = self.create_item(
+                    user_id,
+                    symbol=str(raw_symbol or "").strip(),
+                    amount=amount_value,
+                )
+            except Exception as exc:  # noqa: BLE001 - propagamos mensaje claro
+                errors.append({"row": index, "message": str(exc)})
+                continue
+
+            created_items.append(item)
+
+        return {
+            "created": len(created_items),
+            "items": [
+                {
+                    "id": item.id,
+                    "symbol": item.symbol,
+                    "amount": float(item.amount),
+                }
+                for item in created_items
+            ],
+            "errors": errors,
+        }
 
     # ------------------------------
     # Valuation helpers

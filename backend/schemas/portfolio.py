@@ -38,8 +38,21 @@ class PortfolioSummaryResponse(BaseModel):
     total_value: float
 
 
+class PortfolioImportError(BaseModel):
+    row: int
+    message: str
+
+
+class PortfolioImportResult(BaseModel):
+    created: int
+    items: List[PortfolioItemResponse]
+    errors: List[PortfolioImportError]
+
+
 __all__ = [
     "PortfolioCreate",
     "PortfolioItemResponse",
     "PortfolioSummaryResponse",
+    "PortfolioImportError",
+    "PortfolioImportResult",
 ]

@@ -5,8 +5,11 @@ from prometheus_client import CollectorRegistry, Counter, Histogram
 from starlette.requests import Request
 from starlette.responses import Response
 
+from httpx import ASGITransport, AsyncClient
+
 from backend.core import metrics
 from backend.core.metrics import MetricsMiddleware
+from backend.main import app
 
 
 @pytest.fixture(autouse=True)
@@ -104,3 +107,16 @@ def test_duplicate_metric_registration_and_invalid_inputs() -> None:
     none_counter = metrics.REQUEST_COUNT.labels(method=None, path="/invalid", status="200")
     none_counter.inc()
     assert none_counter._value.get() == pytest.approx(1.0)
+
+
+@pytest.mark.asyncio()
+async def test_metrics_endpoint_returns_plain_text() -> None:
+    async with AsyncClient(
+        transport=ASGITransport(app=app, client=("metrics-test", 80)),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get("/metrics")
+
+    assert response.status_code == 200
+    assert response.text.strip() != ""
+    assert response.headers["content-type"].startswith("text/")

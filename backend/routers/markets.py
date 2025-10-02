@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from fastapi import APIRouter, HTTPException, Query
 
+from backend.core.logging_config import get_logger, log_event
+
 try:  # pragma: no cover - allow running from different entrypoints
     from services.market_service import market_service
     from services.forex_service import forex_service
@@ -15,6 +17,7 @@ except ImportError:  # pragma: no cover - fallback for package-based imports
     from backend.services.forex_service import forex_service  # type: ignore
 
 router = APIRouter(tags=["Markets"])
+logger = get_logger(service="markets_router")
 
 
 def _parse_symbols(raw: Sequence[str] | str) -> List[str]:
@@ -38,6 +41,14 @@ async def _collect_quotes(
 
     for symbol, task in zip(symbols, await asyncio.gather(*tasks, return_exceptions=True)):
         if isinstance(task, Exception):
+            log_event(
+                logger,
+                service="markets_router",
+                event="quote_fetch_error",
+                level="error",
+                symbol=symbol,
+                error=str(task),
+            )
             raise HTTPException(
                 status_code=502,
                 detail=f"Error obteniendo datos de {symbol}: {task}",

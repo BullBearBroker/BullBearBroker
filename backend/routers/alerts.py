@@ -10,6 +10,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field, field_validator
 
+from backend.core.logging_config import get_logger, log_event
+from backend.core.rate_limit import rate_limit
+
 USER_SERVICE_ERROR: Optional[Exception] = None
 
 try:  # pragma: no cover - allow running from different entrypoints
@@ -57,6 +60,21 @@ from backend.utils.config import Config
 # 👇 sin prefix aquí
 router = APIRouter(tags=["alerts"])
 security = HTTPBearer()
+logger = get_logger(service="alerts_router")
+
+_create_alert_rate_limit = rate_limit(
+    times=10,
+    seconds=60,
+    identifier="alerts_create",
+    detail="Demasiadas alertas creadas. Intenta más tarde.",
+    fallback_times=50,
+)
+_dispatch_alert_rate_limit = rate_limit(
+    times=5,
+    seconds=60,
+    identifier="alerts_dispatch",
+    detail="Demasiadas alertas enviadas. Reduce la frecuencia.",
+)
 
 
 class AlertDispatchRequest(BaseModel):
@@ -86,6 +104,13 @@ def _ensure_user_service_available() -> None:
         detail = "Servicio de usuarios no disponible"
         if USER_SERVICE_ERROR is not None:
             detail = f"{detail}. {USER_SERVICE_ERROR}"
+        log_event(
+            logger,
+            service="alerts_router",
+            event="user_service_unavailable",
+            level="error",
+            detail=detail,
+        )
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
 
 
@@ -112,7 +137,12 @@ async def list_alerts(current_user: User = Depends(get_current_user)) -> List[Al
     return [AlertResponse.from_orm(alert) for alert in alerts]
 
 
-@router.post("", response_model=AlertResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "",
+    response_model=AlertResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(_create_alert_rate_limit)],
+)
 async def create_alert(
     alert_in: AlertCreate, current_user: User = Depends(get_current_user)
 ) -> AlertResponse:
@@ -145,8 +175,22 @@ async def create_alert(
             active=normalized_active,
         )
     except UserNotFoundError as exc:  # pragma: no cover - defensive safety
+        log_event(
+            logger,
+            service="alerts_router",
+            event="alert_create_user_missing",
+            level="warning",
+            user_id=str(current_user.id),
+        )
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except ValueError as exc:
+        log_event(
+            logger,
+            service="alerts_router",
+            event="alert_create_invalid_payload",
+            level="warning",
+            error=str(exc),
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
     return AlertResponse.from_orm(alert)
@@ -223,7 +267,11 @@ async def update_alert(
     return AlertResponse.from_orm(alert)
 
 
-@router.post("/send", status_code=status.HTTP_200_OK)
+@router.post(
+    "/send",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(_dispatch_alert_rate_limit)],
+)
 async def send_alert_notification(
     payload: AlertDispatchRequest,
     current_user: User = Depends(get_current_user),
@@ -248,8 +296,22 @@ async def send_alert_notification(
             discord_channel_id=discord_target,
         )
     except ValueError as exc:
+        log_event(
+            logger,
+            service="alerts_router",
+            event="alert_dispatch_validation_error",
+            level="warning",
+            error=str(exc),
+        )
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     except RuntimeError as exc:
+        log_event(
+            logger,
+            service="alerts_router",
+            event="alert_dispatch_failure",
+            level="error",
+            error=str(exc),
+        )
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 
 

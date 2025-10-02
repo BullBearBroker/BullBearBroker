@@ -113,6 +113,17 @@ export interface PortfolioSummary {
   total_value: number;
 }
 
+export interface PortfolioImportError {
+  row: number;
+  message: string;
+}
+
+export interface PortfolioImportResult {
+  created: number;
+  items: PortfolioItem[];
+  errors: PortfolioImportError[];
+}
+
 export interface NewsItem {
   id: string | number;
   title: string;
@@ -527,6 +538,53 @@ export function deletePortfolioItem(token: string, id: string | number) {
     },
     token
   );
+}
+
+export async function exportPortfolioCsv(token: string): Promise<string> {
+  const response = await fetch(`${API_BASE_URL}/api/portfolio/export`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "text/csv",
+    },
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    const message = await safeReadError(response);
+    throw new Error(message || "No se pudo exportar el portafolio");
+  }
+
+  return await response.text();
+}
+
+export async function importPortfolioCsv(
+  token: string,
+  file: File
+): Promise<PortfolioImportResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(`${API_BASE_URL}/api/portfolio/import`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+    body: formData,
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    const message = await safeReadError(response);
+    throw new Error(message || "No se pudo importar el CSV del portafolio");
+  }
+
+  const payload = await response.json();
+  return {
+    created: payload.created ?? 0,
+    items: (payload.items ?? []) as PortfolioItem[],
+    errors: (payload.errors ?? []) as PortfolioImportError[],
+  };
 }
 
 /* ===========
