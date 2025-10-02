@@ -1,27 +1,27 @@
 [tool.black]
 line-length = 100
 target-version = ["py312"]
-extend-exclude = [
-  "^\\.venv/",
-  "alembic",
-  "backend/alembic",
-]
+extend-exclude = """
+^\\.venv/
+"""
 
 [tool.isort]
 profile = "black"
 line_length = 100
 src_paths = ["backend"]
-skip = [".venv", "alembic"]
-skip_glob = ["backend/alembic/*"]
+skip = [".venv"]
 
 [tool.ruff]
 line-length = 100
 target-version = "py312"
 src = ["backend"]
-extend-exclude = [".venv", "alembic", "backend/alembic"]
+extend-exclude = [".venv"]
 select = ["E", "F", "I", "UP", "B", "SIM", "PIE"]
 ignore = []
 
 [tool.ruff.format]
-line-ending = "lf"
+indent-style = "space"
 indent-width = 4
+quote-style = "double"
+skip-magic-trailing-comma = false
+line-ending = "lf"
