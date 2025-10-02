@@ -80,7 +80,7 @@ async def lifespan(app: FastAPI):
 
         database_engine = getattr(database_module, "engine", None)
         database_ready = True
-        if ENV == "local":
+        if ENV in {"local", "test"}:
             try:
                 if database_engine is None:
                     raise RuntimeError("database engine is not configured")
