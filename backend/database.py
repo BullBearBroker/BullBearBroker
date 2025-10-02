@@ -2,16 +2,60 @@
 
 from __future__ import annotations
 
-import logging
 import os
 from typing import Generator
 
 from sqlalchemy import create_engine, inspect, text  # [Codex] cambiado - inspección de columnas
 from sqlalchemy.orm import sessionmaker
 
-from backend.core.logging_config import log_event
+# --- BEGIN PATCH: local auto-create ---
+from backend.core.logging_config import get_logger
 from backend.models.base import Base
-from backend.utils.config import ENV, Config
+from backend.utils.config import Config, ENV
+
+logger = get_logger(service="database")
+
+
+def _current_env() -> str:
+    # Soporta ambos nombres por compatibilidad
+    env = getattr(Config, "ENV", None) or getattr(Config, "ENVIRONMENT", None) or ENV or "prod"
+    return str(env).lower()
+
+
+def create_all_if_local(engine) -> None:
+    """Crea las tablas automáticamente sólo en entorno local."""
+    env = _current_env()
+    if env == "local":
+        try:
+            Base.metadata.create_all(bind=engine)
+        except Exception as exc:  # pragma: no cover - logging manual para depurar entornos sin DB
+            logger.error(
+                {
+                    "service": "database",
+                    "event": "database_autocreate_failed",
+                    "env": env,
+                    "error": str(exc),
+                }
+            )
+        else:
+            logger.info(
+                {
+                    "service": "database",
+                    "event": "database_autocreate_executed",
+                    "env": env,
+                }
+            )
+    else:
+        logger.warning(
+            {
+                "service": "database",
+                "event": "database_autocreate_skipped",
+                "env": env,
+            }
+        )
+
+
+# --- END PATCH: local auto-create ---
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./bullbearbroker.db")
 
@@ -30,17 +74,10 @@ if not DATABASE_URL.startswith("sqlite"):
 engine = create_engine(DATABASE_URL, **engine_kwargs)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, future=True)
 
-LOGGER = logging.getLogger(__name__)
+create_all_if_local(engine)
 
-should_autocreate = (
-    ENV == "local"
-    and os.environ.get("BULLBEAR_SKIP_AUTOCREATE", "0") != "1"
-    and not getattr(Config, "TESTING", False)
-)
-
-if should_autocreate:
+if _current_env() == "local":
     try:
-        Base.metadata.create_all(bind=engine)
         inspector = inspect(engine)  # [Codex] nuevo - verificación de columnas adicionales
         if "users" in inspector.get_table_names():
             existing_columns = {col["name"] for col in inspector.get_columns("users")}
@@ -49,17 +86,15 @@ if should_autocreate:
                     connection.execute(
                         text("ALTER TABLE users ADD COLUMN IF NOT EXISTS risk_profile VARCHAR(20)")
                     )
-        log_event(LOGGER, service="database", event="database_autocreate_complete", env=ENV)
     except Exception as exc:  # pragma: no cover - logging manual para depurar entornos sin DB
-        log_event(
-            LOGGER,
-            service="database",
-            event="database_autocreate_failed",
-            level="error",
-            error=str(exc),
+        logger.error(
+            {
+                "service": "database",
+                "event": "database_autocreate_column_update_failed",
+                "env": _current_env(),
+                "error": str(exc),
+            }
         )
-else:
-    log_event(LOGGER, service="database", event="database_autocreate_skipped", env=ENV)
 
 
 def get_db() -> Generator:
