@@ -11,13 +11,13 @@ BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
-from fastapi import HTTPException
+from fastapi import HTTPException  # noqa: E402
 
 # 🔧 Ajuste: imports corregidos
-from backend.services.crypto_service import CryptoService
-from backend.services.market_service import market_service
-from backend.routers.markets import get_crypto
-from backend.utils.config import Config
+from backend.services.crypto_service import CryptoService  # noqa: E402
+from backend.services.market_service import market_service  # noqa: E402
+from backend.routers.markets import get_crypto  # noqa: E402
+from backend.utils.config import Config  # noqa: E402
 
 crypto_service = market_service.crypto_service
 

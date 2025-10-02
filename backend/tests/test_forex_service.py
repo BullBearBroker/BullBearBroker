@@ -3,14 +3,14 @@ import os
 import sys
 from typing import Any, Dict
 
+import pytest
+
 BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
-import pytest
-
-from backend.services.forex_service import ForexService
-from backend.utils.config import Config
+from backend.services.forex_service import ForexService  # noqa: E402
+from backend.utils.config import Config  # noqa: E402
 
 
 class DummyCache:

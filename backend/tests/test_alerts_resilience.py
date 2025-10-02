@@ -15,8 +15,8 @@ from backend.tests._dependency_stubs import ensure as ensure_test_dependencies
 
 ensure_test_dependencies()
 
-from backend.main import app
-from backend.routers import alerts as alerts_router
+from backend.main import app  # noqa: E402
+from backend.routers import alerts as alerts_router  # noqa: E402
 from backend.tests.test_alerts_endpoints import (  # noqa: E402
     DummyUserService,
     _auth_header,

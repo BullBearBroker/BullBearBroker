@@ -10,9 +10,9 @@ from backend.tests._dependency_stubs import ensure as ensure_test_dependencies
 
 ensure_test_dependencies()
 
-from backend.main import app
-from backend.routers import health as health_module
-from backend.core.rate_limit import reset_rate_limiter_cache
+from backend.main import app  # noqa: E402
+from backend.routers import health as health_module  # noqa: E402
+from backend.core.rate_limit import reset_rate_limiter_cache  # noqa: E402
 
 
 @pytest.mark.asyncio

@@ -3,13 +3,13 @@ import os
 import sys
 from typing import Any, Dict, List
 
+import pytest
+
 BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
-import pytest
-
-from services.sentiment_service import SentimentService
+from services.sentiment_service import SentimentService  # noqa: E402
 
 
 class DummyCache:

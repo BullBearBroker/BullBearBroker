@@ -13,10 +13,10 @@ from backend.tests._dependency_stubs import ensure as ensure_test_dependencies
 
 ensure_test_dependencies()
 
-from backend.main import app
-from backend.models import Base, User, PortfolioItem  # noqa: F401 - ensure table registration
-from backend.routers import portfolio as portfolio_router
-from backend.services.portfolio_service import PortfolioService
+from backend.main import app  # noqa: E402
+from backend.models import Base, User, PortfolioItem  # noqa: F401, E402 - ensure table registration
+from backend.routers import portfolio as portfolio_router  # noqa: E402
+from backend.services.portfolio_service import PortfolioService  # noqa: E402
 
 
 @dataclass
