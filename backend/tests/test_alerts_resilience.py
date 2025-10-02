@@ -5,6 +5,8 @@ import uuid
 
 import pytest
 from httpx import AsyncClient
+from prometheus_client import CollectorRegistry, Counter
+from starlette.requests import Request
 from starlette.testclient import TestClient
 
 os.environ.setdefault("BULLBEAR_SKIP_AUTOCREATE", "1")
@@ -150,3 +152,37 @@ def test_websocket_subscription_and_disconnect(monkeypatch: pytest.MonkeyPatch) 
             assert test_client.portal.call(manager.count) == 1
 
         assert test_client.portal.call(manager.count) == 0
+
+
+def test_alert_rate_limit_records_metric(monkeypatch: pytest.MonkeyPatch) -> None:
+    registry = CollectorRegistry()
+    counter = Counter(
+        "alerts_rate_limited_total",
+        "Alert operations blocked by rate limiting.",
+        ["action"],
+        registry=registry,
+    )
+    events: list[dict] = []
+
+    def _capture_event(logger, **payload):  # noqa: ANN001 - align with log_event signature
+        events.append(payload)
+
+    monkeypatch.setattr(alerts_router, "ALERTS_RATE_LIMITED", counter)
+    monkeypatch.setattr(alerts_router, "log_event", _capture_event)
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/alerts",
+        "headers": [],
+        "query_string": b"",
+        "client": ("127.0.0.1", 1234),
+        "server": ("testserver", 80),
+    }
+    request = Request(scope)
+
+    alerts_router._record_alert_rate_limit(request, "create")
+
+    assert counter.labels(action="create")._value.get() == pytest.approx(1.0)
+    assert events and events[0]["event"] == "alerts_rate_limited"
+    assert events[0]["action"] == "create"

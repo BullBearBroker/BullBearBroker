@@ -1,3 +1,4 @@
+import json
 import hashlib
 import uuid
 from types import SimpleNamespace
@@ -211,6 +212,53 @@ async def test_login_backoff_updates_metrics(monkeypatch: pytest.MonkeyPatch) ->
     assert invalid_after - invalid_before == 2
     assert limited_after - limited_before == 1
     assert rate_email_after - rate_email_before == 1
+
+
+@pytest.mark.asyncio()
+async def test_login_rate_limiter_logs_dependency_failures(monkeypatch: pytest.MonkeyPatch) -> None:
+    events: list[dict] = []
+
+    def _capture_event(logger, **payload):  # noqa: ANN001
+        events.append(payload)
+
+    class _FailingLimiter:
+        async def __call__(self, _request, _response):  # noqa: ANN001
+            raise RuntimeError("redis offline")
+
+    monkeypatch.setattr(rate_limit_module, "log_event", _capture_event)
+    monkeypatch.setattr(rate_limit_module, "RateLimiter", lambda *args, **kwargs: _FailingLimiter())
+    monkeypatch.setattr(rate_limit_module.FastAPILimiter, "redis", object(), raising=False)
+
+    limiter = rate_limit_module.login_rate_limiter()
+
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/api/auth/login",
+        "headers": [],
+        "client": ("127.0.0.1", 1234),
+        "server": ("testserver", 80),
+        "scheme": "http",
+        "query_string": b"",
+    }
+
+    body = json.dumps({"email": "dependency@test.com"}).encode("utf-8")
+
+    async def receive() -> dict:  # noqa: D401 - ASGI receive callable
+        nonlocal body
+        chunk = body
+        body = b""
+        return {"type": "http.request", "body": chunk, "more_body": False}
+
+    request = Request(scope, receive=receive)
+    response = Response()
+
+    await limiter(request, response)
+
+    assert any(
+        evt.get("event") == "dependency_unavailable" and evt.get("dependency") == "redis"
+        for evt in events
+    )
 
 
 @pytest.mark.asyncio()

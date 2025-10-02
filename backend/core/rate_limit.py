@@ -11,12 +11,15 @@ from fastapi import HTTPException, Request, Response
 from fastapi_limiter import FastAPILimiter
 from fastapi_limiter.depends import RateLimiter
 
+from backend.core.logging_config import get_logger, log_event
 from backend.utils.config import Config
 
 _IN_MEMORY_BUCKETS: Dict[str, list[float]] = defaultdict(list)
 
 LimitCallback = Callable[[Request, str], None]
 
+
+LOGGER = get_logger(service="rate_limit")
 
 async def identifier_login_by_email(request: Request) -> str:
     """Return an identifier for login rate limiting keyed by email when available."""
@@ -69,8 +72,17 @@ def login_rate_limiter(
                 if on_limit:
                     on_limit(request, "email")
                 raise HTTPException(status_code=429, detail=detail)
-            except Exception:
-                pass
+            except Exception as exc:
+                payload = {
+                    "service": "rate_limit",
+                    "event": "dependency_unavailable",
+                    "level": "warning",
+                    "dependency": "redis",
+                }
+                if email_hash:
+                    payload["email_hash"] = email_hash
+                payload["error"] = str(exc)
+                log_event(LOGGER, **payload)
 
         bucket_key = f"{identifier}:{times}:{seconds}"
         window = _IN_MEMORY_BUCKETS[bucket_key]
@@ -130,9 +142,16 @@ def rate_limit(
                     dimension = on_limit_dimension or identifier
                     on_limit(request, dimension)
                 raise HTTPException(status_code=429, detail=detail)
-            except Exception:
-                # Redis sin inicializar; cae al modo en memoria
-                pass
+            except Exception as exc:
+                log_event(
+                    LOGGER,
+                    service="rate_limit",
+                    event="dependency_unavailable",
+                    level="warning",
+                    dependency="redis",
+                    identifier=identifier,
+                    error=str(exc),
+                )
 
         client_host = request.client.host if request.client else "unknown"
         bucket_key = f"{client_host}:{bucket_prefix}"

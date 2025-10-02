@@ -7,6 +7,24 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 import httpx
 
+_HTTP_TIMEOUT_SECONDS = 15.0
+_HTTP_CONNECT_TIMEOUT_SECONDS = 10.0
+try:  # pragma: no cover - fallback for standalone usage
+    from backend.utils.config import Config as _ConfigSource  # type: ignore
+
+    _HTTP_TIMEOUT_SECONDS = float(
+        getattr(_ConfigSource, "HTTPX_TIMEOUT_TIMESERIES", _HTTP_TIMEOUT_SECONDS)
+    )
+    _HTTP_CONNECT_TIMEOUT_SECONDS = float(
+        getattr(
+            _ConfigSource,
+            "HTTPX_CONNECT_TIMEOUT_TIMESERIES",
+            _HTTP_CONNECT_TIMEOUT_SECONDS,
+        )
+    )
+except Exception:  # pragma: no cover - Config not available
+    _ConfigSource = None  # type: ignore
+
 # Leemos claves directamente del entorno (evitamos acoplar a utils.config)
 ALPHA_VANTAGE_API_KEY = os.getenv("ALPHA_VANTAGE_API_KEY", "")
 TWELVEDATA_API_KEY = os.getenv("TWELVEDATA_API_KEY", "")
@@ -149,7 +167,10 @@ def resample_series(
     return list(aggregated.values())
 
 async def _http_get_json(url: str, params: Dict[str, str]) -> Dict:
-    timeout = httpx.Timeout(15.0, connect=10.0)
+    timeout = httpx.Timeout(
+        timeout=_HTTP_TIMEOUT_SECONDS,
+        connect=_HTTP_CONNECT_TIMEOUT_SECONDS,
+    )
     async with httpx.AsyncClient(timeout=timeout) as client:
         r = await client.get(url, params=params)
         r.raise_for_status()

@@ -37,6 +37,7 @@ from backend.services.user_service import (
     UserAlreadyExistsError,
     user_service,
 )
+from backend.services.password_guard import is_password_compromised
 
 try:  # pragma: no cover - tracing opcional
     from opentelemetry import trace
@@ -60,6 +61,8 @@ _LOGIN_IP_LIMIT_WINDOW_SECONDS = getattr(
     getattr(Config, "LOGIN_IP_LIMIT_SECONDS", 60),
 )
 _LOGIN_BACKOFF_START_AFTER = getattr(Config, "LOGIN_BACKOFF_START_AFTER", 3)
+_SOFT_LOCK_THRESHOLD = max(0, getattr(Config, "LOGIN_SOFT_LOCK_THRESHOLD", 0))
+_SOFT_LOCK_COOLDOWN = max(0, getattr(Config, "LOGIN_SOFT_LOCK_COOLDOWN", 0))
 _EMAIL_BACKOFF_DETAIL = (
     "Demasiados intentos de inicio de sesión. Intenta nuevamente más tarde."
 )
@@ -165,6 +168,17 @@ async def register(user_data: UserCreate):
     if len(user_data.password) < 6:
         raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 6 caracteres")
 
+    if Config.ENABLE_PASSWORD_BREACH_CHECK and is_password_compromised(user_data.password):
+        email_hash = hashlib.sha256(user_data.email.encode("utf-8")).hexdigest()[:8]
+        log_event(
+            logger,
+            service="auth_router",
+            event="password_rejected",  # generic event to avoid leaking reason
+            level="warning",
+            email_hash=email_hash,
+        )
+        raise HTTPException(status_code=400, detail="Credenciales inválidas")
+
     try:
         new_user = user_service.create_user(
             email=user_data.email,
@@ -226,6 +240,30 @@ async def login(
             span.set_attribute("limited.email", limited_email)
             span.set_attribute("limited.ip", limited_ip)
             span.set_attribute("user.email_hash", email_hash)
+
+        cooldown_remaining = await login_backoff.cooldown_remaining_seconds(email_hash)
+        if cooldown_remaining > 0:
+            outcome = "locked"
+            duration = time.perf_counter() - start
+            LOGIN_DURATION.observe(duration)
+            LOGIN_ATTEMPTS.labels(outcome=outcome).inc()
+            if span is not None:
+                span.set_attribute("outcome", outcome)
+                span.set_attribute("limited.cooldown", True)
+            log_event(
+                logger,
+                service="auth_router",
+                event="login_failed",
+                level="warning",
+                email_hash=email_hash,
+                reason="cooldown",
+                retry_after=cooldown_remaining,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_423_LOCKED,
+                detail=_EMAIL_BACKOFF_DETAIL,
+                headers={"Retry-After": str(cooldown_remaining)},
+            )
 
         backoff_threshold = _LOGIN_BACKOFF_START_AFTER
         windows = getattr(login_backoff_module, "BACKOFF_WINDOWS", None)
@@ -301,6 +339,27 @@ async def login(
                 email_hash,
                 start_after=backoff_threshold,
             )
+            soft_lock_triggered = False
+            if _SOFT_LOCK_THRESHOLD > 0:
+                failures = await login_backoff.failure_count(email_hash)
+                if failures >= _SOFT_LOCK_THRESHOLD:
+                    cooldown_seconds = _SOFT_LOCK_COOLDOWN
+                    if cooldown_seconds > 0:
+                        soft_lock_triggered = await login_backoff.activate_cooldown(
+                            email_hash,
+                            cooldown_seconds,
+                        )
+                        if soft_lock_triggered:
+                            if span is not None:
+                                span.set_attribute("soft_lock", True)
+                            log_event(
+                                logger,
+                                service="auth_router",
+                                event="account_soft_lock",
+                                level="warning",
+                                email_hash=email_hash,
+                                cooldown_sec=cooldown_seconds,
+                            )
             duration = time.perf_counter() - start
             limiter_response = Response()
             try:
@@ -363,6 +422,27 @@ async def login(
                 reason="invalid",
             )
             raise HTTPException(status_code=401, detail=str(exc)) from exc
+        except Exception as exc:
+            outcome = "error"
+            duration = time.perf_counter() - start
+            LOGIN_DURATION.observe(duration)
+            LOGIN_ATTEMPTS.labels(outcome=outcome).inc()
+            if span is not None:
+                span.set_attribute("outcome", outcome)
+                span.set_attribute("error.dependency", "database")
+            log_event(
+                logger,
+                service="auth_router",
+                event="dependency_unavailable",
+                level="error",
+                dependency="database",
+                email_hash=email_hash,
+                error=str(exc),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Servicio de usuarios no disponible",
+            ) from exc
 
         sub = str(user.id)
         jti = str(uuid4())

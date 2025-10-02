@@ -11,6 +11,7 @@ import redis.asyncio as redis
 from backend.core.logging_config import get_logger, log_event
 from backend.core.http_logging import RequestLogMiddleware
 from backend.core.metrics import MetricsMiddleware, metrics_router
+from backend.core.tracing import configure_tracing
 from backend import database as database_module
 from backend.models.base import Base
 from backend.utils.config import Config, ENV
@@ -169,6 +170,11 @@ app = FastAPI(
     description="🚀 API conversacional para análisis financiero en tiempo real",
     lifespan=lifespan,
 )
+
+try:  # pragma: no cover - tracing may be optional during tests
+    configure_tracing(app)
+except Exception as exc:  # pragma: no cover - defensive logging
+    logger.warning("tracing_configuration_failed", error=str(exc))
 
 # Configuración de CORS (controlada por variables de entorno)
 raw_origins = os.environ.get("CORS_ALLOW_ORIGINS", "http://localhost:3000")

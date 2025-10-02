@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, inspect, text  # [Codex] cambiado - inspec
 from sqlalchemy.orm import sessionmaker
 
 from backend.models.base import Base
-from backend.utils.config import ENV
+from backend.utils.config import ENV, Config
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./bullbearbroker.db")
 
@@ -18,7 +18,15 @@ connect_args = {}
 if DATABASE_URL.startswith("sqlite"):
     connect_args["check_same_thread"] = False
 
-engine = create_engine(DATABASE_URL, future=True, echo=False, connect_args=connect_args)
+engine_kwargs = {"future": True, "echo": False, "connect_args": connect_args}
+if not DATABASE_URL.startswith("sqlite"):
+    engine_kwargs.update(
+        pool_size=int(getattr(Config, "DB_POOL_SIZE", 5)),
+        max_overflow=int(getattr(Config, "DB_MAX_OVERFLOW", 10)),
+        pool_recycle=int(getattr(Config, "DB_POOL_RECYCLE", 1800)),
+        pool_timeout=int(getattr(Config, "DB_POOL_TIMEOUT", 30)),
+    )
+engine = create_engine(DATABASE_URL, **engine_kwargs)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, future=True)
 
 LOGGER = logging.getLogger(__name__)

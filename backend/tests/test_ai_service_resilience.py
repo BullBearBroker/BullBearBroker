@@ -2,6 +2,7 @@ import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
+from prometheus_client import CollectorRegistry, Counter
 
 from backend.services import ai_service as ai_service_module
 from backend.services.ai_service import AIService
@@ -123,3 +124,28 @@ async def test_long_prompt_triggers_cascade_to_ollama(monkeypatch: pytest.Monkey
     assert huggingface.await_count == 3
     ollama.assert_awaited_once()
     assert sleep_mock.await_count == 4
+
+
+@pytest.mark.anyio
+async def test_ai_service_records_failover_metric(monkeypatch: pytest.MonkeyPatch) -> None:
+    service = AIService()
+
+    registry = CollectorRegistry()
+    counter = Counter(
+        "ai_provider_failover_total",
+        "Total AI provider failovers.",
+        ["provider"],
+        registry=registry,
+    )
+    monkeypatch.setattr(ai_service_module, "AI_PROVIDER_FAILOVER_TOTAL", counter)
+
+    async def _fail(_providers):  # noqa: ANN001 - match internal signature
+        raise RuntimeError("all providers unavailable")
+
+    monkeypatch.setattr(service, "_call_with_backoff", _fail)
+    monkeypatch.setattr(service, "generate_response", AsyncMock(return_value="fallback"))
+
+    result = await service.process_message("hola", {})
+
+    assert result.provider == "local"
+    assert counter.labels(provider="local")._value.get() == pytest.approx(1.0)

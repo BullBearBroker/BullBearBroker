@@ -7,6 +7,7 @@ from urllib.parse import urljoin  # [Codex] nuevo
 
 import aiohttp
 
+from backend.core.metrics import AI_PROVIDER_FAILOVER_TOTAL
 from backend.utils.config import Config
 from .mistral_service import mistral_service
 try:  # pragma: no cover - optional imports depending on entrypoint
@@ -174,6 +175,7 @@ class AIService:
             logger.info("AI response generated using provider %s", provider)
         except Exception as exc:
             logger.error("Falling back to local response after provider failures: %s", exc)
+            AI_PROVIDER_FAILOVER_TOTAL.labels(provider="local").inc()
             ai_text = await self.generate_response(message)
             provider = "local"
             logger.info("AI response generated using local fallback")
@@ -216,7 +218,8 @@ class AIService:
         providers: List[Tuple[str, Callable[[], Awaitable[str]]]]
     ) -> Tuple[str, str]:
         last_error: Optional[Exception] = None
-        for provider_name, provider in providers:
+        total_providers = len(providers)
+        for index, (provider_name, provider) in enumerate(providers):
             backoff = 1
             for attempt in range(1, 4):
                 try:
@@ -230,7 +233,7 @@ class AIService:
                         "Provider %s attempt %d failed: %s",
                         provider_name,
                         attempt,
-                        exc
+                        exc,
                     )
                     if attempt < 3:
                         await asyncio.sleep(backoff)
@@ -239,9 +242,12 @@ class AIService:
                         logger.error(
                             "Provider %s exhausted retries after %d attempts",
                             provider_name,
-                            attempt
+                            attempt,
                         )
                         break
+
+            if index < total_providers - 1:
+                AI_PROVIDER_FAILOVER_TOTAL.labels(provider=provider_name).inc()
 
         if last_error:
             raise last_error

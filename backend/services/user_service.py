@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, Optional, Tuple
 from uuid import UUID, uuid4
 
+import hashlib
 import logging
 import os
 import jwt
@@ -12,6 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession, sessionmaker, selectinload
 from types import SimpleNamespace
 
+from backend.core.logging_config import log_event
 from backend.core.security import (
     create_access_token as core_create_access_token,
     create_refresh_token as core_create_refresh_token,
@@ -23,6 +25,8 @@ from backend.models import Alert, Session as SessionModel, User
 from backend.models.user import RiskProfile  # [Codex] nuevo
 from backend.models.refresh_token import RefreshToken
 from backend.utils.config import Config, password_context
+
+LOGGER = logging.getLogger(__name__)
 
 
 class UserAlreadyExistsError(Exception):
@@ -403,6 +407,33 @@ class UserService:
         """Persiste una sesión de acceso en la tabla 'sessions'."""
 
         with SessionLocal() as db:
+            max_sessions = getattr(Config, "MAX_CONCURRENT_SESSIONS", 0)
+            if max_sessions and max_sessions > 0:
+                now = _utcnow()
+                active_sessions = (
+                    db.query(SessionModel)
+                    .filter(
+                        SessionModel.user_id == user_id,
+                        SessionModel.expires_at > now,
+                    )
+                    .order_by(SessionModel.created_at.asc())
+                    .all()
+                )
+                if len(active_sessions) >= max_sessions:
+                    evicted_session = active_sessions[0]
+                    db.delete(evicted_session)
+                    db.flush()
+                    user_hash = hashlib.sha256(str(user_id).encode("utf-8")).hexdigest()[
+                        :8
+                    ]
+                    log_event(
+                        LOGGER,
+                        service="user_service",
+                        event="session_evicted",
+                        level="info",
+                        user_id_hash=user_hash,
+                        session_id=str(getattr(evicted_session, "id", "")),
+                    )
             db_sess = SessionModel(
                 id=uuid4(),
                 user_id=user_id,
