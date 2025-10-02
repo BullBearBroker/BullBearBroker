@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-import argparse
 import json
+import argparse
 from pathlib import Path
-
 from fastapi.openapi.utils import get_openapi
 
-from backend.main import app
+# Importa la app principal
+from backend.main import app  # si no existe aquí, ajusta a la ruta real sin romper el proyecto
 
 
 def export_openapi(dest: Path) -> dict:
