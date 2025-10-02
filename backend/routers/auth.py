@@ -462,7 +462,7 @@ async def login(
         user_service.store_refresh_token(user.id, refresh_token)
 
         access_token = create_access_token(sub=sub, extra={"jti": str(uuid4())})
-        access_expires = datetime.now(datetime.UTC) + timedelta(minutes=15)
+        access_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
         user_service.register_external_session(user.id, access_token, access_expires)
         await login_backoff.clear(email_hash)
 
@@ -535,7 +535,7 @@ def refresh_token(
         )
         db.commit()
         access_token = create_access_token(sub=sub)
-        access_expires = datetime.now(datetime.UTC) + timedelta(minutes=15)
+        access_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
         user_service.register_external_session(sub_uuid, access_token, access_expires)
         return TokenPair(
             access_token=access_token,
@@ -557,7 +557,7 @@ def refresh_token(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
     access_token = create_access_token(sub=str(user.id), extra={"jti": str(uuid4())})
-    access_expires = datetime.now(datetime.UTC) + timedelta(minutes=15)
+    access_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
     user_service.register_external_session(user.id, access_token, access_expires)
     return TokenPair(
         access_token=access_token,
