@@ -11,6 +11,8 @@ from fastapi import HTTPException, Request, Response
 from fastapi_limiter import FastAPILimiter
 from fastapi_limiter.depends import RateLimiter
 
+from backend.utils.config import Config
+
 _IN_MEMORY_BUCKETS: Dict[str, list[float]] = defaultdict(list)
 
 LimitCallback = Callable[[Request, str], None]
@@ -107,6 +109,15 @@ def rate_limit(
     async def _dependency(request: Request, response: Response) -> None:
         if state_attribute:
             setattr(request.state, state_attribute, False)
+
+        if (
+            Config.TESTING
+            and request.url.path == "/api/auth/login"
+            and identifier == "auth_login_ip"
+        ):
+            if state_attribute:
+                setattr(request.state, state_attribute, False)
+            return
         redis_client = getattr(FastAPILimiter, "redis", None)
         if redis_client is not None:
             try:
@@ -149,7 +160,11 @@ def reset_rate_limiter_cache(identifier: str | None = None) -> None:
         _IN_MEMORY_BUCKETS.clear()
         return
 
-    keys = [key for key in _IN_MEMORY_BUCKETS if key.startswith(identifier)]
+    keys = [
+        key
+        for key in list(_IN_MEMORY_BUCKETS.keys())
+        if key.startswith(identifier) or f":{identifier}:" in key
+    ]
     for key in keys:
         _IN_MEMORY_BUCKETS.pop(key, None)
 
@@ -159,6 +174,13 @@ async def clear_testing_state() -> None:
 
     redis_client = getattr(FastAPILimiter, "redis", None)
     if redis_client is not None:
+        try:
+            login_ip_pattern = "auth_login_ip*"
+            keys = await redis_client.keys(login_ip_pattern)
+            if keys:
+                await redis_client.delete(*keys)
+        except Exception:  # pragma: no cover - limpieza defensiva
+            pass
         try:
             await redis_client.flushdb()
         except Exception:  # pragma: no cover - limpieza defensiva

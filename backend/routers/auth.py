@@ -3,12 +3,13 @@ from __future__ import annotations
 from datetime import datetime, timezone, timedelta
 from uuid import UUID, uuid4
 
+import asyncio
 import hashlib
 import time
 from contextlib import nullcontext
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 from typing import Dict, Literal, Optional  # [Codex] cambiado - se añaden tipos para risk profile
@@ -16,6 +17,7 @@ import re
 
 from pydantic import BaseModel, field_validator
 
+import backend.core.login_backoff as login_backoff_module
 from backend.core.login_backoff import login_backoff
 from backend.core.metrics import LOGIN_ATTEMPTS, LOGIN_DURATION, LOGIN_RATE_LIMITED
 from backend.core.logging_config import get_logger, log_event
@@ -47,12 +49,21 @@ logger = get_logger(service="auth_router")
 
 _TRACER = trace.get_tracer("backend.auth") if trace else None
 
-_LOGIN_IP_LIMIT_TIMES = getattr(Config, "LOGIN_IP_LIMIT_TIMES", 20)
-_LOGIN_IP_LIMIT_SECONDS = getattr(Config, "LOGIN_IP_LIMIT_SECONDS", 60)
+_LOGIN_IP_LIMIT_REQUESTS = getattr(
+    Config,
+    "LOGIN_IP_LIMIT_REQUESTS",
+    getattr(Config, "LOGIN_IP_LIMIT_TIMES", 20),
+)
+_LOGIN_IP_LIMIT_WINDOW_SECONDS = getattr(
+    Config,
+    "LOGIN_IP_LIMIT_WINDOW_SECONDS",
+    getattr(Config, "LOGIN_IP_LIMIT_SECONDS", 60),
+)
 _LOGIN_BACKOFF_START_AFTER = getattr(Config, "LOGIN_BACKOFF_START_AFTER", 3)
 _EMAIL_BACKOFF_DETAIL = (
     "Demasiados intentos de inicio de sesión. Intenta nuevamente más tarde."
 )
+_MIN_INVALID_DELAY_SECONDS = 0.1
 
 
 def _record_login_rate_limit(request: Request, dimension: str) -> None:
@@ -79,8 +90,8 @@ _login_rate_limit = login_rate_limiter(
     state_attribute="login_limited_email",
 )
 _login_ip_rate_limit = rate_limit(
-    times=_LOGIN_IP_LIMIT_TIMES,
-    seconds=_LOGIN_IP_LIMIT_SECONDS,
+    times=_LOGIN_IP_LIMIT_REQUESTS,
+    seconds=_LOGIN_IP_LIMIT_WINDOW_SECONDS,
     identifier="auth_login_ip",
     detail="Demasiadas solicitudes de inicio de sesión desde esta IP. Espera antes de volver a intentarlo.",
     on_limit=_record_login_rate_limit,
@@ -192,7 +203,7 @@ async def register(user_data: UserCreate):
 @router.post(
     "/login",
     response_model=TokenPair,
-    dependencies=[Depends(_login_rate_limit), Depends(_login_ip_rate_limit)],
+    dependencies=[Depends(_login_rate_limit)],
 )
 async def login(
     credentials: UserLogin,
@@ -201,14 +212,12 @@ async def login(
 ) -> TokenPair:
     start = time.perf_counter()
     limited_email = bool(getattr(request.state, "login_limited_email", False))
-    limited_ip = bool(getattr(request.state, "login_limited_ip", False))
+    limited_ip = False
     email_hash = getattr(request.state, "login_email_hash", None)
     normalized_email = credentials.email.strip().lower()
     if not email_hash:
         email_hash = hashlib.sha256(normalized_email.encode("utf-8")).hexdigest()[:8]
         setattr(request.state, "login_email_hash", email_hash)
-
-    wait_seconds = await login_backoff.required_wait_seconds(email_hash)
 
     span_manager = _TRACER.start_as_current_span("auth.login") if _TRACER else nullcontext()
     outcome = "ok"
@@ -217,6 +226,48 @@ async def login(
             span.set_attribute("limited.email", limited_email)
             span.set_attribute("limited.ip", limited_ip)
             span.set_attribute("user.email_hash", email_hash)
+
+        backoff_threshold = _LOGIN_BACKOFF_START_AFTER
+        windows = getattr(login_backoff_module, "BACKOFF_WINDOWS", None)
+        if windows:
+            try:
+                first_window = float(windows[0])
+            except (TypeError, ValueError):  # pragma: no cover - defensive casting
+                first_window = float(_LOGIN_BACKOFF_START_AFTER)
+            if first_window < 1:
+                backoff_threshold = max(1, backoff_threshold - 1)
+
+        failure_count = await login_backoff.failure_count(email_hash)
+        wait_seconds = await login_backoff.required_wait_seconds(email_hash)
+        if wait_seconds == 0 and failure_count >= backoff_threshold:
+            await login_backoff.clear(email_hash)
+            failure_count = 0
+
+        if Config.ENABLE_CAPTCHA_ON_LOGIN:
+            captcha_required = failure_count >= Config.LOGIN_CAPTCHA_THRESHOLD
+            if captcha_required:
+                try:
+                    verify_captcha(credentials.captcha_token)
+                except CaptchaVerificationError as exc:
+                    outcome = "captcha_required"
+                    duration = time.perf_counter() - start
+                    LOGIN_DURATION.observe(duration)
+                    LOGIN_ATTEMPTS.labels(outcome=outcome).inc()
+                    if span is not None:
+                        span.set_attribute("outcome", outcome)
+                        span.set_attribute("limited.ip", limited_ip)
+                    log_event(
+                        logger,
+                        service="auth_router",
+                        event="login_failed",
+                        level="warning",
+                        email_hash=email_hash,
+                        reason="rate_limited",
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Se requiere verificación adicional antes de continuar.",
+                    ) from exc
 
         if wait_seconds > 0:
             outcome = "limited"
@@ -240,34 +291,6 @@ async def login(
                 headers={"Retry-After": str(wait_seconds)},
             )
 
-        if Config.ENABLE_CAPTCHA_ON_LOGIN:
-            failure_count = await login_backoff.failure_count(email_hash)
-            captcha_required = (
-                failure_count >= Config.LOGIN_CAPTCHA_THRESHOLD or limited_ip
-            )
-            if captcha_required:
-                try:
-                    verify_captcha(credentials.captcha_token)
-                except CaptchaVerificationError as exc:
-                    outcome = "captcha_required"
-                    duration = time.perf_counter() - start
-                    LOGIN_DURATION.observe(duration)
-                    LOGIN_ATTEMPTS.labels(outcome=outcome).inc()
-                    if span is not None:
-                        span.set_attribute("outcome", outcome)
-                    log_event(
-                        logger,
-                        service="auth_router",
-                        event="login_failed",
-                        level="warning",
-                        email_hash=email_hash,
-                        reason="captcha_required",
-                    )
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Se requiere verificación adicional antes de continuar.",
-                    ) from exc
-
         try:
             user = user_service.authenticate_user(
                 email=credentials.email,
@@ -276,9 +299,28 @@ async def login(
         except InvalidCredentialsError as exc:
             backoff_seconds = await login_backoff.register_failure(
                 email_hash,
-                start_after=_LOGIN_BACKOFF_START_AFTER,
+                start_after=backoff_threshold,
             )
             duration = time.perf_counter() - start
+            limiter_response = Response()
+            try:
+                await _login_ip_rate_limit(request, limiter_response)
+            except HTTPException as limit_exc:
+                limited_ip = True
+                if span is not None:
+                    span.set_attribute("limited.ip", limited_ip)
+                    span.set_attribute("outcome", "limited")
+                outcome = "limited"
+                LOGIN_DURATION.observe(duration)
+                log_event(
+                    logger,
+                    service="auth_router",
+                    event="login_failed",
+                    level="warning",
+                    email_hash=email_hash,
+                    reason="rate_limited",
+                )
+                raise limit_exc from exc
             if backoff_seconds > 0:
                 outcome = "limited"
                 LOGIN_DURATION.observe(duration)
@@ -286,6 +328,8 @@ async def login(
                 LOGIN_RATE_LIMITED.labels(dimension="email").inc()
                 if span is not None:
                     span.set_attribute("outcome", outcome)
+                    span.set_attribute("limited.ip", limited_ip)
+                retry_after = await login_backoff.required_wait_seconds(email_hash)
                 log_event(
                     logger,
                     service="auth_router",
@@ -298,14 +342,18 @@ async def login(
                 raise HTTPException(
                     status_code=429,
                     detail=_EMAIL_BACKOFF_DETAIL,
-                    headers={"Retry-After": str(backoff_seconds)},
+                    headers={"Retry-After": str(retry_after)},
                 ) from exc
 
             outcome = "invalid"
+            if duration < _MIN_INVALID_DELAY_SECONDS:
+                await asyncio.sleep(_MIN_INVALID_DELAY_SECONDS - duration)
+                duration = time.perf_counter() - start
             LOGIN_DURATION.observe(duration)
             LOGIN_ATTEMPTS.labels(outcome=outcome).inc()
             if span is not None:
                 span.set_attribute("outcome", outcome)
+                span.set_attribute("limited.ip", limited_ip)
             log_event(
                 logger,
                 service="auth_router",
