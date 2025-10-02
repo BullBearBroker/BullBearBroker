@@ -52,14 +52,23 @@ async def lifespan(app: FastAPI):
             redis_client = None
             raise RuntimeError("Redis no disponible") from exc
         await FastAPILimiter.init(redis_client)
-        if getattr(Config, "TESTING", False):
-            try:
-                await FastAPILimiter.redis.flushdb()
-            except Exception:  # pragma: no cover - limpieza defensiva
-                pass
         logger.info("fastapi_limiter_initialized")
     except Exception as exc:  # pragma: no cover - redis opcional en tests
         logger.warning("fastapi_limiter_unavailable", error=str(exc))
+
+    if getattr(Config, "TESTING", False):
+        try:
+            from backend.core.rate_limit import clear_testing_state
+
+            await clear_testing_state()
+        except Exception:  # pragma: no cover - limpieza defensiva
+            pass
+        try:
+            from backend.core.login_backoff import login_backoff
+
+            await login_backoff.clear_all()
+        except Exception:  # pragma: no cover - limpieza defensiva
+            pass
 
     database_setup_failed = False
     database_setup_error_message: str | None = None

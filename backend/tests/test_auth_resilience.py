@@ -8,6 +8,7 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 os.environ.setdefault("BULLBEAR_SKIP_AUTOCREATE", "1")
+os.environ.setdefault("TESTING", "1")
 
 from backend.tests._dependency_stubs import ensure as ensure_test_dependencies
 
@@ -72,6 +73,61 @@ async def test_login_with_invalid_credentials_remains_unauthorized(client: Async
         )
         assert response.status_code == 401
         assert response.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_login_third_invalid_triggers_backoff(client: AsyncClient) -> None:
+    email = f"backoff_{uuid.uuid4().hex}@example.com"
+    register = await client.post(
+        "/api/auth/register",
+        json={"email": email, "password": "Valid123"},
+    )
+    assert register.status_code in (200, 201)
+
+    for attempt in range(2):
+        response = await client.post(
+            "/api/auth/login",
+            json={"email": email, "password": "WrongPass"},
+        )
+        assert response.status_code == 401, f"Attempt {attempt + 1} should not be rate limited"
+
+    third = await client.post(
+        "/api/auth/login",
+        json={"email": email, "password": "WrongPass"},
+    )
+    assert third.status_code == 429
+    assert third.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_login_success_resets_backoff_state(client: AsyncClient) -> None:
+    email = f"reset_{uuid.uuid4().hex}@example.com"
+    password = "Valid123"
+    register = await client.post(
+        "/api/auth/register",
+        json={"email": email, "password": password},
+    )
+    assert register.status_code in (200, 201)
+
+    for attempt in range(2):
+        response = await client.post(
+            "/api/auth/login",
+            json={"email": email, "password": "WrongPass"},
+        )
+        assert response.status_code == 401, f"Attempt {attempt + 1} should not be rate limited"
+
+    success = await client.post(
+        "/api/auth/login",
+        json={"email": email, "password": password},
+    )
+    assert success.status_code == 200
+
+    post_reset = await client.post(
+        "/api/auth/login",
+        json={"email": email, "password": "WrongPass"},
+    )
+    assert post_reset.status_code == 401
+    assert post_reset.json()["detail"]
 
 
 @pytest.mark.asyncio
