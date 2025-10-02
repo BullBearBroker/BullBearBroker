@@ -68,7 +68,7 @@ def _record_login_rate_limit(request: Request, dimension: str) -> None:
     if dimension == "email" and email_hash:
         payload["email_hash"] = email_hash
     log_event(logger, **payload)
-    LOGIN_ATTEMPTS.labels(outcome=f"limited_{dimension}").inc()
+    LOGIN_ATTEMPTS.labels(outcome="limited").inc()
     LOGIN_RATE_LIMITED.labels(dimension=dimension).inc()
 
 
@@ -219,11 +219,11 @@ async def login(
             span.set_attribute("user.email_hash", email_hash)
 
         if wait_seconds > 0:
-            outcome = "rate_limited"
+            outcome = "limited"
             duration = time.perf_counter() - start
             LOGIN_DURATION.observe(duration)
             LOGIN_ATTEMPTS.labels(outcome=outcome).inc()
-            LOGIN_RATE_LIMITED.labels(dimension="email_backoff").inc()
+            LOGIN_RATE_LIMITED.labels(dimension="email").inc()
             if span is not None:
                 span.set_attribute("outcome", outcome)
             log_event(
@@ -280,10 +280,10 @@ async def login(
             )
             duration = time.perf_counter() - start
             if backoff_seconds > 0:
-                outcome = "rate_limited"
+                outcome = "limited"
                 LOGIN_DURATION.observe(duration)
                 LOGIN_ATTEMPTS.labels(outcome=outcome).inc()
-                LOGIN_RATE_LIMITED.labels(dimension="email_backoff").inc()
+                LOGIN_RATE_LIMITED.labels(dimension="email").inc()
                 if span is not None:
                     span.set_attribute("outcome", outcome)
                 log_event(

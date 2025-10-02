@@ -1,3 +1,4 @@
+import hashlib
 import uuid
 from types import SimpleNamespace
 from typing import Mapping
@@ -10,6 +11,7 @@ from prometheus_client import REGISTRY
 from starlette.responses import Response
 
 import backend.core.rate_limit as rate_limit_module
+from backend.core.login_backoff import login_backoff
 from backend.core.rate_limit import reset_rate_limiter_cache
 from backend.main import app
 from backend.routers import alerts as alerts_router
@@ -136,7 +138,7 @@ async def test_login_rate_limit_returns_429(monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setattr(auth_router, "_LOGIN_BACKOFF_START_AFTER", 10)
 
     invalid_before = _metric_value("login_attempts_total", {"outcome": "invalid"})
-    limited_email_before = _metric_value("login_attempts_total", {"outcome": "limited_email"})
+    limited_email_before = _metric_value("login_attempts_total", {"outcome": "limited"})
     rate_email_before = _metric_value("login_rate_limited_total", {"dimension": "email"})
 
     async with AsyncClient(
@@ -158,11 +160,56 @@ async def test_login_rate_limit_returns_429(monkeypatch: pytest.MonkeyPatch) -> 
     assert final.status_code == 429
 
     invalid_after = _metric_value("login_attempts_total", {"outcome": "invalid"})
-    limited_email_after = _metric_value("login_attempts_total", {"outcome": "limited_email"})
+    limited_email_after = _metric_value("login_attempts_total", {"outcome": "limited"})
     rate_email_after = _metric_value("login_rate_limited_total", {"dimension": "email"})
 
     assert invalid_after - invalid_before == 5
     assert limited_email_after - limited_email_before == 1
+    assert rate_email_after - rate_email_before == 1
+
+
+@pytest.mark.asyncio()
+async def test_login_backoff_updates_metrics(monkeypatch: pytest.MonkeyPatch) -> None:
+    email = "limited@example.com"
+    email_hash = hashlib.sha256(email.encode("utf-8")).hexdigest()[:8]
+    await login_backoff.clear(email_hash)
+
+    monkeypatch.setattr(auth_router, "user_service", _AlwaysInvalidUserService())
+    monkeypatch.setattr(auth_router, "_LOGIN_BACKOFF_START_AFTER", 3)
+
+    invalid_before = _metric_value("login_attempts_total", {"outcome": "invalid"})
+    limited_before = _metric_value("login_attempts_total", {"outcome": "limited"})
+    rate_email_before = _metric_value("login_rate_limited_total", {"dimension": "email"})
+
+    third_response = None
+    try:
+        async with AsyncClient(
+            transport=ASGITransport(app=app, client=(f"auth-backoff-{uuid.uuid4()}", 80)),
+            base_url="http://testserver",
+        ) as client:
+            for _ in range(2):
+                resp = await client.post(
+                    "/api/auth/login",
+                    json={"email": email, "password": "invalid"},
+                )
+                assert resp.status_code == 401
+
+            third_response = await client.post(
+                "/api/auth/login",
+                json={"email": email, "password": "invalid"},
+            )
+    finally:
+        await login_backoff.clear(email_hash)
+
+    assert third_response is not None
+    assert third_response.status_code == 429
+
+    invalid_after = _metric_value("login_attempts_total", {"outcome": "invalid"})
+    limited_after = _metric_value("login_attempts_total", {"outcome": "limited"})
+    rate_email_after = _metric_value("login_rate_limited_total", {"dimension": "email"})
+
+    assert invalid_after - invalid_before == 2
+    assert limited_after - limited_before == 1
     assert rate_email_after - rate_email_before == 1
 
 
@@ -172,7 +219,7 @@ async def test_login_rate_limit_by_ip(monkeypatch: pytest.MonkeyPatch) -> None:
 
     limit = getattr(auth_router, "_LOGIN_IP_LIMIT_TIMES", 20)
     invalid_before = _metric_value("login_attempts_total", {"outcome": "invalid"})
-    limited_ip_before = _metric_value("login_attempts_total", {"outcome": "limited_ip"})
+    limited_ip_before = _metric_value("login_attempts_total", {"outcome": "limited"})
     rate_ip_before = _metric_value("login_rate_limited_total", {"dimension": "ip"})
 
     async with AsyncClient(
@@ -194,7 +241,7 @@ async def test_login_rate_limit_by_ip(monkeypatch: pytest.MonkeyPatch) -> None:
     assert final.status_code == 429
 
     invalid_after = _metric_value("login_attempts_total", {"outcome": "invalid"})
-    limited_ip_after = _metric_value("login_attempts_total", {"outcome": "limited_ip"})
+    limited_ip_after = _metric_value("login_attempts_total", {"outcome": "limited"})
     rate_ip_after = _metric_value("login_rate_limited_total", {"dimension": "ip"})
 
     assert invalid_after - invalid_before == limit
