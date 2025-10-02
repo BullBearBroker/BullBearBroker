@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import os
 import uuid
 import sys
@@ -39,7 +40,6 @@ from backend.services.alert_service import alert_service  # noqa: E402
 from backend.services.market_service import market_service  # noqa: E402
 from backend.services.news_service import news_service  # noqa: E402
 from backend.services.forex_service import forex_service  # noqa: E402
-import importlib
 
 news_service_module = importlib.import_module("services.news_service")
 
