@@ -10,7 +10,7 @@ from backend.models import Alert, Base
 from importlib import import_module
 
 alert_service_module = import_module("backend.services.alert_service")
-from backend.services.alert_service import AlertService
+from backend.services.alert_service import AlertService  # noqa: E402
 
 
 @pytest.fixture()
@@ -44,14 +44,18 @@ async def test_send_external_alert_without_targets_raises(service: AlertService)
 
 
 @pytest.mark.anyio
-async def test_send_external_alert_reports_delivery_failure(service: AlertService, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_send_external_alert_reports_delivery_failure(
+    service: AlertService, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setattr(
         alert_service_module.Config,
         "TELEGRAM_DEFAULT_CHAT_ID",
         "12345",
         raising=False,
     )
-    monkeypatch.setattr(service, "_send_telegram_message", AsyncMock(side_effect=RuntimeError("telegram down")))
+    monkeypatch.setattr(
+        service, "_send_telegram_message", AsyncMock(side_effect=RuntimeError("telegram down"))
+    )
 
     result = await service.send_external_alert(message="hola", telegram_chat_id="12345")
 
@@ -60,7 +64,9 @@ async def test_send_external_alert_reports_delivery_failure(service: AlertServic
 
 
 @pytest.mark.anyio
-async def test_notify_tolerates_websocket_and_telegram_failures(service: AlertService, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_notify_tolerates_websocket_and_telegram_failures(
+    service: AlertService, monkeypatch: pytest.MonkeyPatch
+) -> None:
     alert = Alert(
         id=uuid4(),
         user_id=uuid4(),
@@ -84,7 +90,9 @@ async def test_notify_tolerates_websocket_and_telegram_failures(service: AlertSe
         "12345",
         raising=False,
     )
-    monkeypatch.setattr(service, "_send_telegram_message", AsyncMock(side_effect=RuntimeError("telegram offline")))
+    monkeypatch.setattr(
+        service, "_send_telegram_message", AsyncMock(side_effect=RuntimeError("telegram offline"))
+    )
 
     await service._notify(alert, price=45500.0)
 
@@ -92,7 +100,9 @@ async def test_notify_tolerates_websocket_and_telegram_failures(service: AlertSe
 
 
 @pytest.mark.anyio
-async def test_evaluate_alerts_handles_reactivation_flow(service: AlertService, monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_evaluate_alerts_handles_reactivation_flow(
+    service: AlertService, monkeypatch: pytest.MonkeyPatch
+) -> None:
     alert = Alert(
         id=uuid4(),
         user_id=uuid4(),

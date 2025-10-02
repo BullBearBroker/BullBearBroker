@@ -64,12 +64,15 @@ class AIService:
     def __init__(self):
         self.market_service = market_service
         self.use_real_ai = True  # Mantener compatibilidad con otros servicios
-        self._api_base_url = Config.API_BASE_URL.rstrip("/")  # [Codex] nuevo - base para indicadores
+        self._api_base_url = Config.API_BASE_URL.rstrip("/")
+        # [Codex] nuevo - base para indicadores
         
     def set_market_service(self, market_service):
         self.market_service = market_service
 
-    async def process_message(self, message: str, context: Dict[str, Any] = None) -> AIResponsePayload:
+    async def process_message(
+        self, message: str, context: Dict[str, Any] = None
+    ) -> AIResponsePayload:
         """Procesar mensaje del usuario y generar respuesta enriquecida."""
 
         context = dict(context or {})
@@ -258,32 +261,33 @@ class AIService:
             raise RuntimeError("HuggingFace token not configured")
 
         model = self._select_model_for_profile((context or {}).get("risk_profile"))
-        base_url = Config.HUGGINGFACE_API_URL.rstrip('/')
+        base_url = Config.HUGGINGFACE_API_URL.rstrip("/")
         url = f"{base_url}/{model}"
         prompt = self._build_prompt(message, context)
 
         headers = {
             "Authorization": f"Bearer {Config.HUGGINGFACE_API_KEY}",
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
 
         payload = {
             "inputs": prompt,
             "parameters": {
                 "max_new_tokens": 400,
-                "temperature": 0.4
-            }
+                "temperature": 0.4,
+            },
         }
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=payload, timeout=30) as response:
-                if response.status != 200:
-                    error_body = await response.text()
-                    raise RuntimeError(
-                        f"HuggingFace API error {response.status}: {error_body}"
-                    )
+        async with aiohttp.ClientSession() as session, session.post(
+            url, headers=headers, json=payload, timeout=30
+        ) as response:
+            if response.status != 200:
+                error_body = await response.text()
+                raise RuntimeError(
+                    f"HuggingFace API error {response.status}: {error_body}"
+                )
 
-                data = await response.json()
+            data = await response.json()
 
         generated_text: str | None = None
         if isinstance(data, list):
@@ -305,7 +309,11 @@ class AIService:
         raise ValueError("Respuesta vacía de HuggingFace")
 
     async def _call_ollama(self, message: str, context: Dict[str, Any]) -> str:
-        host = Config.OLLAMA_HOST.rstrip('/') if Config.OLLAMA_HOST else "http://localhost:11434"
+        host = (
+            Config.OLLAMA_HOST.rstrip("/")
+            if Config.OLLAMA_HOST
+            else "http://localhost:11434"
+        )
         model = Config.OLLAMA_MODEL or "llama3"
         prompt = self._build_prompt(message, context)
 
@@ -319,16 +327,21 @@ class AIService:
                 tags = await response.json()
                 models = tags.get("models") if isinstance(tags, dict) else None
                 if isinstance(models, list):
-                    if not any(isinstance(item, dict) and item.get("name") == model for item in models):
+                    if not any(
+                        isinstance(item, dict) and item.get("name") == model
+                        for item in models
+                    ):
                         raise RuntimeError(f"Modelo {model} no disponible en Ollama")
 
             payload = {
                 "model": model,
                 "prompt": prompt,
-                "stream": False
+                "stream": False,
             }
 
-            async with session.post(f"{host}/api/generate", json=payload, timeout=30) as response:
+            async with session.post(
+                f"{host}/api/generate", json=payload, timeout=30
+            ) as response:
                 if response.status != 200:
                     body = await response.text()
                     raise RuntimeError(f"Error generando respuesta de Ollama: {body}")
@@ -359,8 +372,10 @@ class AIService:
                 prompt_lines.append(f"Indicadores técnicos: {indicator_data}")  # [Codex] nuevo
 
             other_context = {
-                key: value for key, value in context.items()
-                if key not in {"market_data", "indicator_data"}  # [Codex] cambiado - excluir indicadores ya agregados
+                key: value
+                for key, value in context.items()
+                if key not in {"market_data", "indicator_data"}
+                # [Codex] cambiado - excluir indicadores ya agregados
             }
             if other_context:
                 prompt_lines.append(f"Contexto adicional: {other_context}")
@@ -404,7 +419,9 @@ class AIService:
 
         forex_pairs = [symbol for symbol in symbols if self._looks_like_forex_pair(symbol)]
 
-        use_market_data = bool(symbols or price_terms or need_indicators or need_news or need_alerts)
+        use_market_data = bool(
+            symbols or price_terms or need_indicators or need_news or need_alerts
+        )
 
         return {
             "symbols": symbols,
@@ -448,7 +465,8 @@ class AIService:
         return context
 
     async def _collect_indicator_snapshots(self, message: str) -> Dict[str, Any]:
-        """Busca símbolos + intervalos y consulta /api/markets/indicators con datos reales."""  # [Codex] nuevo
+        """Busca símbolos + intervalos y consulta /api/markets/indicators con datos reales."""
+        # [Codex] nuevo
         interval = self._extract_interval(message)
         if not interval:
             return {}
@@ -462,7 +480,8 @@ class AIService:
 
         session_timeout = aiohttp.ClientTimeout(total=20)
         async with aiohttp.ClientSession(timeout=session_timeout) as session:
-            for symbol in symbols[:2]:  # [Codex] nuevo - limitamos a dos símbolos para evitar latencia
+            for symbol in symbols[:2]:
+                # [Codex] nuevo - limitamos a dos símbolos para evitar latencia
                 asset_type = await self._resolve_asset_type(symbol)
                 if asset_type is None:
                     continue
@@ -508,15 +527,25 @@ class AIService:
             }
         return indicator_map
 
-    async def _fetch_indicator_snapshot(self, session: aiohttp.ClientSession, url: str, params: Dict[str, str]) -> Dict[str, Any]:
-        """Realiza la llamada HTTP para recuperar indicadores técnicos."""  # [Codex] nuevo
+    async def _fetch_indicator_snapshot(
+        self,
+        session: aiohttp.ClientSession,
+        url: str,
+        params: Dict[str, str],
+    ) -> Dict[str, Any]:
+        """Realiza la llamada HTTP para recuperar indicadores técnicos."""
+        # [Codex] nuevo
         async with session.get(url, params=params) as response:
             if response.status != 200:
                 body = await response.text()
-                raise RuntimeError(f"Indicadores {params.get('symbol')} -> {response.status}: {body[:200]}")
+                raise RuntimeError(
+                    f"Indicadores {params.get('symbol')} -> {response.status}: {body[:200]}"
+                )
             return await response.json()
 
-    async def _collect_news_highlights(self, symbols: List[str], limit: int = 3) -> List[Dict[str, Any]]:
+    async def _collect_news_highlights(
+        self, symbols: List[str], limit: int = 3
+    ) -> List[Dict[str, Any]]:
         if news_service is None:
             return []
         try:
@@ -558,7 +587,9 @@ class AIService:
             )
         return highlights
 
-    async def _collect_alert_suggestions(self, symbols: List[str], interval: str) -> List[Dict[str, str]]:
+    async def _collect_alert_suggestions(
+        self, symbols: List[str], interval: str
+    ) -> List[Dict[str, str]]:
         try:
             from backend.services.alert_service import alert_service as shared_alert_service
         except ImportError:  # pragma: no cover - evitar fallos en modo standalone
@@ -590,8 +621,12 @@ class AIService:
             price = quote.get("price")
             change = quote.get("change")
             source = quote.get("source") or "Forex"
-            change_str = f"{change:+.4f}" if isinstance(change, (int, float)) else change or "n/d"
-            price_str = f"{price:.4f}" if isinstance(price, (int, float)) else price or "n/d"
+            change_str = (
+                f"{change:+.4f}" if isinstance(change, int | float) else change or "n/d"
+            )
+            price_str = (
+                f"{price:.4f}" if isinstance(price, int | float) else price or "n/d"
+            )
             formatted_pair = self._format_forex_symbol(pair)
             summaries.append(f"{formatted_pair}: {price_str} ({change_str}) — {source}")
         return summaries
@@ -605,13 +640,13 @@ class AIService:
             raw_price = payload.get("raw_price")
             price = (
                 f"{raw_price:,.2f}"
-                if isinstance(raw_price, (int, float))
+                if isinstance(raw_price, int | float)
                 else payload.get("price")
             )
             raw_change = payload.get("raw_change")
             change = (
                 f"{raw_change:+.2f}%"
-                if isinstance(raw_change, (int, float))
+                if isinstance(raw_change, int | float)
                 else payload.get("change")
             )
             source = payload.get("source") or "Mercado"
@@ -624,21 +659,21 @@ class AIService:
             indicators = payload.get("indicators", {})
             parts: List[str] = []
             rsi = indicators.get("rsi", {}).get("value")
-            if isinstance(rsi, (int, float)):
+            if isinstance(rsi, int | float):
                 parts.append(f"RSI {rsi:.1f}")
             macd_obj = indicators.get("macd") or {}
             macd_val = macd_obj.get("macd")
-            if isinstance(macd_val, (int, float)):
+            if isinstance(macd_val, int | float):
                 parts.append(f"MACD {macd_val:.3f}")
             atr = indicators.get("atr", {}).get("value")
-            if isinstance(atr, (int, float)):
+            if isinstance(atr, int | float):
                 parts.append(f"ATR {atr:.3f}")
             stoch = indicators.get("stochastic_rsi") or {}
             stoch_k = stoch.get("%K")
-            if isinstance(stoch_k, (int, float)):
+            if isinstance(stoch_k, int | float):
                 parts.append(f"StochRSI %K {stoch_k:.1f}")
             vwap = indicators.get("vwap", {}).get("value")
-            if isinstance(vwap, (int, float)):
+            if isinstance(vwap, int | float):
                 parts.append(f"VWAP {vwap:.3f}")
 
             if not parts:
@@ -708,9 +743,12 @@ class AIService:
         return symbol.upper()
 
     async def _resolve_asset_type(self, symbol: str) -> Optional[str]:
-        """Determina tipo de activo combinando heurísticas con MarketService."""  # [Codex] nuevo
+        """Determina tipo de activo combinando heurísticas con MarketService."""
+        # [Codex] nuevo
         symbol_up = symbol.upper()
-        if '/' in symbol_up or (len(symbol_up) == 6 and symbol_up.isalpha() and symbol_up.isupper()):
+        if "/" in symbol_up or (
+            len(symbol_up) == 6 and symbol_up.isalpha() and symbol_up.isupper()
+        ):
             return 'forex'
         if self.market_service:
             try:
@@ -722,7 +760,8 @@ class AIService:
         return 'stock'
 
     def _normalize_symbol_for_indicators(self, asset_type: str, symbol: str) -> str:
-        """Normaliza símbolo según la API de indicadores."""  # [Codex] nuevo
+        """Normaliza símbolo según la API de indicadores."""
+        # [Codex] nuevo
         symbol_up = symbol.upper()
         if asset_type == 'crypto' and not symbol_up.endswith('USDT'):
             return f"{symbol_up}USDT"
@@ -731,12 +770,14 @@ class AIService:
         return symbol_up
 
     def _extract_interval(self, message: str) -> Optional[str]:
-        """Busca intervalos soportados (1h, 4h, 1d) dentro del mensaje."""  # [Codex] nuevo
+        """Busca intervalos soportados (1h, 4h, 1d) dentro del mensaje."""
+        # [Codex] nuevo
         match = re.search(r"\b(1h|4h|1d)\b", message, flags=re.IGNORECASE)
         return match.group(1).lower() if match else None
 
     def _merge_indicator_response(self, ai_response: str, indicator_map: Dict[str, Any]) -> str:
-        """Combina la respuesta textual del modelo con un resumen de indicadores."""  # [Codex] nuevo
+        """Combina la respuesta textual del modelo con un resumen de indicadores."""
+        # [Codex] nuevo
         if not indicator_map:
             return ai_response
 
@@ -763,7 +804,10 @@ class AIService:
 
             ichimoku_data = data.get('ichimoku')
             if ichimoku_data and ichimoku_data.get('tenkan_sen') is not None:
-                summary_parts.append(f"Ichimoku T/K {ichimoku_data['tenkan_sen']}/{ichimoku_data['kijun_sen']}")
+                summary_parts.append(
+                    f"Ichimoku T/K {ichimoku_data['tenkan_sen']}/"
+                    f"{ichimoku_data['kijun_sen']}"
+                )
 
             vwap_data = data.get('vwap')
             if vwap_data and vwap_data.get('value') is not None:
@@ -810,10 +854,7 @@ class AIService:
         for pattern in patterns:
             matches = re.findall(pattern, message, re.IGNORECASE)
             for match in matches:
-                if isinstance(match, tuple):
-                    symbol = match[0].upper()
-                else:
-                    symbol = match.upper()
+                symbol = match[0].upper() if isinstance(match, tuple) else match.upper()
                 
                 if len(symbol) >= 2 and symbol.isalpha():
                     found_symbols.add(symbol)
@@ -830,16 +871,49 @@ class AIService:
         
         # Respuestas predefinidas
         responses = {
-            'bitcoin': '📈 Bitcoin está mostrando fortaleza. Soporte clave en $40,000, resistencia en $45,000. Volumen aumentado 15% en 24h. Recomendación: acumular en dips.',
-            'ethereum': '🔷 Ethereum consolidando en $2,500. El upgrade próximamente podría impulsar el precio. Technicals muestran patrón alcista.',
-            'acciones': '💼 Recomiendo diversificar: Tech (AAPL, MSFT), Renewable Energy (ENPH), Healthcare (JNJ). Allocation sugerida: 60% stocks, 20% crypto, 20% cash.',
-            'estrategia': '🎯 Estrategias: Conservadora (40% bonds, 40% blue chips, 20% gold). Agresiva (50% growth stocks, 30% crypto, 20% emerging markets). Rebalancear trimestralmente.',
-            'mercado': '🌍 Mercados globales: S&P 500 +0.3%, NASDAQ +0.8%, DOW -0.2%. Recomiendo dollar-cost averaging y diversificación.',
-            'forex': '💱 Forex: EUR/USD 1.0850, GBP/USD 1.2450, USD/JPY 150.20. Atención a reuniones del Fed para cambios en tasas.',
-            'noticias': '📰 Sigue las noticias de: Fed meetings, earnings reports, GDP data, y regulatory announcements. Usa fuentes confiables como Bloomberg, Reuters, y Financial Times.',
-            'portfolio': '📊 Para construir portfolio: 1) Define tu risk tolerance, 2) Diversifica across asset classes, 3) Considera horizonte temporal, 4) Rebalancea regularmente.',
-            'riesgo': '⚖️ Gestión de riesgo: Nunca inviertas más de lo que puedes perder, diversifica, usa stop-loss orders, y mantén cash para oportunidades.',
-            'inversión': '💡 Principios de inversión: Long-term perspective, dollar-cost averaging, focus on fundamentals, and avoid emotional decisions.'
+            'bitcoin': (
+                '📈 Bitcoin está mostrando fortaleza. Soporte clave en $40,000, resistencia en '
+                '$45,000. Volumen aumentado 15% en 24h. Recomendación: acumular en dips.'
+            ),
+            'ethereum': (
+                '🔷 Ethereum consolidando en $2,500. El upgrade próximamente podría impulsar el '
+                'precio. Technicals muestran patrón alcista.'
+            ),
+            'acciones': (
+                '💼 Recomiendo diversificar: Tech (AAPL, MSFT), Renewable Energy (ENPH), '
+                'Healthcare (JNJ). Allocation sugerida: 60% stocks, 20% crypto, 20% cash.'
+            ),
+            'estrategia': (
+                '🎯 Estrategias: Conservadora (40% bonds, 40% blue chips, 20% gold). Agresiva '
+                '(50% growth stocks, 30% crypto, 20% emerging markets). Rebalancear '
+                'trimestralmente.'
+            ),
+            'mercado': (
+                '🌍 Mercados globales: S&P 500 +0.3%, NASDAQ +0.8%, DOW -0.2%. Recomiendo '
+                'dollar-cost averaging y diversificación.'
+            ),
+            'forex': (
+                '💱 Forex: EUR/USD 1.0850, GBP/USD 1.2450, USD/JPY 150.20. Atención a '
+                'reuniones del Fed para cambios en tasas.'
+            ),
+            'noticias': (
+                '📰 Sigue las noticias de: Fed meetings, earnings reports, GDP data, y '
+                'regulatory announcements. Usa fuentes confiables como Bloomberg, Reuters, y '
+                'Financial Times.'
+            ),
+            'portfolio': (
+                '📊 Para construir portfolio: 1) Define tu risk tolerance, 2) Diversifica '
+                'across asset classes, 3) Considera horizonte temporal, 4) Rebalancea '
+                'regularmente.'
+            ),
+            'riesgo': (
+                '⚖️ Gestión de riesgo: Nunca inviertas más de lo que puedes perder, '
+                'diversifica, usa stop-loss orders, y mantén cash para oportunidades.'
+            ),
+            'inversión': (
+                '💡 Principios de inversión: Long-term perspective, dollar-cost averaging, '
+                'focus on fundamentals, and avoid emotional decisions.'
+            )
         }
         
         for keyword, response in responses.items():
@@ -865,7 +939,10 @@ class AIService:
         symbols = self.extract_symbols(message)
         
         if not symbols:
-            return "No pude identificar el símbolo del activo. Por favor especifica, por ejemplo: 'precio de BTC' o 'valor de AAPL'."
+            return (
+                "No pude identificar el símbolo del activo. Por favor especifica, por ejemplo: "
+                "'precio de BTC' o 'valor de AAPL'."
+            )
         
         responses = []
         for symbol in symbols[:3]:  # Limitar a 3 símbolos por respuesta
@@ -926,7 +1003,7 @@ Mientras tanto, te sugiero:
         try:
             if self.use_real_ai:
                 return await mistral_service.analyze_market_sentiment(text)
-        except:
+        except Exception:
             pass
         
         # Fallback simple

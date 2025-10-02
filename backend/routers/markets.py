@@ -8,13 +8,24 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 from fastapi import APIRouter, HTTPException, Query
 
 from backend.core.logging_config import get_logger, log_event
+from backend.services.timeseries_service import get_closes
+from backend.utils.indicators import average_true_range  # [Codex] nuevo
+from backend.utils.indicators import ichimoku_cloud  # [Codex] nuevo
+from backend.utils.indicators import stochastic_rsi  # [Codex] nuevo
+from backend.utils.indicators import volume_weighted_average_price  # [Codex] nuevo
+from backend.utils.indicators import (
+    bollinger,
+    ema,
+    macd,
+    rsi,
+)
 
 try:  # pragma: no cover - allow running from different entrypoints
-    from services.market_service import market_service
     from services.forex_service import forex_service
+    from services.market_service import market_service
 except ImportError:  # pragma: no cover - fallback for package-based imports
-    from backend.services.market_service import market_service  # type: ignore
     from backend.services.forex_service import forex_service  # type: ignore
+    from backend.services.market_service import market_service  # type: ignore
 
 router = APIRouter(tags=["Markets"])
 logger = get_logger(service="markets_router")
@@ -81,7 +92,7 @@ def _normalize_candle(entry: Any) -> Optional[Dict[str, Any]]:
         low = _to_float(entry.get("low") or entry.get("l"))
         close = _to_float(entry.get("close") or entry.get("c"))
         volume = _to_float(entry.get("volume") or entry.get("v"))
-    elif isinstance(entry, (list, tuple)) and len(entry) >= 6:
+    elif isinstance(entry, list | tuple) and len(entry) >= 6:
         timestamp, open_, high, low, close, volume = entry[:6]
         open_ = _to_float(open_)
         high = _to_float(high)
@@ -124,7 +135,9 @@ def _normalize_history_payload(payload: Any) -> Dict[str, Any]:
 
 
 @router.get("/crypto/prices")
-async def get_crypto_prices(symbols: str = Query(..., description="Lista de símbolos separados por coma")) -> Dict[str, Any]:
+async def get_crypto_prices(
+    symbols: str = Query(..., description="Lista de símbolos separados por coma")
+) -> Dict[str, Any]:
     """Return crypto prices for the provided symbols."""
 
     parsed = _parse_symbols(symbols)
@@ -133,7 +146,9 @@ async def get_crypto_prices(symbols: str = Query(..., description="Lista de sím
 
 
 @router.get("/stocks/quotes")
-async def get_stock_quotes(symbols: str = Query(..., description="Lista de tickers separados por coma")) -> Dict[str, Any]:
+async def get_stock_quotes(
+    symbols: str = Query(..., description="Lista de tickers separados por coma"),
+) -> Dict[str, Any]:
     """Return stock prices for the provided tickers."""
 
     parsed = _parse_symbols(symbols)
@@ -142,7 +157,9 @@ async def get_stock_quotes(symbols: str = Query(..., description="Lista de ticke
 
 
 @router.get("/forex/rates")
-async def get_forex_rates(pairs: str = Query(..., description="Pares FX separados por coma")) -> Dict[str, Any]:
+async def get_forex_rates(
+    pairs: str = Query(..., description="Pares FX separados por coma"),
+) -> Dict[str, Any]:
     """Return forex rates for the given currency pairs."""
 
     parsed = _parse_symbols(pairs)
@@ -167,7 +184,11 @@ async def get_crypto(symbol: str) -> Dict[str, Any]:
     price: Optional[float] = primary_price if primary_price is not None else None
     if price is None and binance_data:
         try:
-            price = float(binance_data.get("price")) if binance_data.get("price") is not None else None
+            price = (
+                float(binance_data.get("price"))
+                if binance_data.get("price") is not None
+                else None
+            )
         except (TypeError, ValueError):
             price = None
 
@@ -276,17 +297,6 @@ async def get_forex(pair: str) -> Dict[str, Any]:
 # NUEVO ENDPOINT: Indicadores técnicos (RSI, EMA, MACD, Bollinger)
 # ============================================================
 
-from backend.services.timeseries_service import get_closes
-from backend.utils.indicators import (
-    rsi,
-    ema,
-    macd,
-    bollinger,
-    average_true_range,  # [Codex] nuevo
-    stochastic_rsi,      # [Codex] nuevo
-    ichimoku_cloud,      # [Codex] nuevo
-    volume_weighted_average_price,  # [Codex] nuevo
-)
 
 @router.get("/indicators")
 async def get_indicators(
@@ -322,7 +332,10 @@ async def get_indicators(
         raise HTTPException(status_code=400, detail=str(e))
 
     if not closes or len(closes) < 30:
-        raise HTTPException(status_code=400, detail="No hay suficientes datos para calcular indicadores")
+        raise HTTPException(
+            status_code=400,
+            detail="No hay suficientes datos para calcular indicadores",
+        )
 
     indicators: Dict[str, Any] = {"last_close": closes[-1]}
 
@@ -349,11 +362,20 @@ async def get_indicators(
 
     macd_obj = macd(closes, fast=macd_fast, slow=macd_slow, signal=macd_signal)
     if macd_obj:
-        indicators["macd"] = {"fast": macd_fast, "slow": macd_slow, "signal": macd_signal, **macd_obj}
+        indicators["macd"] = {
+            "fast": macd_fast,
+            "slow": macd_slow,
+            "signal": macd_signal,
+            **macd_obj,
+        }
 
     bb_obj = bollinger(closes, period=bb_period, mult=bb_mult)
     if bb_obj:
-        indicators["bollinger"] = {"period": bb_period, "mult": bb_mult, **bb_obj}
+        indicators["bollinger"] = {
+            "period": bb_period,
+            "mult": bb_mult,
+            **bb_obj,
+        }
 
     if include_atr:
         atr_val = average_true_range(highs, lows, closes, period=atr_period)

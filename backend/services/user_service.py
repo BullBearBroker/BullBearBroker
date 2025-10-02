@@ -1,29 +1,33 @@
 from __future__ import annotations
-from contextlib import contextmanager
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Iterable, Optional, Tuple
-from uuid import UUID, uuid4
 
 import hashlib
 import logging
 import os
+from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
+from typing import Any, Dict, Iterable, Optional, Tuple
+from uuid import UUID, uuid4
+
 import jwt
 from fastapi import HTTPException
 from sqlalchemy import select
-from sqlalchemy.orm import Session as OrmSession, sessionmaker, selectinload
-from types import SimpleNamespace
+from sqlalchemy.orm import Session as OrmSession
+from sqlalchemy.orm import selectinload, sessionmaker
 
 from backend.core.logging_config import log_event
+from backend.core.security import create_access_token as core_create_access_token
+from backend.core.security import create_refresh_token as core_create_refresh_token
 from backend.core.security import (
-    create_access_token as core_create_access_token,
-    create_refresh_token as core_create_refresh_token,
     decode_access,
     decode_refresh,
 )
 from backend.database import SessionLocal
-from backend.models import Alert, Session as SessionModel, User
-from backend.models.user import RiskProfile  # [Codex] nuevo
+from backend.models import Alert
+from backend.models import Session as SessionModel
+from backend.models import User
 from backend.models.refresh_token import RefreshToken
+from backend.models.user import RiskProfile  # [Codex] nuevo
 from backend.utils.config import Config, password_context
 
 LOGGER = logging.getLogger(__name__)
@@ -184,7 +188,7 @@ class UserService:
         exp = payload.get("exp")
         if isinstance(exp, datetime):
             return exp
-        if isinstance(exp, (int, float)):
+        if isinstance(exp, int | float):
             return datetime.utcfromtimestamp(exp)
         raise InvalidTokenError("Token inválido: expiración ausente")
 
@@ -223,7 +227,9 @@ class UserService:
             else:
                 payload = self._decode_token(token)
                 token_user_id, token_email = self._extract_identity(payload)
-                if token_user_id != user.id or (token_email is not None and token_email != user.email):
+                if token_user_id != user.id or (
+                    token_email is not None and token_email != user.email
+                ):
                     raise InvalidTokenError("Token inválido para el usuario especificado")
                 extracted_exp = self._extract_expiration(payload)
                 expires_at = _as_aware_utc(extracted_exp) or extracted_exp

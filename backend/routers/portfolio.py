@@ -10,6 +10,14 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+from backend.schemas.portfolio import (
+    PortfolioCreate,
+    PortfolioImportError,
+    PortfolioImportResult,
+    PortfolioItemResponse,
+    PortfolioSummaryResponse,
+)
+
 USER_SERVICE_ERROR: Optional[Exception] = None
 
 try:  # pragma: no cover - allow running from different entrypoints
@@ -39,14 +47,6 @@ try:  # pragma: no cover
     from backend.services.portfolio_service import portfolio_service
 except ImportError:  # pragma: no cover
     from services.portfolio_service import portfolio_service  # type: ignore
-
-from backend.schemas.portfolio import (
-    PortfolioCreate,
-    PortfolioItemResponse,
-    PortfolioSummaryResponse,
-    PortfolioImportError,
-    PortfolioImportResult,
-)
 
 router = APIRouter(tags=["portfolio"])
 security = HTTPBearer()
