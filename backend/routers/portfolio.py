@@ -60,9 +60,7 @@ def _ensure_user_service_available() -> None:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
 
 
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
-) -> User:
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> User:
     _ensure_user_service_available()
     try:
         return await asyncio.to_thread(
@@ -73,9 +71,7 @@ async def get_current_user(
 
 
 @router.get("", response_model=PortfolioSummaryResponse)
-async def list_portfolio(
-    current_user: User = Depends(get_current_user),
-) -> PortfolioSummaryResponse:
+async def list_portfolio(current_user: User = Depends(get_current_user)) -> PortfolioSummaryResponse:
     summary = await portfolio_service.get_portfolio_overview(current_user.id)
     items = [
         PortfolioItemResponse(
@@ -91,9 +87,7 @@ async def list_portfolio(
 
 
 @router.get("/export", response_class=Response)
-async def export_portfolio(
-    current_user: User = Depends(get_current_user),
-) -> Response:
+async def export_portfolio(current_user: User = Depends(get_current_user)) -> Response:
     csv_payload = await asyncio.to_thread(
         portfolio_service.export_to_csv, current_user.id
     )
@@ -107,8 +101,7 @@ async def export_portfolio(
 
 @router.post("/import", response_model=PortfolioImportResult)
 async def import_portfolio(
-    file: UploadFile = File(...),
-    current_user: User = Depends(get_current_user),
+    file: UploadFile = File(...), current_user: User = Depends(get_current_user)
 ) -> PortfolioImportResult:
     content_type = file.content_type or "text/csv"
     if "csv" not in content_type:
@@ -152,8 +145,7 @@ async def import_portfolio(
 
 @router.post("", response_model=PortfolioItemResponse, status_code=status.HTTP_201_CREATED)
 async def create_portfolio_item(
-    payload: PortfolioCreate,
-    current_user: User = Depends(get_current_user),
+    payload: PortfolioCreate, current_user: User = Depends(get_current_user)
 ) -> PortfolioItemResponse:
     try:
         item = await asyncio.to_thread(
@@ -178,8 +170,7 @@ async def create_portfolio_item(
 
 @router.delete("/{item_id}", status_code=status.HTTP_200_OK)
 async def delete_portfolio_item(
-    item_id: UUID,
-    current_user: User = Depends(get_current_user),
+    item_id: UUID, current_user: User = Depends(get_current_user)
 ) -> dict:
     deleted = await asyncio.to_thread(
         portfolio_service.delete_item, current_user.id, item_id
