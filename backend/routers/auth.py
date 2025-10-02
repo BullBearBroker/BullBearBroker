@@ -5,7 +5,7 @@ import hashlib
 import re
 import time
 from contextlib import nullcontext
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 # [Codex] cambiado - se añaden tipos para risk profile
 from typing import Annotated, Literal
@@ -455,7 +455,7 @@ async def login(
         refresh_token = create_refresh_token(sub=sub, jti=jti)
         refresh_payload = decode_refresh(refresh_token)
         refresh_expires = datetime.fromtimestamp(
-            refresh_payload["exp"], tz=datetime.UTC
+            refresh_payload["exp"], tz=timezone.utc
         )
 
         # ⬇️ Persistimos el refresh token siempre con nuestro servicio
@@ -524,7 +524,7 @@ def refresh_token(
         new_refresh = create_refresh_token(sub=sub, jti=str(uuid4()))
         refresh_payload = decode_refresh(new_refresh)
         refresh_expires = datetime.fromtimestamp(
-            refresh_payload["exp"], tz=datetime.UTC
+            refresh_payload["exp"], tz=timezone.utc
         )
         db.add(
             RefreshToken(
