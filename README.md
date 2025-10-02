@@ -229,3 +229,26 @@ observabilidad sin parseos adicionales.
 
 ¡Sugerencias y contribuciones son bienvenidas! Abre un issue o PR para seguir
 iterando sobre el asistente financiero inteligente de BullBearBroker.
+
+## 🔧 Desarrollo rápido
+
+```bash
+python -m pip install -r backend/requirements.txt
+python -m pip install -r backend/requirements-dev.txt
+pre-commit install
+make lint
+make test
+Generar OpenAPI/Postman:
+make openapi      # postman/openapi.json
+make postman      # postman/BullBearBroker.postman_collection.json
+```
+
+## 🧪 CI
+Este repo incluye GitHub Actions (.github/workflows/ci.yml) con lint (ruff/black/isort) y tests (pytest) en Python 3.12.
+
+## Aceptación (debe pasar)
+1) `python -m pip install -r backend/requirements.txt`
+2) `python -m pip install -r backend/requirements-dev.txt`
+3) `pre-commit run --all-files` (o `make lint`)
+4) `pytest backend -q` (debe quedar en verde)
+5) `make postman` crea `postman/BullBearBroker.postman_collection.json`
