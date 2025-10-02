@@ -154,9 +154,22 @@ def reset_rate_limiter_cache(identifier: str | None = None) -> None:
         _IN_MEMORY_BUCKETS.pop(key, None)
 
 
+async def clear_testing_state() -> None:
+    """Reset Redis and in-memory rate limit buckets for tests."""
+
+    redis_client = getattr(FastAPILimiter, "redis", None)
+    if redis_client is not None:
+        try:
+            await redis_client.flushdb()
+        except Exception:  # pragma: no cover - limpieza defensiva
+            pass
+    reset_rate_limiter_cache()
+
+
 __all__ = [
     "identifier_login_by_email",
     "login_rate_limiter",
     "rate_limit",
     "reset_rate_limiter_cache",
+    "clear_testing_state",
 ]

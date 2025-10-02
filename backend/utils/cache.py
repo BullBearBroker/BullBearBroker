@@ -92,5 +92,19 @@ class CacheClient:
         async with self._lock:
             self._memory_cache.pop(namespaced_key, None)
 
+    async def clear_namespace(self) -> None:
+        pattern = f"{self.namespace}:*"
+
+        if self._redis:
+            try:
+                keys = await self._redis.keys(pattern)
+                if keys:
+                    await self._redis.delete(*keys)
+            except Exception as exc:  # pragma: no cover - depende de redis
+                print(f"CacheClient: error limpiando namespace en Redis ({exc})")
+
+        async with self._lock:
+            self._memory_cache.clear()
+
 
 __all__ = ["CacheClient"]

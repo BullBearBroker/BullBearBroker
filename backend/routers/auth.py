@@ -49,6 +49,7 @@ _TRACER = trace.get_tracer("backend.auth") if trace else None
 
 _LOGIN_IP_LIMIT_TIMES = getattr(Config, "LOGIN_IP_LIMIT_TIMES", 20)
 _LOGIN_IP_LIMIT_SECONDS = getattr(Config, "LOGIN_IP_LIMIT_SECONDS", 60)
+_LOGIN_BACKOFF_START_AFTER = getattr(Config, "LOGIN_BACKOFF_START_AFTER", 3)
 _EMAIL_BACKOFF_DETAIL = (
     "Demasiados intentos de inicio de sesión. Intenta nuevamente más tarde."
 )
@@ -273,13 +274,38 @@ async def login(
                 password=credentials.password,
             )
         except InvalidCredentialsError as exc:
-            outcome = "invalid"
+            backoff_seconds = await login_backoff.register_failure(
+                email_hash,
+                start_after=_LOGIN_BACKOFF_START_AFTER,
+            )
             duration = time.perf_counter() - start
+            if backoff_seconds > 0:
+                outcome = "rate_limited"
+                LOGIN_DURATION.observe(duration)
+                LOGIN_ATTEMPTS.labels(outcome=outcome).inc()
+                LOGIN_RATE_LIMITED.labels(dimension="email_backoff").inc()
+                if span is not None:
+                    span.set_attribute("outcome", outcome)
+                log_event(
+                    logger,
+                    service="auth_router",
+                    event="login_failed",
+                    level="warning",
+                    email_hash=email_hash,
+                    reason="rate_limited",
+                    backoff_seconds=backoff_seconds,
+                )
+                raise HTTPException(
+                    status_code=429,
+                    detail=_EMAIL_BACKOFF_DETAIL,
+                    headers={"Retry-After": str(backoff_seconds)},
+                ) from exc
+
+            outcome = "invalid"
             LOGIN_DURATION.observe(duration)
             LOGIN_ATTEMPTS.labels(outcome=outcome).inc()
             if span is not None:
                 span.set_attribute("outcome", outcome)
-            backoff_seconds = await login_backoff.register_failure(email_hash)
             log_event(
                 logger,
                 service="auth_router",
@@ -287,7 +313,6 @@ async def login(
                 level="warning",
                 email_hash=email_hash,
                 reason="invalid",
-                backoff_seconds=backoff_seconds,
             )
             raise HTTPException(status_code=401, detail=str(exc)) from exc
 

@@ -46,17 +46,28 @@ class LoginBackoffManager:
             ttl=_CACHE_TTL,
         )
 
-    async def register_failure(self, email_hash: str) -> float:
+    async def register_failure(self, email_hash: str, *, start_after: int = 1) -> float:
         state = await self._load(email_hash)
         state.failures += 1
-        window_index = min(state.failures - 1, len(BACKOFF_WINDOWS) - 1)
-        seconds = BACKOFF_WINDOWS[window_index]
-        state.locked_until = time.time() + seconds
+        effective_start = max(1, start_after)
+        seconds = 0.0
+        if state.failures >= effective_start:
+            window_index = min(
+                state.failures - effective_start,
+                len(BACKOFF_WINDOWS) - 1,
+            )
+            seconds = BACKOFF_WINDOWS[window_index]
+            state.locked_until = time.time() + seconds
+        else:
+            state.locked_until = None
         await self._save(email_hash, state)
         return seconds
 
     async def clear(self, email_hash: str) -> None:
         await self._cache.delete(email_hash)
+
+    async def clear_all(self) -> None:
+        await self._cache.clear_namespace()
 
     async def remaining_seconds(self, email_hash: str) -> float:
         state = await self._load(email_hash)

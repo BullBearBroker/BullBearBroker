@@ -133,6 +133,7 @@ async def test_login_success_updates_metrics(monkeypatch: pytest.MonkeyPatch) ->
 @pytest.mark.asyncio()
 async def test_login_rate_limit_returns_429(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(auth_router, "user_service", _AlwaysInvalidUserService())
+    monkeypatch.setattr(auth_router, "_LOGIN_BACKOFF_START_AFTER", 10)
 
     invalid_before = _metric_value("login_attempts_total", {"outcome": "invalid"})
     limited_email_before = _metric_value("login_attempts_total", {"outcome": "limited_email"})
