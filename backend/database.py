@@ -83,7 +83,28 @@ def create_all_if_local(engine) -> None:
         )
         return
 
-    Base.metadata.create_all(bind=engine)
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as error:  # pragma: no cover - defensive logging
+        logger.warning(
+            {
+                "service": "database",
+                "event": "database_autocreate_failed",
+                "env": "local",
+                "error": str(error),
+                "level": "warning",
+            }
+        )
+        logger.warning(
+            {
+                "service": "app",
+                "event": "database_setup_error",
+                "error": str(error),
+                "level": "warning",
+            }
+        )
+        return
+
     logger.info(
         {
             "service": "database",
