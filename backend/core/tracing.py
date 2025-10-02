@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from typing import Any, Dict, Optional, Tuple
 
 from backend.utils.config import Config
@@ -74,10 +75,8 @@ def configure_tracing(app) -> bool:  # type: ignore[no-untyped-def]
         tracer_provider = TracerProvider(resource=resource)
         trace.set_tracer_provider(tracer_provider)
     else:
-        try:
+        with contextlib.suppress(Exception):  # pragma: no cover - older SDK versions
             tracer_provider.resource = tracer_provider.resource.merge(resource)  # type: ignore[attr-defined]
-        except Exception:  # pragma: no cover - older SDK versions
-            pass
 
     exporter_kwargs: Dict[str, Any] = {"timeout": getattr(Config, "OTEL_EXPORTER_OTLP_TIMEOUT", 10)}
     endpoint = getattr(Config, "OTEL_EXPORTER_OTLP_ENDPOINT", None)
@@ -108,10 +107,8 @@ def configure_tracing(app) -> bool:  # type: ignore[no-untyped-def]
 def reset_tracing_state_for_tests() -> None:
     global _TRACING_CONFIGURED, _HTTPX_INSTRUMENTOR
     if _HTTPX_INSTRUMENTOR is not None:
-        try:
+        with contextlib.suppress(Exception):  # pragma: no cover - defensive cleanup
             _HTTPX_INSTRUMENTOR.uninstrument()
-        except Exception:  # pragma: no cover - defensive cleanup
-            pass
     _HTTPX_INSTRUMENTOR = None
     _TRACING_CONFIGURED = False
 

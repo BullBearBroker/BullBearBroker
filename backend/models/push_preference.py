@@ -9,6 +9,8 @@ from sqlalchemy import Boolean, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from backend.models.user import User
+
 try:  # pragma: no cover - import alias compatibility
     from .base import Base
 except ImportError:  # pragma: no cover

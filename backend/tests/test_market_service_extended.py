@@ -884,7 +884,11 @@ async def test_get_stock_market_data_filters_errors(monkeypatch: pytest.MonkeyPa
     ])
     monkeypatch.setattr(MarketService, "get_stock_price", stock_mock)
 
-    results = await service.get_stock_market_data(["AAPL", "MSFT", "TSLA"])
+    results = await service.get_stock_market_data([
+        "AAPL",
+        "MSFT",
+        "TSLA",
+    ])
     assert results == [{"symbol": "AAPL", "raw_change": 1.0}]
 
 

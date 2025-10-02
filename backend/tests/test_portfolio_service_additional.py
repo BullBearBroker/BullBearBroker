@@ -68,7 +68,7 @@ async def test_portfolio_overview_handles_atypical_prices(
 ) -> None:
     user_id = uuid4()
     first = portfolio_service.create_item(user_id, symbol="XYZ", amount=2)
-    second = portfolio_service.create_item(user_id, symbol="ABC", amount=3)
+    portfolio_service.create_item(user_id, symbol="ABC", amount=3)
 
     prices = iter([-10.0, float("nan")])
 

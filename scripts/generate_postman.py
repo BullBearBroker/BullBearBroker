@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-import json
 import argparse
-from pathlib import Path
+import json
 import sys
+from pathlib import Path
+
 from fastapi.openapi.utils import get_openapi
 
 ROOT = Path(__file__).resolve().parents[1]
