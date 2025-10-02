@@ -45,6 +45,13 @@ def _require_env(name: str) -> str:
     return value
 
 
+def _get_bool_env(name: str, default: bool = False) -> bool:
+    raw_value = _get_env(name)
+    if raw_value is None:
+        return default
+    return raw_value.lower() in {"1", "true", "yes", "on"}
+
+
 class Config:
     # Stocks APIs
     ALPHA_VANTAGE_API_KEY = _get_env("ALPHA_VANTAGE_API_KEY")
@@ -84,6 +91,9 @@ class Config:
     JWT_ALGORITHM = _get_env("BULLBEARBROKER_JWT_ALGORITHM", "HS256")
     LOGIN_IP_LIMIT_TIMES = _get_int_env("LOGIN_IP_LIMIT_TIMES", 20)
     LOGIN_IP_LIMIT_SECONDS = _get_int_env("LOGIN_IP_LIMIT_SECONDS", 60)
+    ENABLE_CAPTCHA_ON_LOGIN = _get_bool_env("ENABLE_CAPTCHA_ON_LOGIN", False)
+    LOGIN_CAPTCHA_THRESHOLD = _get_int_env("LOGIN_CAPTCHA_THRESHOLD", 3)
+    LOGIN_CAPTCHA_TEST_SECRET = _get_env("LOGIN_CAPTCHA_TEST_SECRET", "pass")
 
     # Notifications
     TELEGRAM_BOT_TOKEN = _get_env("TELEGRAM_BOT_TOKEN")
@@ -100,3 +110,4 @@ class Config:
 
 
 password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+

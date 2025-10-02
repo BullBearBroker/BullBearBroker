@@ -153,6 +153,28 @@ export interface HistoricalDataResponse {
    CORE REQUEST
    =========== */
 
+export class HttpError extends Error {
+  status: number;
+  detail?: unknown;
+  retryAfter?: number;
+
+  constructor(
+    message: string,
+    options: {
+      status?: number;
+      detail?: unknown;
+      retryAfter?: number;
+      cause?: unknown;
+    } = {}
+  ) {
+    super(message, options.cause ? { cause: options.cause } : undefined);
+    this.name = "HttpError";
+    this.status = options.status ?? 0;
+    this.detail = options.detail;
+    this.retryAfter = options.retryAfter;
+  }
+}
+
 export async function request<T>(
   path: string,
   init: RequestInit = {},
@@ -173,8 +195,13 @@ export async function request<T>(
   });
 
   if (!response.ok) {
-    const message = await safeReadError(response);
-    throw new Error(message || `Request failed with status ${response.status}`);
+    const { message, detail } = await readErrorResponse(response);
+    const retryAfter = parseRetryAfter(response.headers.get("Retry-After"));
+    throw new HttpError(message ?? `Request failed with status ${response.status}`, {
+      status: response.status,
+      detail,
+      retryAfter,
+    });
   }
 
   if (response.status === 204) {
@@ -190,19 +217,57 @@ export async function request<T>(
   }
 }
 
-async function safeReadError(response: Response) {
+function parseRetryAfter(headerValue: string | null): number | undefined {
+  if (!headerValue) return undefined;
+  const numeric = Number(headerValue);
+  if (Number.isFinite(numeric)) {
+    return Math.max(0, numeric);
+  }
+  const retryDate = Date.parse(headerValue);
+  if (Number.isNaN(retryDate)) {
+    return undefined;
+  }
+  const diffMs = retryDate - Date.now();
+  return diffMs > 0 ? diffMs / 1000 : undefined;
+}
+
+async function readErrorResponse(response: Response): Promise<{
+  message?: string;
+  detail?: unknown;
+}> {
   try {
-    const data = await response.json();
-    if (typeof data === "string") return data;
-    if (data?.detail) {
-      return typeof data.detail === "string"
-        ? data.detail
-        : JSON.stringify(data.detail);
+    const text = await response.text();
+    if (!text) {
+      return { message: response.statusText };
     }
-    if (data?.message) return data.message;
-    return JSON.stringify(data);
+
+    const contentType = response.headers.get("Content-Type") || "";
+    if (contentType.includes("application/json")) {
+      try {
+        const parsed = JSON.parse(text);
+        if (typeof parsed === "string") {
+          return { message: parsed };
+        }
+        if (parsed && typeof parsed === "object") {
+          const detail = (parsed as { detail?: unknown; message?: unknown }).detail;
+          const message = (() => {
+            const candidate = (parsed as { detail?: unknown; message?: unknown })
+              .message;
+            if (typeof candidate === "string") return candidate;
+            if (typeof detail === "string") return detail;
+            return undefined;
+          })();
+          return { message, detail: detail ?? parsed };
+        }
+      } catch (error) {
+        console.error("JSON parse error:", error);
+        return { message: text };
+      }
+    }
+
+    return { message: text };
   } catch {
-    return response.statusText;
+    return { message: response.statusText };
   }
 }
 
@@ -210,11 +275,15 @@ async function safeReadError(response: Response) {
    AUTH
    =========== */
 
-export function login(payload: LoginPayload) {
-  return request<AuthResponse>("/api/auth/login", {
-    method: "POST",
-    body: JSON.stringify(payload),
-  });
+export function login(payload: LoginPayload, options: { signal?: AbortSignal } = {}) {
+  return request<AuthResponse>(
+    "/api/auth/login",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+      signal: options.signal,
+    }
+  );
 }
 
 export function register(payload: RegisterPayload) {
