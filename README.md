@@ -243,12 +243,12 @@ make openapi      # postman/openapi.json
 make postman      # postman/BullBearBroker.postman_collection.json
 ```
 
-## 🧪 CI
+🧪 CI
 Este repo incluye GitHub Actions (.github/workflows/ci.yml) con lint (ruff/black/isort) y tests (pytest) en Python 3.12.
 
-## Aceptación (debe pasar)
-1) `python -m pip install -r backend/requirements.txt`
-2) `python -m pip install -r backend/requirements-dev.txt`
-3) `pre-commit run --all-files` (o `make lint`)
-4) `pytest backend -q` (debe quedar en verde)
-5) `make postman` crea `postman/BullBearBroker.postman_collection.json`
+✅ Aceptación (debe pasar)
+python -m pip install -r backend/requirements.txt
+python -m pip install -r backend/requirements-dev.txt
+pre-commit run --all-files (o make lint)
+pytest backend -q (debe quedar en verde)
+make postman crea postman/BullBearBroker.postman_collection.json
