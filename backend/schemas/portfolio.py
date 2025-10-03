@@ -1,81 +1,49 @@
-"""Pydantic schemas for portfolio endpoints."""
+"""Pydantic schemas for portfolio and position endpoints."""
 
 from __future__ import annotations
 
 from uuid import UUID
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel
 
 
 class PortfolioCreate(BaseModel):
-    symbol: str = Field(..., min_length=1, max_length=20)
-    amount: float = Field(..., gt=0)
-
-    @field_validator("symbol")
-    @classmethod
-    def _normalize_symbol(cls, value: str) -> str:
-        cleaned = value.strip()
-        if not cleaned:
-            raise ValueError("El símbolo es obligatorio")
-        return cleaned.upper()
+    name: str
+    base_ccy: str | None = "USD"
 
 
-class PortfolioItemResponse(BaseModel):
+class PositionCreate(BaseModel):
+    symbol: str
+    quantity: float
+    avg_price: float
+
+
+class PositionOut(BaseModel):
     id: UUID
     symbol: str
-    amount: float
-    price: float | None = None
-    value: float | None = None
+    quantity: float
+    avg_price: float
 
-    model_config = {
-        "from_attributes": True,
-    }
+    class Config:
+        orm_mode = True
 
 
-class PortfolioSummaryResponse(BaseModel):
-    items: list[PortfolioItemResponse]
-    total_value: float
+class PortfolioOut(BaseModel):
+    id: UUID
+    name: str
+    base_ccy: str
+    positions: list[PositionOut]
+    totals: dict
+    metrics: dict | None
+    risk: dict | None
 
-
-class PortfolioImportError(BaseModel):
-    row: int
-    message: str
-
-    model_config = {
-        "json_schema_extra": {
-            "example": {"row": 5, "message": "La cantidad debe ser numérica"}
-        }
-    }
-
-
-class PortfolioImportResult(BaseModel):
-    created: int
-    items: list[PortfolioItemResponse]
-    errors: list[PortfolioImportError]
-
-    model_config = {
-        "json_schema_extra": {
-            "example": {
-                "created": 1,
-                "items": [
-                    {
-                        "id": "6b2c6d4d-5b2f-4cd0-9e10-0afadf7c6c71",
-                        "symbol": "AAPL",
-                        "amount": 3.0,
-                    }
-                ],
-                "errors": [
-                    {"row": 4, "message": "El símbolo ya existe en tu portafolio"}
-                ],
-            }
-        }
-    }
+    class Config:
+        orm_mode = True
 
 
 __all__ = [
     "PortfolioCreate",
-    "PortfolioItemResponse",
-    "PortfolioSummaryResponse",
-    "PortfolioImportError",
-    "PortfolioImportResult",
+    "PositionCreate",
+    "PositionOut",
+    "PortfolioOut",
 ]

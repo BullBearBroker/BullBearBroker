@@ -1,7 +1,7 @@
 from .alert import Alert, AlertDeliveryMethod
 from .base import Base
 from .chat import ChatMessage, ChatSession
-from .portfolio import PortfolioItem
+from .portfolio import Portfolio, Position
 from .push_preference import PushNotificationPreference
 from .push_subscription import PushSubscription
 from .refresh_token import RefreshToken
@@ -15,7 +15,8 @@ __all__ = [
     "Session",
     "User",
     "RefreshToken",
-    "PortfolioItem",
+    "Portfolio",
+    "Position",
     "ChatSession",
     "ChatMessage",
     "PushSubscription",
