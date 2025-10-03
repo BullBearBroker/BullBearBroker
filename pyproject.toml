@@ -19,6 +19,9 @@ extend-exclude = [".venv"]
 select = ["E", "F", "I", "UP", "B", "SIM", "PIE"]
 ignore = []
 
+[tool.ruff.lint]
+extend-select = ["I"]
+
 [tool.ruff.format]
 indent-style = "space"
 quote-style = "double"
