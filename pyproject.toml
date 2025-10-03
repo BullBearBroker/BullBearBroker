@@ -11,9 +11,9 @@ combine_as_imports = true
 target-version = "py312"
 
 [tool.ruff.lint]
-# Black ya se encarga del formato, Ruff solo de lint
+# Dejamos que Black maneje el formateo, Ruff solo lint
 select = ["E", "F", "B"]
-ignore = []
+ignore = ["E501"]  # ⚠️ Ignorar line too long (lo maneja Black)
 fixable = ["ALL"]
 
 # Ignorar imports fuera de orden en tests (E402)
