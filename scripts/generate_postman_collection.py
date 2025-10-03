@@ -15,6 +15,7 @@ os.environ.setdefault("BULLBEAR_SKIP_AUTOCREATE", "1")
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
+    # Ensure the backend package can be imported when invoking the script directly.
     sys.path.insert(0, str(ROOT_DIR))
 
 from backend.main import app
