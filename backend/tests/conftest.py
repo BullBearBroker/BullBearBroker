@@ -5,6 +5,8 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
+from backend.database import Base, engine
+
 TEST_DB_PATH = Path("/tmp/test_suite.db")
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"  # ensure isolated DB for tests
 if TEST_DB_PATH.exists():
@@ -13,6 +15,13 @@ if TEST_DB_PATH.exists():
 from backend.main import app
 from backend.routers import alerts as alerts_router, auth as auth_router
 from backend.tests.test_alerts_endpoints import DummyUserService
+
+
+@pytest.fixture(scope="session", autouse=True)
+def setup_db() -> None:
+    Base.metadata.create_all(bind=engine)
+    yield
+    Base.metadata.drop_all(bind=engine)
 
 
 @pytest_asyncio.fixture()

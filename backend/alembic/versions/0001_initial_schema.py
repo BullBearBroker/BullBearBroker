@@ -13,23 +13,30 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
+    bind = op.get_bind()
+    is_postgres = bind.dialect.name == "postgresql"
+
+    if is_postgres:
+        op.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
+
+    uuid_server_default = sa.text("gen_random_uuid()") if is_postgres else None
+    timestamp_default = sa.func.now() if is_postgres else sa.text("CURRENT_TIMESTAMP")
 
     op.create_table(
         "users",
         sa.Column(
             "id",
             postgresql.UUID(as_uuid=True),
-            server_default=sa.text("gen_random_uuid()"),
+            server_default=uuid_server_default,
             primary_key=True,
         ),
         sa.Column("email", sa.String(), nullable=False),
         sa.Column("password_hash", sa.String(), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False
+            "created_at", sa.DateTime(), server_default=timestamp_default, nullable=False
         ),
         sa.Column(
-            "updated_at", sa.DateTime(), server_default=sa.func.now(), nullable=False
+            "updated_at", sa.DateTime(), server_default=timestamp_default, nullable=False
         ),
     )
     op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
@@ -40,7 +47,7 @@ def upgrade() -> None:
         sa.Column(
             "id",
             postgresql.UUID(as_uuid=True),
-            server_default=sa.text("gen_random_uuid()"),
+            server_default=uuid_server_default,
             primary_key=True,
         ),
         sa.Column(
@@ -58,10 +65,10 @@ def upgrade() -> None:
         ),
         sa.Column("value", sa.Float(), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False
+            "created_at", sa.DateTime(), server_default=timestamp_default, nullable=False
         ),
         sa.Column(
-            "updated_at", sa.DateTime(), server_default=sa.func.now(), nullable=False
+            "updated_at", sa.DateTime(), server_default=timestamp_default, nullable=False
         ),
     )
 
@@ -70,7 +77,7 @@ def upgrade() -> None:
         sa.Column(
             "id",
             postgresql.UUID(as_uuid=True),
-            server_default=sa.text("gen_random_uuid()"),
+            server_default=uuid_server_default,
             primary_key=True,
         ),
         sa.Column(
@@ -80,9 +87,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("token", sa.String(), nullable=False, unique=True),
-        sa.Column(
-            "created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False
-        ),
+        sa.Column("created_at", sa.DateTime(), server_default=timestamp_default, nullable=False),
         sa.Column("expires_at", sa.DateTime(), nullable=False),
     )
 
