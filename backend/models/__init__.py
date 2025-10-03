@@ -1,4 +1,4 @@
-from .alert import Alert
+from .alert import Alert, AlertDeliveryMethod
 from .base import Base
 from .chat import ChatMessage, ChatSession
 from .portfolio import PortfolioItem
@@ -10,6 +10,7 @@ from .user import User
 
 __all__ = [
     "Alert",
+    "AlertDeliveryMethod",
     "Base",
     "Session",
     "User",
