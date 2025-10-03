@@ -2,8 +2,15 @@ import math
 
 import numpy as np
 import pytest
+from httpx import ASGITransport, AsyncClient
 
+from backend.tests._dependency_stubs import ensure as ensure_test_dependencies
+from backend.main import app
+from backend.routers import indicators as indicators_router
+from backend.services import indicators_service
 from backend.utils import indicators
+
+ensure_test_dependencies()
 
 
 @pytest.mark.parametrize(
@@ -157,3 +164,85 @@ def test_indicators_manage_nan_and_negative_inputs() -> None:
 
     vwap_result = indicators.volume_weighted_average_price(highs, lows, closes, volumes)
     assert vwap_result is None or isinstance(vwap_result, float)
+
+
+def test_calculate_atr_with_simple_candles() -> None:
+    candles = [
+        {"high": 10.0, "low": 8.0, "close": 9.0},
+        {"high": 11.0, "low": 9.5, "close": 10.0},
+        {"high": 12.0, "low": 10.5, "close": 11.0},
+    ]
+
+    atr = indicators_service.calculate_atr(candles, period=3)
+
+    assert atr == pytest.approx(2.0)
+
+
+def test_calculate_rsi_with_increasing_series() -> None:
+    values = [1.0, 2.0, 3.0, 4.0]
+
+    rsi_value = indicators_service.calculate_rsi(values, period=3)
+
+    assert rsi_value == pytest.approx(100.0)
+
+
+def test_calculate_ichimoku_returns_expected_components() -> None:
+    prices = [
+        {"high": float(i + 10), "low": float(i), "close": float(i + 5)}
+        for i in range(52)
+    ]
+
+    result = indicators_service.calculate_ichimoku(prices)
+
+    assert result == {
+        "tenkan": pytest.approx(52.0),
+        "kijun": pytest.approx(43.5),
+        "span_a": pytest.approx(47.75),
+        "span_b": pytest.approx(30.5),
+    }
+
+
+def test_calculate_vwap_uses_weighted_average() -> None:
+    prices = [10.0, 10.5, 11.0]
+    volumes = [100.0, 200.0, 300.0]
+
+    vwap = indicators_service.calculate_vwap(prices, volumes)
+
+    expected = (10.0 * 100 + 10.5 * 200 + 11.0 * 300) / 600
+    assert vwap == pytest.approx(expected)
+
+
+@pytest.mark.asyncio
+async def test_indicators_endpoint_returns_indicator_payload(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def fake_get_closes(
+        asset_type: str, symbol: str, interval: str, limit: int
+    ) -> tuple[list[float], dict[str, list[float]]]:
+        closes = [10.0, 10.5, 11.0, 10.8]
+        metadata = {
+            "highs": [10.5, 11.0, 11.5, 11.0],
+            "lows": [9.5, 10.0, 10.5, 10.2],
+            "volumes": [100, 150, 120, 130],
+        }
+        return closes, metadata
+
+    monkeypatch.setattr(indicators_router, "get_closes", fake_get_closes)
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app, client=("indicators-test", 80)),
+        base_url="http://testserver",
+    ) as client:
+        response = await client.get("/api/indicators/BTCUSDT")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["symbol"] == "BTCUSDT"
+    assert payload["interval"] == "1d"
+    assert set(payload["indicators"].keys()) == {"atr", "rsi", "ichimoku", "vwap"}
+    assert set(payload["indicators"]["ichimoku"].keys()) == {
+        "tenkan",
+        "kijun",
+        "span_a",
+        "span_b",
+    }
