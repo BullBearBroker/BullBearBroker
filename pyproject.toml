@@ -10,6 +10,10 @@ profile = "black"
 line_length = 100
 src_paths = ["backend"]
 skip = [".venv"]
+combine_as_imports = true
+force_grid_wrap = 0
+known_first_party = ["backend", "frontend", "scripts"]
+known_third_party = ["fastapi", "sqlalchemy", "pytest"]
 
 [tool.ruff]
 line-length = 100
@@ -19,8 +23,8 @@ extend-exclude = [".venv"]
 
 [tool.ruff.lint]
 # mueve aquí lo que hoy tienes como "ignore" y "select"
-ignore = []
-select = ["E", "F", "I", "UP", "B", "SIM", "PIE"]
+ignore = ["E501"]
+select = ["E", "F", "B", "UP", "SIM", "I"]
 extend-select = ["I"]
 
 [tool.ruff.format]
