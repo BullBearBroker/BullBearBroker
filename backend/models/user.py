@@ -5,14 +5,19 @@ from datetime import datetime
 from enum import Enum as PyEnum  # [Codex] nuevo
 from typing import TYPE_CHECKING  # [Codex] cambiado - se usa Optional
 
-from sqlalchemy import Boolean, DateTime, Enum, String  # [Codex] cambiado - se añade Enum
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    String,
+)  # [Codex] cambiado - se añade Enum
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
     from .alert import Alert
     from .chat import ChatSession
-    from .portfolio import PortfolioItem
+    from .portfolio import Portfolio
     from .push_preference import PushNotificationPreference
     from .push_subscription import PushSubscription
     from .refresh_token import RefreshToken
@@ -69,8 +74,8 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
-    portfolio_items: Mapped[list[PortfolioItem]] = relationship(
-        "PortfolioItem",
+    portfolios: Mapped[list[Portfolio]] = relationship(
+        "Portfolio",
         back_populates="user",
         cascade="all, delete-orphan",
     )

@@ -53,9 +53,14 @@ def dummy_user_service(monkeypatch: pytest.MonkeyPatch) -> DummyUserService:
     monkeypatch.setattr(
         auth_router, "InvalidCredentialsError", service.InvalidCredentialsError
     )
-    monkeypatch.setattr(alerts_router, "UserNotFoundError", service.UserNotFoundError)
+    monkeypatch.setattr(
+        alerts_router,
+        "UserNotFoundError",
+        service.UserNotFoundError,
+        raising=False,
+    )
     monkeypatch.setattr(auth_router, "InvalidTokenError", service.InvalidTokenError)
     monkeypatch.setattr(alerts_router, "InvalidTokenError", service.InvalidTokenError)
-    monkeypatch.setattr(alerts_router, "USER_SERVICE_ERROR", None)
+    monkeypatch.setattr(alerts_router, "USER_SERVICE_ERROR", None, raising=False)
 
     return service

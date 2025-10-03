@@ -1,338 +1,292 @@
-"""Service layer for user portfolio management."""
+"""Service helpers for portfolio management and analytics."""
 
 from __future__ import annotations
 
 import asyncio
-import csv
-import io
-from collections.abc import Iterable
 from contextlib import contextmanager
 from decimal import Decimal
-from typing import Any
+from statistics import StatisticsError, fmean, stdev
+from typing import Iterable
 from uuid import UUID
 
 from sqlalchemy import delete, select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from backend.database import SessionLocal
-from backend.models.portfolio import PortfolioItem
+from backend.models.portfolio import Portfolio, Position
+from backend.schemas.portfolio import PortfolioCreate, PositionCreate
 
-try:  # pragma: no cover - compatibility with different entrypoints
+try:  # pragma: no cover - allow execution in different entrypoints
     from backend.services.market_service import market_service
 except ImportError:  # pragma: no cover
-    from services.market_service import market_service  # type: ignore
+    market_service = None  # type: ignore[assignment]
 
 try:  # pragma: no cover
     from backend.services.forex_service import forex_service
 except ImportError:  # pragma: no cover
-    from services.forex_service import forex_service  # type: ignore
+    forex_service = None  # type: ignore[assignment]
 
 
-class PortfolioItemNotFoundError(Exception):
-    """Raised when attempting to delete a non-existent portfolio entry."""
+@contextmanager
+def _session_scope(session_factory: sessionmaker = SessionLocal) -> Iterable[Session]:
+    session = session_factory()
+    try:
+        yield session
+        session.commit()
+    except Exception:  # pragma: no cover - propagate after rollback
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
-class PortfolioService:
-    """High level operations for managing user portfolios."""
+def _normalize_name(value: str) -> str:
+    normalized = (value or "").strip()
+    if not normalized:
+        raise ValueError("Portfolio name is required")
+    return normalized
 
-    MAX_IMPORT_ROWS = 500
-    MAX_IMPORT_BYTES = 256 * 1024  # 256 KiB
 
-    def __init__(self, session_factory: sessionmaker = SessionLocal) -> None:
-        self._session_factory = session_factory
+def _normalize_symbol(value: str) -> str:
+    normalized = (value or "").strip().upper()
+    if not normalized:
+        raise ValueError("Symbol is required")
+    return normalized
 
-    @contextmanager
-    def _session_scope(self) -> Iterable[Session]:
-        session = self._session_factory()
-        try:
-            yield session
-            session.commit()
-        except Exception:
-            session.rollback()
-            raise
-        finally:
-            session.close()
 
-    # ------------------------------
-    # CRUD helpers
-    # ------------------------------
-    def list_items(self, user_id: UUID) -> list[PortfolioItem]:
-        with self._session_scope() as session:
-            records = (
-                session.scalars(
-                    select(PortfolioItem).where(PortfolioItem.user_id == user_id)
-                )
-                .unique()
-                .all()
+def _to_decimal(value: float | int | Decimal) -> Decimal:
+    try:
+        decimal_value = Decimal(str(value))
+    except (ValueError, TypeError) as exc:  # pragma: no cover - validation guard
+        raise ValueError("Numeric value required") from exc
+    return decimal_value
+
+
+def create_portfolio(user_id: UUID, data: PortfolioCreate) -> Portfolio:
+    name = _normalize_name(data.name)
+    base_ccy = (data.base_ccy or "USD").strip().upper() or "USD"
+
+    with _session_scope() as session:
+        existing = session.scalar(
+            select(Portfolio.id).where(
+                Portfolio.user_id == user_id, Portfolio.name == name
             )
-            for record in records:
-                session.expunge(record)
-            return records
-
-    @staticmethod
-    def _normalize_symbol(symbol: str) -> str:
-        cleaned = str(symbol or "").strip().upper()
-        if not cleaned:
-            raise ValueError("El símbolo es obligatorio")
-        return cleaned
-
-    def create_item(
-        self, user_id: UUID, *, symbol: str, amount: float
-    ) -> PortfolioItem:
-        normalized_symbol = self._normalize_symbol(symbol)
-        try:
-            normalized_amount = float(amount)
-        except (TypeError, ValueError) as exc:  # pragma: no cover - defensive
-            raise ValueError("La cantidad debe ser numérica") from exc
-        if normalized_amount <= 0:
-            raise ValueError("La cantidad debe ser mayor que cero")
-
-        with self._session_scope() as session:
-            existing = session.scalar(
-                select(PortfolioItem.id)
-                .where(PortfolioItem.user_id == user_id)
-                .where(PortfolioItem.symbol == normalized_symbol)
-            )
-            if existing is not None:
-                raise ValueError("El símbolo ya existe en tu portafolio")
-
-            item = PortfolioItem(
-                user_id=user_id,
-                symbol=normalized_symbol,
-                amount=Decimal(str(normalized_amount)),
-            )
-            session.add(item)
-            session.flush()
-            session.refresh(item)
-            session.expunge(item)
-            return item
-
-    def delete_item(self, user_id: UUID, item_id: UUID) -> bool:
-        with self._session_scope() as session:
-            stmt = (
-                delete(PortfolioItem)
-                .where(PortfolioItem.user_id == user_id)
-                .where(PortfolioItem.id == item_id)
-            )
-            result = session.execute(stmt)
-            return result.rowcount > 0
-
-    # ------------------------------
-    # CSV helpers
-    # ------------------------------
-    def export_to_csv(self, user_id: UUID) -> str:
-        items = self.list_items(user_id)
-        buffer = io.StringIO()
-        writer = csv.writer(buffer)
-        writer.writerow(["symbol", "amount"])
-        for item in items:
-            writer.writerow([item.symbol, float(item.amount)])
-        return buffer.getvalue()
-
-    def import_from_csv(self, user_id: UUID, *, content: str) -> dict[str, Any]:
-        if not content.strip():
-            raise ValueError("El archivo CSV está vacío")
-
-        content = content.lstrip("\ufeff")
-
-        if len(content.encode("utf-8")) > self.MAX_IMPORT_BYTES:
-            raise ValueError(
-                "El archivo CSV supera el tamaño máximo permitido de 256KB"
-            )
-
-        stream = io.StringIO(content)
-        sample = stream.read(1024)
-        stream.seek(0)
-        try:
-            dialect = csv.Sniffer().sniff(sample, delimiters=",;|\t")
-        except csv.Error:
-            dialect = csv.excel
-        reader = csv.DictReader(stream, dialect=dialect)
-        if not reader.fieldnames:
-            raise ValueError("El CSV debe incluir encabezados")
-
-        normalized_headers = {
-            name.strip().lower().lstrip("\ufeff"): name
-            for name in reader.fieldnames
-            if name
-        }
-        required = {"symbol", "amount"}
-        missing = required - normalized_headers.keys()
-        if missing:
-            raise ValueError(
-                "Faltan columnas requeridas en el CSV: " + ", ".join(sorted(missing))
-            )
-
-        errors: list[dict[str, Any]] = []
-        created_items: list[PortfolioItem] = []
-        seen_symbols: set[str] = set()
-
-        with self._session_scope() as session:
-            existing_symbols: set[str] = {
-                row[0]
-                for row in session.execute(
-                    select(PortfolioItem.symbol).where(PortfolioItem.user_id == user_id)
-                )
-            }
-
-            for index, row in enumerate(reader, start=2):
-                if index - 1 > self.MAX_IMPORT_ROWS:
-                    errors.append(
-                        {
-                            "row": index,
-                            "message": "El archivo CSV supera el máximo de 500 filas",
-                        }
-                    )
-                    break
-
-                if not row:
-                    continue
-
-                raw_symbol = row.get(normalized_headers["symbol"], "")
-                raw_amount = row.get(normalized_headers["amount"], "")
-
-                if raw_symbol is None and raw_amount is None:
-                    continue
-
-                try:
-                    normalized_symbol = self._normalize_symbol(raw_symbol)
-                except ValueError as exc:
-                    errors.append({"row": index, "message": str(exc)})
-                    continue
-
-                duplicate_in_file = normalized_symbol in seen_symbols
-                seen_symbols.add(normalized_symbol)
-
-                if normalized_symbol in existing_symbols:
-                    errors.append(
-                        {
-                            "row": index,
-                            "message": "El símbolo ya existe en tu portafolio",
-                        }
-                    )
-                    continue
-
-                if duplicate_in_file:
-                    errors.append(
-                        {
-                            "row": index,
-                            "message": "Símbolo duplicado en el archivo",
-                        }
-                    )
-                    continue
-
-                try:
-                    amount_value = float(str(raw_amount).strip())
-                except (TypeError, ValueError):
-                    errors.append(
-                        {"row": index, "message": "La cantidad debe ser numérica"}
-                    )
-                    continue
-
-                if amount_value <= 0:
-                    errors.append(
-                        {"row": index, "message": "La cantidad debe ser mayor que cero"}
-                    )
-                    continue
-
-                item = PortfolioItem(
-                    user_id=user_id,
-                    symbol=normalized_symbol,
-                    amount=Decimal(str(amount_value)),
-                )
-                session.add(item)
-                session.flush()
-                session.refresh(item)
-                session.expunge(item)
-
-                created_items.append(item)
-                existing_symbols.add(normalized_symbol)
-
-        return {
-            "created": len(created_items),
-            "items": [
-                {
-                    "id": item.id,
-                    "symbol": item.symbol,
-                    "amount": float(item.amount),
-                }
-                for item in created_items
-            ],
-            "errors": errors,
-        }
-
-    # ------------------------------
-    # Valuation helpers
-    # ------------------------------
-    async def get_portfolio_overview(self, user_id: UUID) -> dict[str, Any]:
-        items = self.list_items(user_id)
-        if not items:
-            return {"items": [], "total_value": 0.0}
-
-        prices = await asyncio.gather(
-            *[self._resolve_price(item.symbol) for item in items]
         )
+        if existing is not None:
+            raise ValueError("Portfolio name already exists for user")
 
-        overview_items: list[dict[str, Any]] = []
-        total_value = 0.0
-        for item, price in zip(items, prices, strict=False):
-            amount_float = float(item.amount)
-            value = price * amount_float if price is not None else None
-            if value is not None:
-                total_value += value
-            overview_items.append(
-                {
-                    "id": item.id,
-                    "symbol": item.symbol,
-                    "amount": amount_float,
-                    "price": price,
-                    "value": value,
-                }
+        portfolio = Portfolio(user_id=user_id, name=name, base_ccy=base_ccy)
+        session.add(portfolio)
+        session.flush()
+        session.refresh(portfolio)
+        session.expunge(portfolio)
+        return portfolio
+
+
+def list_portfolios(user_id: UUID) -> list[Portfolio]:
+    with _session_scope() as session:
+        portfolios = (
+            session.scalars(
+                select(Portfolio)
+                .options(selectinload(Portfolio.positions))
+                .where(Portfolio.user_id == user_id)
+                .order_by(Portfolio.created_at)
             )
+            .unique()
+            .all()
+        )
+        for portfolio in portfolios:
+            for position in portfolio.positions:
+                session.expunge(position)
+            session.expunge(portfolio)
+        return portfolios
 
-        return {
-            "items": overview_items,
-            "total_value": round(total_value, 2),
-        }
 
-    async def _resolve_price(self, symbol: str) -> float | None:
-        normalized = symbol.strip().upper()
-        # Try crypto first
-        if market_service is not None:
+def get_portfolio_owned(user_id: UUID, portfolio_id: UUID) -> Portfolio:
+    with _session_scope() as session:
+        portfolio = session.scalar(
+            select(Portfolio)
+            .options(selectinload(Portfolio.positions))
+            .where(Portfolio.id == portfolio_id, Portfolio.user_id == user_id)
+        )
+        if portfolio is None:
+            raise ValueError("Portfolio not found")
+        for position in portfolio.positions:
+            session.expunge(position)
+        session.expunge(portfolio)
+        return portfolio
+
+
+def add_position(portfolio_id: UUID, data: PositionCreate) -> Position:
+    symbol = _normalize_symbol(data.symbol)
+    quantity = _to_decimal(data.quantity)
+    avg_price = _to_decimal(data.avg_price)
+    if quantity <= 0:
+        raise ValueError("Quantity must be greater than zero")
+    if avg_price < 0:
+        raise ValueError("Average price cannot be negative")
+
+    with _session_scope() as session:
+        portfolio_exists = session.scalar(
+            select(Portfolio.id).where(Portfolio.id == portfolio_id)
+        )
+        if portfolio_exists is None:
+            raise ValueError("Portfolio not found")
+
+        position = Position(
+            portfolio_id=portfolio_id,
+            symbol=symbol,
+            quantity=quantity,
+            avg_price=avg_price,
+        )
+        session.add(position)
+        session.flush()
+        session.refresh(position)
+        session.expunge(position)
+        return position
+
+
+def get_position_owned(user_id: UUID, position_id: UUID) -> Position:
+    with _session_scope() as session:
+        position = session.scalar(
+            select(Position)
+            .options(selectinload(Position.portfolio))
+            .where(Position.id == position_id)
+        )
+        if position is None or position.portfolio.user_id != user_id:
+            raise ValueError("Position not found")
+        session.expunge(position.portfolio)
+        session.expunge(position)
+        return position
+
+
+def remove_position(position_id: UUID) -> None:
+    with _session_scope() as session:
+        result = session.execute(delete(Position).where(Position.id == position_id))
+        if result.rowcount == 0:
+            raise ValueError("Position not found")
+
+
+async def _resolve_price(symbol: str) -> float | None:
+    normalized = _normalize_symbol(symbol)
+    if market_service is not None:
+        try:
+            crypto = await market_service.get_crypto_price(normalized)
+        except Exception:  # pragma: no cover - upstream logging
+            crypto = None
+        if crypto and crypto.get("price") is not None:
             try:
-                crypto = await market_service.get_crypto_price(normalized)
-            except Exception:  # pragma: no cover - defensive logging happens upstream
-                crypto = None
-            if crypto and crypto.get("price") is not None:
-                try:
-                    return float(crypto["price"])
-                except (TypeError, ValueError):
-                    pass
+                return float(crypto["price"])
+            except (TypeError, ValueError):
+                pass
 
+        try:
+            stock = await market_service.get_stock_price(normalized)
+        except Exception:  # pragma: no cover
+            stock = None
+        if stock and stock.get("price") is not None:
             try:
-                stock = await market_service.get_stock_price(normalized)
-            except Exception:  # pragma: no cover
-                stock = None
-            if stock and stock.get("price") is not None:
-                try:
-                    return float(stock["price"])
-                except (TypeError, ValueError):
-                    pass
+                return float(stock["price"])
+            except (TypeError, ValueError):
+                pass
 
-        if forex_service is not None:
+    if forex_service is not None:
+        try:
+            fx_quote = await forex_service.get_quote(normalized)
+        except Exception:  # pragma: no cover
+            fx_quote = None
+        if fx_quote and fx_quote.get("price") is not None:
             try:
-                fx = await forex_service.get_quote(normalized)
-            except Exception:  # pragma: no cover
-                fx = None
-            if fx and fx.get("price") is not None:
-                try:
-                    return float(fx["price"])
-                except (TypeError, ValueError):
-                    pass
+                return float(fx_quote["price"])
+            except (TypeError, ValueError):
+                pass
 
+    return None
+
+
+async def valuate_portfolio(
+    positions: list[Position], base_ccy: str = "USD"
+) -> dict[str, float]:
+    if not positions:
+        return {"equity_value": 0.0, "pnl_abs": 0.0, "pnl_pct": 0.0}
+
+    prices = await asyncio.gather(*(_resolve_price(pos.symbol) for pos in positions))
+
+    equity_value = 0.0
+    pnl_abs_total = 0.0
+    cost_basis = 0.0
+
+    for position, price in zip(positions, prices, strict=False):
+        qty = float(position.quantity or 0)
+        avg_price = float(position.avg_price or 0)
+        if price is None:
+            continue
+        market_value = price * qty
+        equity_value += market_value
+        pnl_abs = (price - avg_price) * qty
+        pnl_abs_total += pnl_abs
+        if qty > 0 and avg_price > 0:
+            cost_basis += avg_price * qty
+
+    pnl_pct_total = pnl_abs_total / cost_basis if cost_basis > 0 else 0.0
+
+    return {
+        "equity_value": float(round(equity_value, 2)),
+        "pnl_abs": float(round(pnl_abs_total, 2)),
+        "pnl_pct": float(pnl_pct_total),
+    }
+
+
+def metrics(perf_series: list[float] | None) -> dict[str, float | None] | None:
+    if not perf_series:
         return None
 
+    daily = perf_series[-1]
+    mtd = sum(perf_series[-21:]) if len(perf_series) >= 5 else None
+    ytd = sum(perf_series) if len(perf_series) >= 50 else None
 
-portfolio_service = PortfolioService()
+    return {"daily": daily, "mtd": mtd, "ytd": ytd}
 
-__all__ = ["PortfolioService", "portfolio_service", "PortfolioItemNotFoundError"]
+
+def risk_metrics(
+    returns: list[float] | None, rf: float = 0.0, equity: float | None = None
+) -> dict[str, float | None] | None:
+    if not returns or len(returns) < 2:
+        return None
+
+    try:
+        volatility = stdev(returns)
+    except StatisticsError:  # pragma: no cover - defensive guard
+        return None
+
+    sharpe = None
+    if volatility > 0:
+        sharpe = (fmean(returns) - rf) / volatility
+
+    var_95 = None
+    if equity is not None and volatility > 0:
+        var_95 = float(-1.65 * volatility * equity)
+
+    return {"sharpe": sharpe, "var_95": var_95}
+
+
+def get_returns_series(positions: list[Position]) -> list[float] | None:
+    """Placeholder until historical performance is integrated."""
+
+    if not positions:
+        return None
+    return None
+
+
+__all__ = [
+    "create_portfolio",
+    "list_portfolios",
+    "get_portfolio_owned",
+    "add_position",
+    "remove_position",
+    "get_position_owned",
+    "valuate_portfolio",
+    "metrics",
+    "risk_metrics",
+    "get_returns_series",
+]

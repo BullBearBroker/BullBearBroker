@@ -186,7 +186,7 @@ OPENAPI_TAGS = [
     },
     {
         "name": "portfolio",
-        "description": "Importación, exportación y consulta de portafolios.",
+        "description": "Gestión de portafolios, posiciones y métricas de riesgo.",
     },
 ]
 
@@ -233,7 +233,7 @@ app.include_router(news.router, prefix="/api/news", tags=["news"])
 app.include_router(auth.router)
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(push.router, prefix="/api/push", tags=["push"])
-app.include_router(portfolio.router, prefix="/api/portfolio", tags=["portfolio"])
+app.include_router(portfolio.router)
 app.include_router(indicators.router)
 
 

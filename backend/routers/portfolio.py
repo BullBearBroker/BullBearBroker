@@ -1,205 +1,172 @@
-"""Routes for managing user portfolio holdings."""
+"""Portfolio API endpoints."""
 
 from __future__ import annotations
 
 import asyncio
-from typing import Annotated
+from typing import Annotated, Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
-from fastapi.responses import Response
-from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 
+from backend.models.portfolio import Portfolio, Position
+from backend.routers.alerts import get_current_user
 from backend.schemas.portfolio import (
     PortfolioCreate,
-    PortfolioImportError,
-    PortfolioImportResult,
-    PortfolioItemResponse,
-    PortfolioSummaryResponse,
+    PortfolioOut,
+    PositionCreate,
+    PositionOut,
+)
+from backend.services.portfolio_service import (
+    add_position,
+    create_portfolio,
+    get_portfolio_owned,
+    get_position_owned,
+    get_returns_series,
+    list_portfolios,
+    metrics,
+    remove_position,
+    risk_metrics,
+    valuate_portfolio,
 )
 
-USER_SERVICE_ERROR: Exception | None = None
+router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
-try:  # pragma: no cover - allow running from different entrypoints
-    from backend.models import User
-except ImportError:  # pragma: no cover
-    from backend.models import User  # type: ignore
 
-try:  # pragma: no cover
-    from backend.services.user_service import (
-        InvalidTokenError,
-        UserNotFoundError,
-        user_service,
-    )
-except RuntimeError as exc:  # pragma: no cover - missing configuration
-    user_service = None  # type: ignore[assignment]
-    InvalidTokenError = RuntimeError  # type: ignore[assignment]
-    UserNotFoundError = RuntimeError  # type: ignore[assignment]
-    USER_SERVICE_ERROR = exc
-except ImportError:  # pragma: no cover
-    from services.user_service import (  # type: ignore
-        InvalidTokenError,
-        UserNotFoundError,
-        user_service,
+def _position_to_out(position: Position) -> PositionOut:
+    return PositionOut(
+        id=position.id,
+        symbol=position.symbol,
+        quantity=float(position.quantity),
+        avg_price=float(position.avg_price),
     )
 
-try:  # pragma: no cover
-    from backend.services.portfolio_service import portfolio_service
-except ImportError:  # pragma: no cover
-    from services.portfolio_service import portfolio_service  # type: ignore
 
-router = APIRouter(tags=["portfolio"])
-security = HTTPBearer()
+def _portfolio_to_out(
+    portfolio: Portfolio,
+    *,
+    totals: dict,
+    metrics_data: dict | None,
+    risk_data: dict | None,
+    positions: list[Position] | None = None,
+) -> PortfolioOut:
+    def _sort_key(position: Position) -> tuple[float, str]:
+        created_at = getattr(position, "created_at", None)
+        if created_at is None:
+            return (0.0, str(position.id))
+        return (created_at.timestamp(), str(position.id))
+
+    if positions is None:
+        try:
+            positions_data = list(portfolio.positions)
+        except Exception:  # pragma: no cover - detached objects fall back to empty
+            positions_data = []
+    else:
+        positions_data = positions
+
+    positions_sorted = sorted(positions_data, key=_sort_key)
+    positions_out = [_position_to_out(position) for position in positions_sorted]
+    return PortfolioOut(
+        id=portfolio.id,
+        name=portfolio.name,
+        base_ccy=portfolio.base_ccy,
+        positions=positions_out,
+        totals=totals,
+        metrics=metrics_data,
+        risk=risk_data,
+    )
 
 
-def _ensure_user_service_available() -> None:
-    if user_service is None:
-        detail = "Servicio de usuarios no disponible"
-        if USER_SERVICE_ERROR is not None:
-            detail = f"{detail}. {USER_SERVICE_ERROR}"
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail
-        )
-
-
-async def get_current_user(
-    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
-) -> User:
-    _ensure_user_service_available()
+@router.post("", response_model=PortfolioOut, status_code=status.HTTP_201_CREATED)
+async def create_portfolio_endpoint(
+    payload: PortfolioCreate,
+    current_user: Annotated[Any, Depends(get_current_user)],
+) -> PortfolioOut:
     try:
-        return await asyncio.to_thread(
-            user_service.get_current_user, credentials.credentials
-        )
-    except InvalidTokenError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)
-        ) from exc
+        portfolio = await asyncio.to_thread(create_portfolio, current_user.id, payload)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    totals = {"equity_value": 0.0, "pnl_abs": 0.0, "pnl_pct": 0.0}
+    return _portfolio_to_out(
+        portfolio, totals=totals, metrics_data=None, risk_data=None, positions=[]
+    )
 
 
-@router.get("", response_model=PortfolioSummaryResponse)
-async def list_portfolio(
-    current_user: Annotated[User, Depends(get_current_user)],
-) -> PortfolioSummaryResponse:
-    summary = await portfolio_service.get_portfolio_overview(current_user.id)
-    items = [
-        PortfolioItemResponse(
-            id=item["id"],
-            symbol=item["symbol"],
-            amount=float(item["amount"]),
-            price=item.get("price"),
-            value=item.get("value"),
+@router.get("", response_model=list[PortfolioOut])
+async def list_portfolios_endpoint(
+    current_user: Annotated[Any, Depends(get_current_user)],
+) -> list[PortfolioOut]:
+    portfolios = await asyncio.to_thread(list_portfolios, current_user.id)
+    return [
+        _portfolio_to_out(
+            portfolio,
+            totals={"equity_value": 0.0, "pnl_abs": 0.0, "pnl_pct": 0.0},
+            metrics_data=None,
+            risk_data=None,
+            positions=portfolio.positions,
         )
-        for item in summary["items"]
+        for portfolio in portfolios
     ]
-    return PortfolioSummaryResponse(items=items, total_value=summary["total_value"])
 
 
-@router.get("/export", response_class=Response)
-async def export_portfolio(
-    current_user: Annotated[User, Depends(get_current_user)],
-) -> Response:
-    csv_payload = await asyncio.to_thread(
-        portfolio_service.export_to_csv, current_user.id
-    )
-    headers = {"Content-Disposition": 'attachment; filename="portfolio.csv"'}
-    return Response(
-        content=csv_payload,
-        media_type="text/csv; charset=utf-8",
-        headers=headers,
-    )
-
-
-@router.post("/import", response_model=PortfolioImportResult)
-async def import_portfolio(
-    file: Annotated[UploadFile, File(...)],
-    current_user: Annotated[User, Depends(get_current_user)],
-) -> PortfolioImportResult:
-    content_type = file.content_type or "text/csv"
-    if "csv" not in content_type:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Debes subir un archivo CSV válido",
-        )
-
-    raw_data = await file.read()
+@router.get("/{portfolio_id}", response_model=PortfolioOut)
+async def get_portfolio_endpoint(
+    portfolio_id: UUID,
+    current_user: Annotated[Any, Depends(get_current_user)],
+) -> PortfolioOut:
     try:
-        decoded = raw_data.decode("utf-8-sig")
-    except UnicodeDecodeError as exc:  # pragma: no cover - defensivo
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="El archivo CSV debe estar codificado en UTF-8",
-        ) from exc
-
-    try:
-        result = await asyncio.to_thread(
-            portfolio_service.import_from_csv,
-            current_user.id,
-            content=decoded,
+        portfolio = await asyncio.to_thread(
+            get_portfolio_owned, current_user.id, portfolio_id
         )
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-        ) from exc
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
-    items = [
-        PortfolioItemResponse(
-            id=entry["id"],
-            symbol=entry["symbol"],
-            amount=float(entry["amount"]),
-            price=None,
-            value=None,
-        )
-        for entry in result["items"]
-    ]
+    totals = await valuate_portfolio(portfolio.positions, base_ccy=portfolio.base_ccy)
+    performance_series = get_returns_series(portfolio.positions)
+    metrics_data = metrics(performance_series)
+    risk_data = risk_metrics(performance_series, equity=totals.get("equity_value"))
 
-    errors = [PortfolioImportError(**error) for error in result["errors"]]
-    return PortfolioImportResult(created=result["created"], items=items, errors=errors)
+    return _portfolio_to_out(
+        portfolio,
+        totals=totals,
+        metrics_data=metrics_data,
+        risk_data=risk_data,
+        positions=portfolio.positions,
+    )
 
 
 @router.post(
-    "", response_model=PortfolioItemResponse, status_code=status.HTTP_201_CREATED
+    "/{portfolio_id}/positions",
+    response_model=PositionOut,
+    status_code=status.HTTP_201_CREATED,
 )
-async def create_portfolio_item(
-    payload: PortfolioCreate,
-    current_user: Annotated[User, Depends(get_current_user)],
-) -> PortfolioItemResponse:
+async def add_position_endpoint(
+    portfolio_id: UUID,
+    payload: PositionCreate,
+    current_user: Annotated[Any, Depends(get_current_user)],
+) -> PositionOut:
     try:
-        item = await asyncio.to_thread(
-            portfolio_service.create_item,
-            current_user.id,
-            symbol=payload.symbol,
-            amount=payload.amount,
-        )
+        await asyncio.to_thread(get_portfolio_owned, current_user.id, portfolio_id)
     except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
-        ) from exc
-    except UserNotFoundError as exc:  # pragma: no cover - defensive
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)
-        ) from exc
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
-    return PortfolioItemResponse(
-        id=item.id,
-        symbol=item.symbol,
-        amount=float(item.amount),
-        price=None,
-        value=None,
-    )
+    try:
+        position = await asyncio.to_thread(add_position, portfolio_id, payload)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return _position_to_out(position)
 
 
-@router.delete("/{item_id}", status_code=status.HTTP_200_OK)
-async def delete_portfolio_item(
-    item_id: UUID,
-    current_user: Annotated[User, Depends(get_current_user)],
-) -> dict:
-    deleted = await asyncio.to_thread(
-        portfolio_service.delete_item, current_user.id, item_id
-    )
-    if not deleted:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Activo no encontrado en el portafolio",
-        )
+@router.delete("/positions/{position_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def remove_position_endpoint(
+    position_id: UUID,
+    current_user: Annotated[Any, Depends(get_current_user)],
+) -> Response:
+    try:
+        await asyncio.to_thread(get_position_owned, current_user.id, position_id)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
-    return {"message": "Activo eliminado", "id": str(item_id)}
+    await asyncio.to_thread(remove_position, position_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
