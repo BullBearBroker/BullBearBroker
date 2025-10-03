@@ -1,27 +1,20 @@
 [tool.black]
-line-length = 100
+line-length = 88
 target-version = ["py312"]
-extend-exclude = """
-^\\.venv/
-"""
 
 [tool.isort]
 profile = "black"
+line_length = 88
+combine_as_imports = true
 
 [tool.ruff]
 target-version = "py312"
-line-length = 100
 
 [tool.ruff.lint]
-select = ["E", "F", "I"]
+# Black ya se encarga del formato, Ruff solo de lint
+select = ["E", "F", "B"]
 ignore = []
+fixable = ["ALL"]
 
-[tool.ruff.lint.per-file-ignores]
-"backend/tests/*" = ["E402", "E501"]
-"scripts/*" = ["E402", "E501"]
-
-[tool.ruff.format]
-indent-style = "space"
-quote-style = "double"
-skip-magic-trailing-comma = false
-line-ending = "lf"
+# Ignorar imports fuera de orden en tests (E402)
+per-file-ignores = { "backend/tests/*" = ["E402"] }
