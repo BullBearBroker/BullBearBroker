@@ -4,6 +4,33 @@ import "jest-axe/extend-expect";
 // Configura una URL de API por defecto para los tests del frontend
 process.env.NEXT_PUBLIC_API_URL ??= "http://localhost:8000";
 
+const originalError = console.error;
+
+beforeAll(() => {
+  console.error = (...args: any[]) => {
+    const [message] = args;
+
+    if (typeof message === "string") {
+      if (/Warning:.*(linearGradient|stop|defs)/.test(message)) {
+        return;
+      }
+
+      if (
+        message.includes("Mensaje WS no parseable") ||
+        message.includes("No se pudo construir la URL del WebSocket")
+      ) {
+        return;
+      }
+    }
+
+    originalError.call(console, ...args);
+  };
+});
+
+afterAll(() => {
+  console.error = originalError;
+});
+
 if (typeof (global as any).ResizeObserver === "undefined") {
   (global as any).ResizeObserver = class {
     observe() {}
@@ -16,12 +43,20 @@ try {
   jest.mock("recharts", () => {
     const original = jest.requireActual("recharts");
     const React = jest.requireActual("react");
-    const MockResponsiveContainer = ({ width, height, children }: any) =>
-      React.createElement(
+    const MockResponsiveContainer = ({ width, height, children, ...rest }: any) => {
+      const resolvedWidth = typeof width === "number" ? width : 800;
+      const resolvedHeight = typeof height === "number" ? height : 400;
+      const content =
+        typeof children === "function"
+          ? children({ width: resolvedWidth, height: resolvedHeight })
+          : React.cloneElement(children, { width: resolvedWidth, height: resolvedHeight });
+
+      return React.createElement(
         "div",
-        { style: { width: width || 800, height: height || 400 } },
-        children
+        { style: { width: resolvedWidth, height: resolvedHeight }, ...rest },
+        React.createElement("svg", { width: resolvedWidth, height: resolvedHeight }, content)
       );
+    };
 
     return {
       ...original,
