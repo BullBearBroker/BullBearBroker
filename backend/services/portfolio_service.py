@@ -15,10 +15,12 @@ from sqlalchemy.orm import Session, selectinload, sessionmaker
 from backend.database import SessionLocal
 from backend.models.portfolio import Portfolio, Position
 from backend.schemas.portfolio import PortfolioCreate, PositionCreate
+from backend.utils.config import Config
 
 try:  # pragma: no cover - allow execution in different entrypoints
-    from backend.services.market_service import market_service
+    from backend.services.market_service import MarketService, market_service
 except ImportError:  # pragma: no cover
+    MarketService = None  # type: ignore[assignment]
     market_service = None  # type: ignore[assignment]
 
 try:  # pragma: no cover
@@ -169,6 +171,12 @@ def remove_position(position_id: UUID) -> None:
 
 async def _resolve_price(symbol: str) -> float | None:
     normalized = _normalize_symbol(symbol)
+    if MarketService is not None:
+        try:
+            if Config.TESTING and isinstance(market_service, MarketService):
+                return None
+        except Exception:  # pragma: no cover - defensive fallback
+            return None
     if market_service is not None:
         try:
             crypto = await market_service.get_crypto_price(normalized)
