@@ -36,6 +36,16 @@ security = HTTPBearer(auto_error=True)
 logger = get_logger(service="alerts_router")
 USER_SERVICE_ERROR: dict[str, str] | None = None
 
+_REVERSE_CONDITION_OP = {
+    "gt": ">",
+    "gte": ">=",
+    "lt": "<",
+    "lte": "<=",
+    "eq": "==",
+    "crosses_above": "crosses_above",
+    "crosses_below": "crosses_below",
+}
+
 
 class AlertSendPayload(BaseModel):
     message: str
@@ -80,6 +90,7 @@ def _serialize_alert(
     if updated_at is not None and not isinstance(updated_at, str):
         updated_at = updated_at.isoformat()
 
+    raw_condition = getattr(alert, "condition", None)
     payload: dict[str, Any] = {
         "id": str(getattr(alert, "id", "")),
         "name": name,
@@ -92,16 +103,58 @@ def _serialize_alert(
         "created_at": created_at,
         "updated_at": updated_at,
         "condition_expression": condition_expression,
-        "condition_json": getattr(alert, "condition", None),
+        "condition_json": raw_condition,
     }
     if prefer_legacy:
         legacy_condition = condition_expression
         if legacy_condition is None:
-            legacy_condition = getattr(alert, "condition", "")
+            legacy_condition = raw_condition
         payload["condition"] = legacy_condition or ""
     else:
-        payload["condition"] = getattr(alert, "condition", None)
+        payload["condition"] = raw_condition
+
+    if not prefer_legacy:
+        normalized_conditions = _normalize_conditions(raw_condition)
+        if normalized_conditions:
+            payload["conditions"] = normalized_conditions
     return payload
+
+
+def _normalize_conditions(condition: Any) -> list[dict[str, Any]] | None:
+    if not isinstance(condition, dict):
+        return None
+
+    if "and" in condition:
+        group = condition["and"]
+        if not isinstance(group, list):
+            return None
+        normalized: list[dict[str, Any]] = []
+        for item in group:
+            item_conditions = _normalize_conditions(item)
+            if not item_conditions:
+                return None
+            normalized.extend(item_conditions)
+        return normalized
+
+    if len(condition) != 1:
+        return None
+
+    field, value_map = next(iter(condition.items()))
+    if not isinstance(value_map, dict) or len(value_map) != 1:
+        return None
+
+    op_key, raw_value = next(iter(value_map.items()))
+    op = _REVERSE_CONDITION_OP.get(op_key)
+    if op is None:
+        return None
+
+    return [
+        {
+            "field": field,
+            "op": op,
+            "value": raw_value,
+        }
+    ]
 
 
 def _http_exception_from_validation(exc: ValidationError) -> HTTPException:
