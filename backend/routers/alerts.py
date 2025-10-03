@@ -14,11 +14,7 @@ from backend.core.logging_config import get_logger, log_event
 from backend.core.metrics import ALERTS_RATE_LIMITED
 from backend.core.rate_limit import rate_limiter
 from backend.models import Alert, User
-from backend.schemas.alert import (
-    AlertCreate as LegacyAlertCreate,
-    AlertUpdate as LegacyAlertUpdate,
-)
-from backend.schemas.alerts import AlertCreate as AdvancedAlertCreate, AlertToggle
+from backend.schemas.alerts import AlertCreate, AlertToggle, AlertUpdate
 from backend.services.alert_service import alert_service
 from backend.services.alerts_service import alerts_service
 from backend.utils.config import Config
@@ -55,9 +51,13 @@ class AlertSendPayload(BaseModel):
         return cleaned
 
 
-def _serialize_alert(alert: Alert, *, prefer_legacy: bool | None = None) -> dict[str, Any]:
-    prefer_legacy = prefer_legacy if prefer_legacy is not None else bool(
-        getattr(alert, "condition_expression", None)
+def _serialize_alert(
+    alert: Alert, *, prefer_legacy: bool | None = None
+) -> dict[str, Any]:
+    prefer_legacy = (
+        prefer_legacy
+        if prefer_legacy is not None
+        else bool(getattr(alert, "condition_expression", None))
     )
     value = getattr(alert, "value", None)
     condition_expression = getattr(alert, "condition_expression", None)
@@ -104,6 +104,15 @@ def _serialize_alert(alert: Alert, *, prefer_legacy: bool | None = None) -> dict
     return payload
 
 
+def _http_exception_from_validation(exc: ValidationError) -> HTTPException:
+    errors = exc.errors()
+    if errors and all(error.get("type", "") == "value_error" for error in errors):
+        message = "; ".join(error.get("msg", str(exc)) for error in errors) or str(exc)
+        return HTTPException(status.HTTP_400_BAD_REQUEST, detail=message)
+
+    return HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=errors)
+
+
 async def get_current_user(
     credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
 ) -> User:
@@ -148,44 +157,30 @@ async def create_alert(
     payload: dict[str, Any],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> dict[str, Any]:
-    if isinstance(payload.get("condition"), dict):
+    if isinstance(payload.get("condition"), str):
         try:
-            alert_in = AdvancedAlertCreate.model_validate(payload)
-        except ValidationError as exc:  # pragma: no cover - validation mapped to 422
-            raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.errors()) from exc
-
-        try:
-            alert = await asyncio.to_thread(
-                alerts_service.create_alert,
-                current_user.id,
-                alert_in.model_dump(exclude_none=True),
-            )
+            alert_service.validate_condition_expression(payload["condition"])
         except ValueError as exc:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-        return _serialize_alert(alert, prefer_legacy=False)
-
     try:
-        legacy_in = LegacyAlertCreate.model_validate(payload)
+        alert_in = AlertCreate.model_validate(payload)
     except ValidationError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.errors()) from exc
-
-    try:
-        alert = await asyncio.to_thread(
-            user_service.create_alert,
-            current_user.id,
-            title=legacy_in.title,
-            asset=legacy_in.asset or "",
-            value=legacy_in.value,
-            condition=legacy_in.condition,
-            active=legacy_in.active,
-        )
-    except UserNotFoundError as exc:  # pragma: no cover - defensive mapping
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        raise _http_exception_from_validation(exc) from exc
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    return _serialize_alert(alert, prefer_legacy=True)
+    try:
+        service_payload = alert_in.to_service_payload()
+        alert = await asyncio.to_thread(
+            alerts_service.create_alert,
+            current_user.id,
+            service_payload,
+        )
+    except (ValidationError, ValueError) as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return _serialize_alert(alert, prefer_legacy=alert_in.legacy_mode)
 
 
 @router.put("/{alert_id}")
@@ -194,25 +189,31 @@ async def update_alert(
     payload: dict[str, Any],
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> dict[str, Any]:
-    try:
-        update_in = LegacyAlertUpdate.model_validate(payload)
-    except ValidationError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.errors()) from exc
+    if isinstance(payload.get("condition"), str):
+        try:
+            alert_service.validate_condition_expression(payload["condition"])
+        except ValueError as exc:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    updates = update_in.model_dump(exclude_none=True)
     try:
-        alert = await asyncio.to_thread(
-            user_service.update_alert,
-            current_user.id,
-            alert_id,
-            **updates,
-        )
-    except UserNotFoundError as exc:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+        alert_in = AlertUpdate.model_validate(payload)
+    except ValidationError as exc:
+        raise _http_exception_from_validation(exc) from exc
     except ValueError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
-    return _serialize_alert(alert, prefer_legacy=True)
+    try:
+        service_payload = alert_in.to_service_payload()
+        alert = await asyncio.to_thread(
+            alerts_service.update_alert,
+            current_user.id,
+            alert_id,
+            service_payload,
+        )
+    except (ValidationError, ValueError) as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    return _serialize_alert(alert, prefer_legacy=alert_in.legacy_mode)
 
 
 @router.delete("/{alert_id}", status_code=status.HTTP_200_OK)
@@ -221,9 +222,7 @@ async def delete_alert(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> dict[str, str]:
     try:
-        await asyncio.to_thread(
-            alerts_service.delete_alert, current_user.id, alert_id
-        )
+        await asyncio.to_thread(alerts_service.delete_alert, current_user.id, alert_id)
     except ValueError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
 
@@ -234,7 +233,14 @@ async def delete_alert(
 async def delete_all_alerts(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> dict[str, str]:
-    await asyncio.to_thread(user_service.delete_all_alerts_for_user, current_user.id)
+    await asyncio.to_thread(alerts_service.delete_all_alerts_for_user, current_user.id)
+    if user_service is not None and hasattr(user_service, "delete_all_alerts_for_user"):
+        try:
+            await asyncio.to_thread(
+                user_service.delete_all_alerts_for_user, current_user.id
+            )
+        except Exception:  # pragma: no cover - fallback compatibility
+            pass
     return {"message": "Todas las alertas fueron eliminadas exitosamente"}
 
 

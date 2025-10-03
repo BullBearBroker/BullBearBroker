@@ -10,7 +10,7 @@ os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"  # ensure isolated DB f
 if TEST_DB_PATH.exists():
     TEST_DB_PATH.unlink()
 
-import backend.models  # noqa: F401  # ensure all ORM models are registered
+import backend.models as _models  # noqa: F401  # ensure all ORM models are registered
 from backend.database import engine
 from backend.models import Base
 

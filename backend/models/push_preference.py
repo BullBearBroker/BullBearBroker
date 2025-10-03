@@ -41,4 +41,7 @@ class PushNotificationPreference(Base):
     user: Mapped[User] = relationship("User", back_populates="push_preferences")
 
 
-__all__ = ["PushNotificationPreference"]
+PushPreference = PushNotificationPreference
+
+
+__all__ = ["PushNotificationPreference", "PushPreference"]

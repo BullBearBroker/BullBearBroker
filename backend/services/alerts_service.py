@@ -33,13 +33,15 @@ def _describe_condition(condition: Any) -> str:
     if isinstance(condition, dict):
         if "and" in condition:
             parts = [
-                _describe_condition(item) for item in _ensure_sequence(condition.get("and"))
+                _describe_condition(item)
+                for item in _ensure_sequence(condition.get("and"))
             ]
             parts = [part for part in parts if part]
             return " & ".join(parts)
         if "or" in condition:
             parts = [
-                _describe_condition(item) for item in _ensure_sequence(condition.get("or"))
+                _describe_condition(item)
+                for item in _ensure_sequence(condition.get("or"))
             ]
             parts = [part for part in parts if part]
             return " | ".join(parts)
@@ -51,7 +53,8 @@ def _describe_condition(condition: Any) -> str:
         for indicator, payload in condition.items():
             if isinstance(payload, dict):
                 inner_segments = [
-                    f"{indicator} {op} {payload_value!r}" for op, payload_value in sorted(payload.items())
+                    f"{indicator} {op} {payload_value!r}"
+                    for op, payload_value in sorted(payload.items())
                 ]
                 if inner_segments:
                     segments.append(" & ".join(inner_segments))
@@ -86,6 +89,29 @@ def _extract_asset_from_condition(condition: Any) -> str:
             if candidate:
                 return candidate
     return ""
+
+
+def _normalize_asset(value: Any) -> str | None:
+    if value is None:
+        return None
+    asset = str(value).strip().upper()
+    return asset or None
+
+
+def _normalize_title(value: Any) -> str | None:
+    if value is None:
+        return None
+    title = str(value).strip()
+    return title or None
+
+
+def _coerce_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:  # pragma: no cover - defensive
+        raise ValueError("Alert value must be numeric") from exc
 
 
 def _default_alert_name(payload: dict[str, Any]) -> str:
@@ -130,14 +156,20 @@ class ConditionEvaluator:
             raise ValueError("Condition payload must be a JSON object")
 
         if "and" in condition:
-            return all(self.evaluate(item) for item in self._ensure_sequence(condition["and"]))
+            return all(
+                self.evaluate(item) for item in self._ensure_sequence(condition["and"])
+            )
         if "or" in condition:
-            return any(self.evaluate(item) for item in self._ensure_sequence(condition["or"]))
+            return any(
+                self.evaluate(item) for item in self._ensure_sequence(condition["or"])
+            )
         if "not" in condition:
             return not self.evaluate(self._ensure_mapping(condition["not"]))
 
         if len(condition) != 1:
-            raise ValueError("Condition leaves must contain a single indicator definition")
+            raise ValueError(
+                "Condition leaves must contain a single indicator definition"
+            )
 
         indicator, payload = next(iter(condition.items()))
         return self._evaluate_indicator(indicator, self._ensure_mapping(payload))
@@ -244,6 +276,10 @@ class AlertsService:
             name = _default_alert_name(data)
 
         active = bool(data.get("active", True))
+        asset = _normalize_asset(data.get("asset"))
+        title = _normalize_title(data.get("title") or name)
+        condition_expression = _normalize_title(data.get("condition_expression"))
+        value = _coerce_float(data.get("value"))
 
         with self._session_factory() as session:
             alert = Alert(
@@ -254,7 +290,106 @@ class AlertsService:
                 active=active,
                 pending_delivery=True,
             )
+            if asset is not None:
+                alert.asset = asset
+            if title is not None:
+                alert.title = title
+            if condition_expression is not None:
+                alert.condition_expression = condition_expression
+            if value is not None:
+                alert.value = value
             session.add(alert)
+            session.commit()
+            session.refresh(alert)
+            session.expunge(alert)
+            return alert
+
+    def update_alert(
+        self, user_id: UUID, alert_id: UUID, data: dict[str, Any]
+    ) -> Alert:
+        has_condition = "condition" in data
+        condition = data.get("condition") if has_condition else None
+        if has_condition:
+            if not isinstance(condition, dict) or not condition:
+                raise ValueError("Alert condition must be a non-empty JSON object")
+
+        delivery_method: AlertDeliveryMethod | None = None
+        if "delivery_method" in data:
+            delivery_method_raw = (
+                data.get("delivery_method") or AlertDeliveryMethod.PUSH
+            )
+            try:
+                delivery_method = (
+                    delivery_method_raw
+                    if isinstance(delivery_method_raw, AlertDeliveryMethod)
+                    else AlertDeliveryMethod(str(delivery_method_raw))
+                )
+            except ValueError as exc:
+                raise ValueError("Invalid delivery method for alert") from exc
+
+        name: str | None = None
+        if "name" in data:
+            name = str(data.get("name") or "").strip()
+
+        asset = _normalize_asset(data.get("asset")) if "asset" in data else None
+
+        set_title = False
+        title = None
+        if "title" in data:
+            set_title = True
+            title = _normalize_title(data.get("title"))
+        elif "name" in data:
+            set_title = True
+            title = _normalize_title(name)
+
+        condition_expression = (
+            _normalize_title(data.get("condition_expression"))
+            if "condition_expression" in data
+            else None
+        )
+
+        value = _coerce_float(data.get("value")) if "value" in data else None
+        active: bool | None = None
+        if "active" in data:
+            active = bool(data.get("active"))
+
+        with self._session_factory() as session:
+            alert = self._get_alert(session, user_id, alert_id)
+
+            if name is not None:
+                if name:
+                    alert.name = name
+                else:
+                    context = dict(data)
+                    if not has_condition:
+                        context["condition"] = alert.condition
+                    alert.name = _default_alert_name(context)
+
+            if has_condition and condition is not None:
+                alert.condition = condition
+                alert.pending_delivery = True
+
+            if delivery_method is not None:
+                alert.delivery_method = delivery_method
+
+            if active is not None:
+                alert.active = active
+
+            if asset is not None:
+                alert.asset = asset
+
+            if set_title:
+                if title is not None:
+                    alert.title = title
+                elif alert.name:
+                    alert.title = alert.name
+
+            if condition_expression is not None:
+                alert.condition_expression = condition_expression
+
+            if value is not None:
+                alert.value = value
+
             session.commit()
             session.refresh(alert)
             session.expunge(alert)
@@ -264,7 +399,9 @@ class AlertsService:
         with self._session_factory() as session:
             results = (
                 session.execute(
-                    select(Alert).where(Alert.user_id == user_id).order_by(Alert.created_at.asc())
+                    select(Alert)
+                    .where(Alert.user_id == user_id)
+                    .order_by(Alert.created_at.asc())
                 )
                 .scalars()
                 .all()
@@ -287,6 +424,16 @@ class AlertsService:
             alert = self._get_alert(session, user_id, alert_id)
             session.delete(alert)
             session.commit()
+
+    def delete_all_alerts_for_user(self, user_id: UUID) -> int:
+        with self._session_factory() as session:
+            deleted = (
+                session.query(Alert)
+                .where(Alert.user_id == user_id)
+                .delete(synchronize_session=False)
+            )
+            session.commit()
+            return int(deleted)
 
     # ------------------------------------------------------------------
     # Evaluation logic
