@@ -9,6 +9,8 @@ from prometheus_client import CollectorRegistry, Counter
 from starlette.requests import Request
 from starlette.testclient import TestClient
 
+pytest_plugins = ("backend.tests.test_alerts_endpoints",)
+
 os.environ.setdefault("BULLBEAR_SKIP_AUTOCREATE", "1")
 
 from backend.tests._dependency_stubs import ensure as ensure_test_dependencies
