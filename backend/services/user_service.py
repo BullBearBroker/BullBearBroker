@@ -11,6 +11,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import jwt
+import pyotp
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession, selectinload, sessionmaker
@@ -63,6 +64,21 @@ def _as_aware_utc(dt: datetime | None) -> datetime | None:
     if dt.tzinfo is None:
         return dt.replace(tzinfo=UTC)
     return dt.astimezone(UTC)
+
+
+def generate_mfa_secret(length: int = 32) -> str:
+    """Genera un secreto base32 para MFA."""
+
+    return pyotp.random_base32(length=length)
+
+
+def verify_mfa_code(secret: str, code: str) -> bool:
+    """Verifica un código TOTP contra el secreto proporcionado."""
+
+    if not secret or not code:
+        return False
+    totp = pyotp.TOTP(secret)
+    return bool(totp.verify(code, valid_window=1))
 
 
 class UserService:
@@ -301,6 +317,14 @@ class UserService:
 
     def revoke_refresh_token(self, token: str) -> None:
         self._in_memory_refresh_tokens.pop(token, None)
+
+    def revoke_all_tokens(self, user_id: UUID) -> None:
+        """Revoca todos los refresh tokens asociados a un usuario."""
+
+        with SessionLocal() as db:
+            db.query(RefreshToken).filter(RefreshToken.user_id == user_id).delete()
+            db.commit()
+        self.revoke_all_refresh_tokens(user_id)
 
     def rotate_refresh_token(self, token_str: str) -> tuple[User, str, datetime]:
         """Rota un refresh token utilizando almacenamiento en base de datos."""

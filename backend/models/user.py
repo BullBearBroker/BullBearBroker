@@ -5,7 +5,7 @@ from datetime import datetime
 from enum import Enum as PyEnum  # [Codex] nuevo
 from typing import TYPE_CHECKING  # [Codex] cambiado - se usa Optional
 
-from sqlalchemy import DateTime, Enum, String  # [Codex] cambiado - se añade Enum
+from sqlalchemy import Boolean, DateTime, Enum, String  # [Codex] cambiado - se añade Enum
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -55,6 +55,8 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
+    mfa_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    mfa_secret: Mapped[str | None] = mapped_column(String, nullable=True)
 
     alerts: Mapped[list[Alert]] = relationship(
         "Alert", back_populates="user", cascade="all, delete-orphan"
