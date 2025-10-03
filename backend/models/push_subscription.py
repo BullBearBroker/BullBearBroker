@@ -1,43 +1,27 @@
-"""Model definition for browser push notification subscriptions."""
-
-from __future__ import annotations
-
 import uuid
-from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint
-from sqlalchemy.dialects.postgresql import UUID as PGUUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import Column, DateTime, ForeignKey, String
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
 
-if TYPE_CHECKING:
-    from backend.models.user import User
-
-try:  # pragma: no cover - compatibility with different import paths
+try:  # pragma: no cover - compatibilidad con distintos puntos de entrada
     from .base import Base
 except ImportError:  # pragma: no cover
     from backend.models.base import Base  # type: ignore[no-redef]
 
+if TYPE_CHECKING:
+    from backend.models.user import User
 
 class PushSubscription(Base):
-    """Stores a Web Push subscription for a user."""
-
     __tablename__ = "push_subscriptions"
-    __table_args__ = (
-        UniqueConstraint("endpoint", name="uq_push_subscriptions_endpoint"),
-    )
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
-    )
-    endpoint: Mapped[str] = mapped_column(String(500), nullable=False)
-    auth: Mapped[str] = mapped_column(String(255), nullable=False)
-    p256dh: Mapped[str] = mapped_column(String(255), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=datetime.utcnow, nullable=False
-    )
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    endpoint = Column(String, nullable=False, unique=True)
+    auth = Column(String, nullable=False)
+    p256dh = Column(String, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    user: Mapped[User] = relationship("User", back_populates="push_subscriptions")
+    user = relationship("User", back_populates="push_subscriptions")

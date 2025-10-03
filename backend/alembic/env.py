@@ -33,6 +33,12 @@ if not database_url:
 # Inyecta la URL en la config activa (para offline y online)
 config.set_main_option("sqlalchemy.url", database_url)
 
+if database_url.startswith("sqlite"):
+    from sqlalchemy.dialects.postgresql import UUID as PGUUID
+    from sqlalchemy.dialects.sqlite import base as sqlite_base
+
+    sqlite_base.dialect.colspecs[PGUUID] = sa.types.String
+
 # Metadata objetivo para autogenerate
 target_metadata = Base.metadata
 

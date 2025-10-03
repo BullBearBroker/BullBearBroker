@@ -58,32 +58,7 @@ def upgrade() -> None:
         ["session_id", "created_at"],
     )
 
-    op.create_table(
-        "push_subscriptions",
-        sa.Column(
-            "id",
-            postgresql.UUID(as_uuid=True),
-            server_default=sa.text("gen_random_uuid()"),
-            primary_key=True,
-        ),
-        sa.Column(
-            "user_id",
-            postgresql.UUID(as_uuid=True),
-            sa.ForeignKey("users.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-        sa.Column("endpoint", sa.String(length=500), nullable=False),
-        sa.Column("auth", sa.String(length=255), nullable=False),
-        sa.Column("p256dh", sa.String(length=255), nullable=False),
-        sa.Column(
-            "created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False
-        ),
-        sa.UniqueConstraint("endpoint", name="uq_push_subscriptions_endpoint"),
-    )
-
-
 def downgrade() -> None:
-    op.drop_table("push_subscriptions")
     op.drop_index("ix_chat_messages_session_created", table_name="chat_messages")
     op.drop_table("chat_messages")
     op.drop_table("chat_sessions")
