@@ -21,14 +21,8 @@ from backend.tests.test_alerts_endpoints import (  # noqa: E402
     DummyUserService,
     _auth_header,
     _register_and_login,
-    client as async_client_fixture,
     dummy_user_service,
 )
-
-
-@pytest.fixture(name="client")
-def _client_fixture(async_client_fixture):  # noqa: ANN001
-    return async_client_fixture
 
 
 @pytest.mark.asyncio
