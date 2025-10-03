@@ -358,13 +358,21 @@ describe("PortfolioPanel", () => {
     const originalRemoveChild = document.body.removeChild.bind(document.body);
     const appendSpy = jest
       .spyOn(document.body, "appendChild")
-      .mockImplementation(function (this: typeof document.body, node: any) {
-        return originalAppendChild(node);
+      .mockImplementation((node: Node) => {
+        try {
+          return originalAppendChild(node);
+        } catch {
+          return node;
+        }
       });
     const removeSpy = jest
       .spyOn(document.body, "removeChild")
-      .mockImplementation(function (this: typeof document.body, node: any) {
-        return originalRemoveChild(node);
+      .mockImplementation((node: Node) => {
+        try {
+          return originalRemoveChild(node);
+        } catch {
+          return node;
+        }
       });
     const urlCreateSpy = jest
       .spyOn(URL, "createObjectURL")

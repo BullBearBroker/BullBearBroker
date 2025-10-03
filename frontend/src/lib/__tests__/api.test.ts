@@ -68,14 +68,16 @@ describe("request", () => {
     (global.fetch as jest.Mock).mockResolvedValue({
       ok: false,
       status: 500,
-      json: jest.fn().mockResolvedValue({ detail: "Fallo interno" }),
+      json: jest.fn(),
       statusText: "Internal Server Error",
-      text: jest.fn(),
-      headers: new Headers(),
+      text: jest
+        .fn()
+        .mockResolvedValue(JSON.stringify({ detail: "Fallo interno" })),
+      headers: new Headers({ "Content-Type": "application/json" }),
     });
 
     await expect(request("/demo", { method: "GET" })).rejects.toThrow(
-      "Internal Server Error"
+      "Fallo interno"
     );
   });
 
@@ -112,14 +114,16 @@ describe("request", () => {
     (global.fetch as jest.Mock).mockResolvedValue({
       ok: false,
       status: 422,
-      json: jest.fn().mockResolvedValue({ message: "Mensaje amigable" }),
+      json: jest.fn(),
       statusText: "Unprocessable Entity",
-      text: jest.fn(),
-      headers: new Headers(),
+      text: jest
+        .fn()
+        .mockResolvedValue(JSON.stringify({ message: "Mensaje amigable" })),
+      headers: new Headers({ "Content-Type": "application/json" }),
     });
 
     await expect(request("/demo", { method: "GET" })).rejects.toThrow(
-      "Unprocessable Entity"
+      "Mensaje amigable"
     );
   });
 
@@ -127,13 +131,17 @@ describe("request", () => {
     (global.fetch as jest.Mock).mockResolvedValue({
       ok: false,
       status: 409,
-      json: jest.fn().mockResolvedValue({ detail: { code: "duplicated" } }),
+      json: jest.fn(),
       statusText: "Conflict",
-      text: jest.fn(),
-      headers: new Headers(),
+      text: jest
+        .fn()
+        .mockResolvedValue(JSON.stringify({ detail: { code: "duplicated" } })),
+      headers: new Headers({ "Content-Type": "application/json" }),
     });
 
-    await expect(request("/demo", { method: "GET" })).rejects.toThrow("Conflict");
+    await expect(request("/demo", { method: "GET" })).rejects.toThrow(
+      "Request failed with status 409"
+    );
   });
 });
 
