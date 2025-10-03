@@ -18,9 +18,10 @@ src = ["backend"]
 extend-exclude = [".venv"]
 
 [tool.ruff.lint]
-extend-select = ["I"]
-select = ["E", "F", "I", "UP", "B", "SIM", "PIE"]
+# mueve aquí lo que hoy tienes como "ignore" y "select"
 ignore = []
+select = ["E", "F", "I", "UP", "B", "SIM", "PIE"]
+extend-select = ["I"]
 
 [tool.ruff.format]
 indent-style = "space"
