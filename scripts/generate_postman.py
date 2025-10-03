@@ -4,14 +4,11 @@ import json
 import sys
 from pathlib import Path
 
+from backend.main import app
 from fastapi.openapi.utils import get_openapi
 
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    # Allow importing the backend package when running the script directly.
-    sys.path.insert(0, str(ROOT))
-
-from backend.main import app  # si no existe aquí, ajusta a la ruta real sin romper el proyecto
+sys.path.insert(0, str(ROOT))
 
 def export_openapi(dest: Path) -> dict:
     schema = get_openapi(

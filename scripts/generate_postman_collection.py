@@ -9,16 +9,14 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any, Dict, List
 
+from backend.main import app
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT_DIR))
+
 os.environ.setdefault("ENV", "testing")
 os.environ.setdefault("TESTING", "True")
 os.environ.setdefault("BULLBEAR_SKIP_AUTOCREATE", "1")
-
-ROOT_DIR = Path(__file__).resolve().parents[1]
-if str(ROOT_DIR) not in sys.path:
-    # Ensure the backend package can be imported when invoking the script directly.
-    sys.path.insert(0, str(ROOT_DIR))
-
-from backend.main import app
 
 def _build_url(path: str) -> Dict[str, Any]:
     parts = [segment for segment in path.strip("/").split("/") if segment]
