@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Iterable
+from typing import Any, Iterable, Mapping, Sequence
+
+__all__ = [
+    "calculate_atr",
+    "calculate_rsi",
+    "calculate_ichimoku",
+    "calculate_vwap",
+]
 
 
 def _ensure_positive_period(period: int) -> None:
@@ -10,23 +17,45 @@ def _ensure_positive_period(period: int) -> None:
         raise ValueError("El periodo debe ser un entero positivo")
 
 
-def calculate_atr(prices: list[dict], period: int = 14) -> float:
+def _normalize_candles(prices: Sequence[Mapping[str, Any]]) -> list[dict[str, float]]:
+    """Ensure the incoming candle payload contains the fields we need."""
+
+    normalized: list[dict[str, float]] = []
+    for index, candle in enumerate(prices):
+        if not isinstance(candle, Mapping):
+            raise ValueError("Cada vela debe ser un mapping con 'high', 'low' y 'close'")
+        try:
+            high = float(candle["high"])
+            low = float(candle["low"])
+            close = float(candle["close"])
+        except KeyError as exc:  # pragma: no cover - defensive branch
+            raise ValueError("Cada vela debe incluir 'high', 'low' y 'close'") from exc
+        except (TypeError, ValueError) as exc:  # pragma: no cover - defensive branch
+            raise ValueError(
+                f"Los valores de las velas deben ser numéricos (índice {index})"
+            ) from exc
+
+        normalized.append({"high": high, "low": low, "close": close})
+
+    return normalized
+
+
+def calculate_atr(prices: Sequence[Mapping[str, Any]], period: int = 14) -> float:
     """Calculate the Average True Range using high/low/close candles."""
 
     _ensure_positive_period(period)
     if not prices:
         raise ValueError("Se requieren datos de precios para calcular el ATR")
 
+    candles = _normalize_candles(prices)
+
     true_ranges: list[float] = []
     previous_close: float | None = None
 
-    for candle in prices:
-        try:
-            high = float(candle["high"])
-            low = float(candle["low"])
-            close = float(candle["close"])
-        except (KeyError, TypeError, ValueError) as exc:  # pragma: no cover - defensive
-            raise ValueError("Cada vela debe incluir 'high', 'low' y 'close'") from exc
+    for candle in candles:
+        high = candle["high"]
+        low = candle["low"]
+        close = candle["close"]
 
         if previous_close is None:
             tr = high - low
@@ -35,21 +64,19 @@ def calculate_atr(prices: list[dict], period: int = 14) -> float:
         true_ranges.append(tr)
         previous_close = close
 
-    if not true_ranges:
-        raise ValueError("No se pudieron calcular rangos verdaderos para el ATR")
-
     window = min(period, len(true_ranges))
     return sum(true_ranges[-window:]) / window
 
 
-def calculate_rsi(prices: list[float], period: int = 14) -> float:
+def calculate_rsi(prices: Sequence[float], period: int = 14) -> float:
     """Compute the Relative Strength Index for a series of closing prices."""
 
     _ensure_positive_period(period)
-    if len(prices) < 2:
+    price_series = [float(price) for price in prices]
+    if len(price_series) < 2:
         raise ValueError("Se requieren al menos dos precios para calcular el RSI")
 
-    changes = [prices[i] - prices[i - 1] for i in range(1, len(prices))]
+    changes = [price_series[i] - price_series[i - 1] for i in range(1, len(price_series))]
     effective_period = min(period, len(changes))
 
     gains = [max(change, 0.0) for change in changes[:effective_period]]
@@ -87,14 +114,15 @@ def _midpoint(highs: Iterable[float], lows: Iterable[float]) -> float:
     return (max(highs_list) + min(lows_list)) / 2
 
 
-def calculate_ichimoku(prices: list[dict]) -> dict[str, float]:
+def calculate_ichimoku(prices: Sequence[Mapping[str, Any]]) -> dict[str, float]:
     """Return Tenkan-sen, Kijun-sen and Senkou spans for the given candles."""
 
     if not prices:
         raise ValueError("Se requieren velas para calcular Ichimoku")
 
-    highs = [float(candle["high"]) for candle in prices]
-    lows = [float(candle["low"]) for candle in prices]
+    candles = _normalize_candles(prices)
+    highs = [candle["high"] for candle in candles]
+    lows = [candle["low"] for candle in candles]
 
     tenkan_period = min(9, len(highs))
     kijun_period = min(26, len(highs))
@@ -113,7 +141,7 @@ def calculate_ichimoku(prices: list[dict]) -> dict[str, float]:
     }
 
 
-def calculate_vwap(prices: list[float], volumes: list[float]) -> float:
+def calculate_vwap(prices: Sequence[float], volumes: Sequence[float]) -> float:
     """Compute the Volume Weighted Average Price for a price/volume series."""
 
     if not prices or not volumes:
@@ -124,8 +152,9 @@ def calculate_vwap(prices: list[float], volumes: list[float]) -> float:
     weighted_sum = 0.0
     volume_total = 0.0
     for price, volume in zip(prices, volumes, strict=False):
+        price_float = float(price)
         volume_float = float(volume)
-        weighted_sum += float(price) * volume_float
+        weighted_sum += price_float * volume_float
         volume_total += volume_float
 
     if volume_total == 0:

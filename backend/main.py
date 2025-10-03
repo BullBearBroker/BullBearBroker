@@ -181,6 +181,10 @@ OPENAPI_TAGS = [
         "description": "Suscripciones y preferencias de notificaciones push.",
     },
     {
+        "name": "indicators",
+        "description": "Cálculo de indicadores técnicos basados en datos OHLCV.",
+    },
+    {
         "name": "portfolio",
         "description": "Importación, exportación y consulta de portafolios.",
     },
