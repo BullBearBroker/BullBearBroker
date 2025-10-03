@@ -27,6 +27,10 @@ ignore = ["E501"]
 select = ["E", "F", "B", "UP", "SIM", "I"]
 extend-select = ["I"]
 
+[tool.ruff.lint.per-file-ignores]
+"backend/tests/*" = ["E402"]
+"scripts/*" = ["E402"]
+
 [tool.ruff.format]
 indent-style = "space"
 quote-style = "double"
