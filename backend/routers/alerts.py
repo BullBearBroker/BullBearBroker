@@ -294,12 +294,16 @@ async def send_alert_notification(
 async def _dispatch_alert_rate_limit(request: Request, response: Response) -> None:
     del response  # el helper replica la firma del dependency original
     client_ip = request.client.host if request.client else "testclient"
-    await rate_limiter.record_hit(
-        key="alerts:dispatch",
-        client_ip=client_ip,
-        weight=1,
-        detail="Demasiadas solicitudes de envío de alertas",
-    )
+    try:
+        await rate_limiter.record_hit(
+            key="alerts:dispatch",
+            client_ip=client_ip,
+            weight=1,
+            detail="Demasiadas solicitudes de envío de alertas",
+        )
+    except HTTPException:
+        _record_alert_rate_limit(request, action="dispatch")
+        raise
 
 
 __all__ = [
