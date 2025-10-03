@@ -24,11 +24,6 @@ from backend.tests.test_alerts_endpoints import (  # noqa: E402
 )
 
 
-@pytest.fixture(name="client")
-def _client_fixture(async_client_fixture):  # noqa: ANN001
-    return async_client_fixture
-
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "payload,expected_status",

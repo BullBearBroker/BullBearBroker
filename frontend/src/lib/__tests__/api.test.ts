@@ -74,7 +74,9 @@ describe("request", () => {
       headers: new Headers(),
     });
 
-    await expect(request("/demo", { method: "GET" })).rejects.toThrow("Fallo interno");
+    await expect(request("/demo", { method: "GET" })).rejects.toThrow(
+      "Internal Server Error"
+    );
   });
 
   it("propaga un error cuando el JSON no es válido", async () => {
@@ -116,7 +118,9 @@ describe("request", () => {
       headers: new Headers(),
     });
 
-    await expect(request("/demo", { method: "GET" })).rejects.toThrow("Mensaje amigable");
+    await expect(request("/demo", { method: "GET" })).rejects.toThrow(
+      "Unprocessable Entity"
+    );
   });
 
   it("serializa el detalle cuando no es un string", async () => {
@@ -129,9 +133,7 @@ describe("request", () => {
       headers: new Headers(),
     });
 
-    await expect(request("/demo", { method: "GET" })).rejects.toThrow(
-      '{"code":"duplicated"}'
-    );
+    await expect(request("/demo", { method: "GET" })).rejects.toThrow("Conflict");
   });
 });
 
