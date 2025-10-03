@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 
+os.environ.setdefault("TESTING", "1")
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient

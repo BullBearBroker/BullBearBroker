@@ -106,11 +106,36 @@ def _serialize_alert(
 
 def _http_exception_from_validation(exc: ValidationError) -> HTTPException:
     errors = exc.errors()
-    if errors and all(error.get("type", "") == "value_error" for error in errors):
-        message = "; ".join(error.get("msg", str(exc)) for error in errors) or str(exc)
-        return HTTPException(status.HTTP_400_BAD_REQUEST, detail=message)
+    if errors:
+        error_types = {error.get("type", "") for error in errors}
+        messages = {error.get("msg", "") for error in errors}
+        if any(
+            "conditions debe tener al menos 1 condición" in message
+            for message in messages
+        ):
+            return HTTPException(
+                status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="conditions debe tener al menos 1 condición",
+            )
+
+        if "float_parsing" in error_types:
+            return HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=errors)
+
+        if all(error_type == "value_error" for error_type in error_types):
+            message = "; ".join(messages) or str(exc)
+            return HTTPException(status.HTTP_400_BAD_REQUEST, detail=message)
 
     return HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=errors)
+
+
+def _http_exception_from_value_error(exc: ValueError) -> HTTPException:
+    detail = str(exc)
+    if detail in {
+        "conditions debe tener al menos 1 condición",
+        "value debe ser numérico",
+    }:
+        return HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, detail=detail)
+    return HTTPException(status.HTTP_400_BAD_REQUEST, detail=detail)
 
 
 async def get_current_user(
@@ -168,7 +193,7 @@ async def create_alert(
     except ValidationError as exc:
         raise _http_exception_from_validation(exc) from exc
     except ValueError as exc:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+        raise _http_exception_from_value_error(exc) from exc
 
     try:
         service_payload = alert_in.to_service_payload()
@@ -178,7 +203,33 @@ async def create_alert(
             service_payload,
         )
     except (ValidationError, ValueError) as exc:
+        if isinstance(exc, ValueError):
+            raise _http_exception_from_value_error(exc) from exc
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+
+    if alert_in.legacy_mode and user_service is not None:
+        create_alert = getattr(user_service, "create_alert", None)
+        if callable(create_alert):
+            title = alert_in.title or alert_in.name or service_payload.get("name", "")
+            asset = alert_in.asset or service_payload.get("asset") or ""
+            try:
+                await asyncio.to_thread(
+                    create_alert,
+                    current_user.id,
+                    title=title,
+                    asset=asset,
+                    value=alert_in.value,
+                    condition=alert_in.legacy_operator or ">",
+                    active=alert_in.active,
+                )
+            except Exception as exc:  # pragma: no cover - legacy fallback best-effort
+                log_event(
+                    logger,
+                    service="alerts_router",
+                    event="legacy_alert_sync_failed",
+                    level="warning",
+                    error=str(exc),
+                )
 
     return _serialize_alert(alert, prefer_legacy=alert_in.legacy_mode)
 
@@ -294,12 +345,16 @@ async def send_alert_notification(
 async def _dispatch_alert_rate_limit(request: Request, response: Response) -> None:
     del response  # el helper replica la firma del dependency original
     client_ip = request.client.host if request.client else "testclient"
-    await rate_limiter.record_hit(
-        key="alerts:dispatch",
-        client_ip=client_ip,
-        weight=1,
-        detail="Demasiadas solicitudes de envío de alertas",
-    )
+    try:
+        await rate_limiter.record_hit(
+            key="alerts:dispatch",
+            client_ip=client_ip,
+            weight=1,
+            detail="Demasiadas solicitudes de envío de alertas",
+        )
+    except HTTPException:
+        _record_alert_rate_limit(request, action="dispatch")
+        raise
 
 
 __all__ = [

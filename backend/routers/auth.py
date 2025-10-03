@@ -246,7 +246,7 @@ async def login(
 ) -> TokenPair:
     start = time.perf_counter()
     limited_email = bool(getattr(request.state, "login_limited_email", False))
-    limited_ip = False
+    limited_ip = bool(getattr(request.state, "login_limited_ip", False))
     email_hash = getattr(request.state, "login_email_hash", None)
     normalized_email = credentials.email.strip().lower()
     if not email_hash:
