@@ -1,19 +1,22 @@
 from __future__ import annotations
 
-from datetime import datetime
 import uuid
+from datetime import datetime
 from enum import Enum as PyEnum  # [Codex] nuevo
-from typing import TYPE_CHECKING, Optional  # [Codex] cambiado - se usa Optional
+from typing import TYPE_CHECKING  # [Codex] cambiado - se usa Optional
 
 from sqlalchemy import DateTime, Enum, String  # [Codex] cambiado - se añade Enum
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 if TYPE_CHECKING:
-    from .refresh_token import RefreshToken
-    from .portfolio import PortfolioItem
+    from .alert import Alert
     from .chat import ChatSession
+    from .portfolio import PortfolioItem
+    from .push_preference import PushNotificationPreference
     from .push_subscription import PushSubscription
+    from .refresh_token import RefreshToken
+    from .session import Session
 
 try:  # pragma: no cover
     from .base import Base
@@ -43,35 +46,43 @@ class User(Base):
     )
     email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
-    risk_profile: Mapped[Optional[str]] = mapped_column(  # [Codex] nuevo
+    risk_profile: Mapped[str | None] = mapped_column(  # [Codex] nuevo
         Enum(RiskProfile, name="risk_profile_enum", native_enum=False), nullable=True
     )
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, nullable=False
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
 
-    alerts: Mapped[list["Alert"]] = relationship(
+    alerts: Mapped[list[Alert]] = relationship(
         "Alert", back_populates="user", cascade="all, delete-orphan"
     )
-    sessions: Mapped[list["Session"]] = relationship(
+    sessions: Mapped[list[Session]] = relationship(
         "Session", back_populates="user", cascade="all, delete-orphan"
     )
-    refresh_tokens: Mapped[list["RefreshToken"]] = relationship(
+    refresh_tokens: Mapped[list[RefreshToken]] = relationship(
         "RefreshToken",
         back_populates="user",
         cascade="all, delete-orphan",
     )
-    portfolio_items: Mapped[list["PortfolioItem"]] = relationship(
+    portfolio_items: Mapped[list[PortfolioItem]] = relationship(
         "PortfolioItem",
         back_populates="user",
         cascade="all, delete-orphan",
     )
-    chat_sessions: Mapped[list["ChatSession"]] = relationship(
+    chat_sessions: Mapped[list[ChatSession]] = relationship(
         "ChatSession", back_populates="user", cascade="all, delete-orphan"
     )
-    push_subscriptions: Mapped[list["PushSubscription"]] = relationship(
+    push_subscriptions: Mapped[list[PushSubscription]] = relationship(
         "PushSubscription", back_populates="user", cascade="all, delete-orphan"
+    )
+    push_preferences: Mapped[PushNotificationPreference | None] = relationship(
+        "PushNotificationPreference",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        uselist=False,
     )
 
     def verify_password(self, password: str) -> bool:

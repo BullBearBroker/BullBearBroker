@@ -8,7 +8,18 @@
     "dev": "npm --prefix frontend run dev",
     "backend": "cd backend && python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
     "test": "npm --prefix frontend run test",
-    "build": "npm --prefix frontend run build"
+    "build": "npm --prefix frontend run build",
+    "test:frontend": "pnpm --prefix frontend test:dev",
+    "test:frontend:list": "pnpm --prefix frontend test:dev --listTests",
+    "test:frontend:paths": "pnpm --prefix frontend test:dev -- --runTestsByPath src/app/__tests__/portfolio-page.test.tsx src/components/portfolio/__tests__/PortfolioPanel.test.tsx",
+    "test:backend": "pytest backend",
+    "test:backend:cov": "pytest --cov=backend --cov-report=term-missing backend",
+    "lint": "pnpm lint:backend && pnpm lint:frontend",
+    "lint:backend": "cd backend && ruff check . && black --check . && isort --check-only .",
+    "lint:frontend": "pnpm --prefix frontend lint && pnpm --prefix frontend prettier:check",
+    "format": "pnpm format:backend && pnpm format:frontend",
+    "format:backend": "cd backend && ruff check --fix . && isort . && black .",
+    "format:frontend": "pnpm --prefix frontend format"
   },
   "keywords": [
     "finance",

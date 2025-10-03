@@ -1,7 +1,5 @@
 import uuid
-import uuid
 from dataclasses import dataclass
-from typing import Optional
 
 import pytest
 import pytest_asyncio
@@ -14,10 +12,14 @@ from backend.tests._dependency_stubs import ensure as ensure_test_dependencies
 
 ensure_test_dependencies()
 
-from backend.main import app
-from backend.models import Base, User, PortfolioItem  # noqa: F401 - ensure table registration
-from backend.routers import portfolio as portfolio_router
-from backend.services.portfolio_service import PortfolioService
+from backend.main import app  # noqa: E402
+from backend.models import (  # noqa: F401, E402 - ensure table registration
+    Base,
+    PortfolioItem,
+    User,
+)
+from backend.routers import portfolio as portfolio_router  # noqa: E402
+from backend.services.portfolio_service import PortfolioService  # noqa: E402
 
 
 @dataclass
@@ -67,7 +69,7 @@ class StubPortfolioService(PortfolioService):
         super().__init__(session_factory=session_factory)
         self._prices = {"BTCUSDT": 50000.0, "AAPL": 180.0, "EURUSD": 1.1}
 
-    async def _resolve_price(self, symbol: str) -> Optional[float]:
+    async def _resolve_price(self, symbol: str) -> float | None:
         return self._prices.get(symbol.strip().upper())
 
 
@@ -133,3 +135,44 @@ async def test_portfolio_crud_and_summary(
     assert len(remaining["items"]) == 1
     assert remaining["items"][0]["symbol"] == "AAPL"
     assert pytest.approx(remaining["total_value"], rel=1e-3) == 1800.0
+
+
+@pytest.mark.asyncio()
+async def test_portfolio_export_returns_csv(client: AsyncClient) -> None:
+    headers = {"Authorization": "Bearer valid-token"}
+
+    await client.post(
+        "/api/portfolio",
+        json={"symbol": "BTCUSDT", "amount": 1},
+        headers=headers,
+    )
+
+    response = await client.get("/api/portfolio/export", headers=headers)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/csv")
+    assert "BTCUSDT" in response.text
+
+
+@pytest.mark.asyncio()
+async def test_portfolio_import_creates_items_and_reports_errors(
+    client: AsyncClient,
+) -> None:
+    headers = {"Authorization": "Bearer valid-token"}
+
+    payload = "symbol,amount\nETHUSDT,2\n,0\nAAPL,not-a-number\n"
+    response = await client.post(
+        "/api/portfolio/import",
+        headers=headers,
+        files={"file": ("portfolio.csv", payload, "text/csv")},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["created"] == 1
+    assert any(error["row"] == 3 for error in body["errors"])
+    assert any("numérica" in error["message"] for error in body["errors"])
+
+    listing = await client.get("/api/portfolio", headers=headers)
+    assert listing.status_code == 200
+    items = listing.json()["items"]
+    assert any(item["symbol"] == "ETHUSDT" for item in items)

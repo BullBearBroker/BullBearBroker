@@ -3,17 +3,15 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
-from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
 
 
 class AlertBase(BaseModel):
     title: str = Field(..., max_length=255)
-    asset: Optional[str] = Field(None, max_length=50)
+    asset: str | None = Field(None, max_length=50)
     condition: str = Field(..., description="Expresión condicional en formato libre")
-    value: Optional[float] = Field(None, description="Valor numérico auxiliar")
+    value: float | None = Field(None, description="Valor numérico auxiliar")
     active: bool = Field(True, description="Indica si la alerta está activa")
 
     @field_validator("title")
@@ -33,7 +31,7 @@ class AlertBase(BaseModel):
 
     @field_validator("asset")
     @classmethod
-    def _normalize_asset(cls, value: Optional[str]) -> Optional[str]:
+    def _normalize_asset(cls, value: str | None) -> str | None:
         if value is None:
             return value
         cleaned = value.strip()
@@ -45,15 +43,15 @@ class AlertCreate(AlertBase):
 
 
 class AlertUpdate(BaseModel):
-    title: Optional[str] = Field(None, max_length=255)
-    asset: Optional[str] = Field(None, max_length=50)
-    condition: Optional[str] = Field(None)
-    value: Optional[float] = None
-    active: Optional[bool] = None
+    title: str | None = Field(None, max_length=255)
+    asset: str | None = Field(None, max_length=50)
+    condition: str | None = Field(None)
+    value: float | None = None
+    active: bool | None = None
 
     @field_validator("condition")
     @classmethod
-    def _normalize_condition(cls, value: Optional[str]) -> Optional[str]:
+    def _normalize_condition(cls, value: str | None) -> str | None:
         if value is None:
             return value
         cleaned = value.strip()
@@ -63,7 +61,7 @@ class AlertUpdate(BaseModel):
 
     @field_validator("asset")
     @classmethod
-    def _normalize_asset(cls, value: Optional[str]) -> Optional[str]:
+    def _normalize_asset(cls, value: str | None) -> str | None:
         if value is None:
             return value
         cleaned = value.strip()
@@ -71,7 +69,7 @@ class AlertUpdate(BaseModel):
 
     @field_validator("title")
     @classmethod
-    def _normalize_title(cls, value: Optional[str]) -> Optional[str]:
+    def _normalize_title(cls, value: str | None) -> str | None:
         if value is None:
             return value
         cleaned = value.strip()
@@ -91,7 +89,7 @@ class AlertResponse(BaseModel):
     updated_at: datetime
 
     @classmethod
-    def from_orm(cls, alert) -> "AlertResponse":
+    def from_orm(cls, alert) -> AlertResponse:
         return cls(
             id=str(alert.id),
             title=getattr(alert, "title", ""),
@@ -110,7 +108,7 @@ class AlertListItem(AlertResponse):
 
 class AlertSuggestionPayload(BaseModel):
     asset: str
-    interval: Optional[str] = "1h"
+    interval: str | None = "1h"
 
     @field_validator("asset")
     @classmethod
@@ -123,7 +121,7 @@ class AlertSuggestionPayload(BaseModel):
 
 class AlertSuggestionResult(BaseModel):
     suggestion: str
-    notes: Optional[str] = None
+    notes: str | None = None
 
 
 __all__ = [

@@ -2,15 +2,135 @@
 
 from __future__ import annotations
 
-import logging
+import importlib
 import os
-from typing import Generator
+from collections.abc import Callable, Generator
 
-from sqlalchemy import create_engine, inspect, text  # [Codex] cambiado - inspección de columnas
+from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
+from backend.core.logging_config import get_logger
 from backend.models.base import Base
-from backend.utils.config import ENV
+from backend.utils.config import Config
+
+logger = get_logger(service="database")
+
+
+def _current_env() -> str:
+    """Return the active environment name following ENV precedence rules."""
+
+    for env_var in ("ENV", "ENVIRONMENT"):
+        value = os.getenv(env_var)
+        if value:
+            return value
+    return "local"
+
+
+def _resolve_risk_profile_backfill() -> Callable[[object], None] | None:
+    """Return the risk profile backfill callable if it exists."""
+
+    # Prefer a function already loaded in the module namespace to avoid re-imports.
+    for attr_name in ("run_risk_profile_backfill", "backfill_risk_profiles"):
+        candidate = globals().get(attr_name)
+        if callable(candidate):
+            return candidate  # pragma: no cover - depends on runtime availability
+
+    module_candidates = (
+        ("backend.database_backfill", "run_risk_profile_backfill"),
+        ("backend.database_backfill", "backfill_risk_profiles"),
+        ("backend.migrations.risk_profile_backfill", "run_risk_profile_backfill"),
+        ("backend.migrations.risk_profile_backfill", "backfill_risk_profiles"),
+    )
+
+    for module_name, attr_name in module_candidates:
+        try:
+            module = importlib.import_module(module_name)
+        except ModuleNotFoundError:  # pragma: no cover - optional dependency
+            continue
+        except Exception:  # pragma: no cover - defensively ignore import issues
+            continue
+
+        candidate = getattr(module, attr_name, None)
+        if callable(candidate):
+            return candidate
+
+    return None
+
+
+def create_all_if_local(engine) -> None:
+    """Create database objects only when running in a local environment."""
+
+    env = _current_env()
+    if env != "local":
+        logger.warning(
+            {
+                "service": "database",
+                "event": "database_autocreate_skipped",
+                "env": env,
+                "level": "warning",
+            }
+        )
+        return
+
+    if os.getenv("BULLBEAR_SKIP_AUTOCREATE"):
+        logger.info(
+            {
+                "service": "database",
+                "event": "database_autocreate_skipped",
+                "env": env,
+                "level": "info",
+            }
+        )
+        return
+
+    try:
+        Base.metadata.create_all(bind=engine)
+    except Exception as error:  # pragma: no cover - defensive logging
+        logger.warning(
+            {
+                "service": "database",
+                "event": "database_autocreate_failed",
+                "env": "local",
+                "error": str(error),
+                "level": "warning",
+            }
+        )
+        logger.warning(
+            {
+                "service": "app",
+                "event": "database_setup_error",
+                "error": str(error),
+                "level": "warning",
+            }
+        )
+        return
+
+    logger.info(
+        {
+            "service": "database",
+            "event": "database_autocreate_executed",
+            "env": "local",
+            "level": "info",
+        }
+    )
+
+    backfill = _resolve_risk_profile_backfill()
+    if backfill is None:
+        return
+
+    try:
+        backfill(engine)
+    except Exception as error:  # pragma: no cover - logging only
+        logger.error(
+            {
+                "service": "database",
+                "event": "risk_profile_migration_failed",
+                "env": "local",
+                "error": str(error),
+                "level": "error",
+            }
+        )
+
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./bullbearbroker.db")
 
@@ -18,29 +138,17 @@ connect_args = {}
 if DATABASE_URL.startswith("sqlite"):
     connect_args["check_same_thread"] = False
 
-engine = create_engine(DATABASE_URL, future=True, echo=False, connect_args=connect_args)
+engine_kwargs = {"future": True, "echo": False, "connect_args": connect_args}
+if not DATABASE_URL.startswith("sqlite"):
+    engine_kwargs.update(
+        pool_size=int(getattr(Config, "DB_POOL_SIZE", 5)),
+        max_overflow=int(getattr(Config, "DB_MAX_OVERFLOW", 10)),
+        pool_recycle=int(getattr(Config, "DB_POOL_RECYCLE", 1800)),
+        pool_timeout=int(getattr(Config, "DB_POOL_TIMEOUT", 30)),
+    )
+engine = create_engine(DATABASE_URL, **engine_kwargs)
+create_all_if_local(engine)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, future=True)
-
-LOGGER = logging.getLogger(__name__)
-
-should_autocreate = ENV == "local" and os.environ.get("BULLBEAR_SKIP_AUTOCREATE", "0") != "1"
-
-if should_autocreate:
-    try:
-        Base.metadata.create_all(bind=engine)
-        inspector = inspect(engine)  # [Codex] nuevo - verificación de columnas adicionales
-        if "users" in inspector.get_table_names():
-            existing_columns = {col["name"] for col in inspector.get_columns("users")}
-            if "risk_profile" not in existing_columns:
-                with engine.begin() as connection:
-                    connection.execute(
-                        text("ALTER TABLE users ADD COLUMN IF NOT EXISTS risk_profile VARCHAR(20)")
-                    )
-        LOGGER.info("database_autocreate_complete", env=ENV)
-    except Exception as exc:  # pragma: no cover - logging manual para depurar entornos sin DB
-        LOGGER.error("database_autocreate_failed", error=str(exc))
-else:
-    LOGGER.debug("database_autocreate_skipped", env=ENV)
 
 
 def get_db() -> Generator:

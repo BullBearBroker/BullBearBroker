@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import uuid
+from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+if TYPE_CHECKING:
+    from backend.models.user import User
 
 try:  # pragma: no cover - compatibility with different import paths
     from .base import Base
@@ -36,5 +40,4 @@ class PushSubscription(Base):
         DateTime, default=datetime.utcnow, nullable=False
     )
 
-    user: Mapped["User"] = relationship("User", back_populates="push_subscriptions")
-
+    user: Mapped[User] = relationship("User", back_populates="push_subscriptions")

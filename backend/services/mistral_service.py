@@ -1,10 +1,11 @@
 import asyncio
-import aiohttp
 import json
 import logging
-from collections import defaultdict
-from typing import Dict, Any, Optional, List
 import os
+from collections import defaultdict
+from typing import Any
+
+import aiohttp
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -16,7 +17,7 @@ logger = logging.getLogger(__name__)
 class MistralAPIError(Exception):
     """Exception raised when the Mistral API returns an error response."""
 
-    def __init__(self, status: Optional[int], body: str, model: str):
+    def __init__(self, status: int | None, body: str, model: str):
         self.status = status
         self.body = body
         self.model = model
@@ -26,22 +27,21 @@ class MistralAPIError(Exception):
 
 class MistralService:
     def __init__(self):
-        self.api_key = os.getenv('MISTRAL_API_KEY')
+        self.api_key = os.getenv("MISTRAL_API_KEY")
         self.base_url = "https://api.mistral.ai/v1"
         self.models = {
-            'small': 'mistral-small-latest',
-            'medium': 'mistral-medium-latest',
-            'large': 'mistral-large-latest'
+            "small": "mistral-small-latest",
+            "medium": "mistral-medium-latest",
+            "large": "mistral-large-latest",
         }
         self.max_retries = 3
         self.initial_backoff = 1
         self.retryable_statuses = {429} | set(range(500, 600))
-        self.metrics = {
-            'attempts': 0,
-            'model_attempts': defaultdict(int)
-        }
+        self.metrics = {"attempts": 0, "model_attempts": defaultdict(int)}
 
-    async def chat_completion(self, messages: list, model: str = 'medium') -> Optional[str]:
+    async def chat_completion(
+        self, messages: list, model: str = "medium"
+    ) -> str | None:
         """
         Enviar mensajes a Mistral AI y obtener respuesta
         """
@@ -49,13 +49,13 @@ class MistralService:
             raise ValueError("Mistral API key no configurada")
 
         headers = {
-            'Authorization': f'Bearer {self.api_key}',
-            'Content-Type': 'application/json'
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
         }
 
         models_to_try = self._build_model_fallback(model)
 
-        last_error: Optional[MistralAPIError] = None
+        last_error: MistralAPIError | None = None
 
         try:
             async with aiohttp.ClientSession() as session:
@@ -65,10 +65,12 @@ class MistralService:
                             session=session,
                             headers=headers,
                             messages=messages,
-                            model_name=model_name
+                            model_name=model_name,
                         )
-                    except asyncio.TimeoutError:
-                        logger.error("Timeout while calling Mistral model %s", model_name)
+                    except TimeoutError:
+                        logger.error(
+                            "Timeout while calling Mistral model %s", model_name
+                        )
                         raise
                     except MistralAPIError as exc:
                         last_error = exc
@@ -86,8 +88,8 @@ class MistralService:
 
         return None
 
-    def _build_model_fallback(self, preferred: str) -> List[str]:
-        ordered_models = ['medium', 'small', 'large']
+    def _build_model_fallback(self, preferred: str) -> list[str]:
+        ordered_models = ["medium", "small", "large"]
         fallback = [preferred] if preferred in ordered_models else []
         fallback.extend(model for model in ordered_models if model not in fallback)
         return fallback
@@ -95,27 +97,27 @@ class MistralService:
     async def _attempt_model(
         self,
         session: aiohttp.ClientSession,
-        headers: Dict[str, str],
+        headers: dict[str, str],
         messages: list,
-        model_name: str
+        model_name: str,
     ) -> str:
         payload = {
-            'model': self.models[model_name],
-            'messages': messages,
-            'temperature': 0.1,  # Baja temperatura para respuestas precisas
-            'max_tokens': 1000
+            "model": self.models[model_name],
+            "messages": messages,
+            "temperature": 0.1,  # Baja temperatura para respuestas precisas
+            "max_tokens": 1000,
         }
 
         backoff = self.initial_backoff
-        last_error: Optional[MistralAPIError] = None
+        last_error: MistralAPIError | None = None
 
         for attempt in range(1, self.max_retries + 1):
-            self.metrics['attempts'] += 1
-            self.metrics['model_attempts'][model_name] += 1
+            self.metrics["attempts"] += 1
+            self.metrics["model_attempts"][model_name] += 1
             try:
                 data = await self._perform_request(session, headers, payload)
-                return data['choices'][0]['message']['content']
-            except asyncio.TimeoutError:
+                return data["choices"][0]["message"]["content"]
+            except TimeoutError:
                 raise
             except MistralAPIError as exc:
                 last_error = exc
@@ -128,36 +130,38 @@ class MistralService:
 
         if last_error:
             raise last_error
-        raise MistralAPIError(None, 'Unknown error', payload['model'])
+        raise MistralAPIError(None, "Unknown error", payload["model"])
 
     async def _perform_request(
         self,
         session: aiohttp.ClientSession,
-        headers: Dict[str, str],
-        payload: Dict[str, Any]
-    ) -> Dict[str, Any]:
+        headers: dict[str, str],
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
         async with session.post(
-            f'{self.base_url}/chat/completions',
+            f"{self.base_url}/chat/completions",
             headers=headers,
             json=payload,
-            timeout=30
+            timeout=30,
         ) as response:
             if response.status == 200:
                 return await response.json()
 
             error_body = await response.text()
             if 400 <= response.status < 600:
-                raise MistralAPIError(response.status, error_body, payload['model'])
+                raise MistralAPIError(response.status, error_body, payload["model"])
 
-            raise MistralAPIError(response.status, error_body, payload['model'])
+            raise MistralAPIError(response.status, error_body, payload["model"])
 
-    def get_metrics(self) -> Dict[str, Any]:
+    def get_metrics(self) -> dict[str, Any]:
         return {
-            'attempts': self.metrics['attempts'],
-            'model_attempts': dict(self.metrics['model_attempts'])
+            "attempts": self.metrics["attempts"],
+            "model_attempts": dict(self.metrics["model_attempts"]),
         }
 
-    async def generate_financial_response(self, user_message: str, context: Dict[str, Any] = None) -> str:
+    async def generate_financial_response(
+        self, user_message: str, context: dict[str, Any] | None = None
+    ) -> str:
         """
         Generar respuesta especializada en finanzas
         """
@@ -166,53 +170,60 @@ class MistralService:
 
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message}
+            {"role": "user", "content": user_message},
         ]
 
         try:
-            response = await self.chat_completion(messages, model='medium')
-        except (MistralAPIError, asyncio.TimeoutError) as exc:
+            response = await self.chat_completion(messages, model="medium")
+        except (TimeoutError, MistralAPIError) as exc:
             logger.error("Error generating financial response: %s", exc)
-            return "Lo siento, estoy teniendo dificultades para procesar tu solicitud. Por favor intenta nuevamente."
+            return (
+                "Lo siento, estoy teniendo dificultades para procesar tu solicitud. "
+                "Por favor intenta nuevamente."
+            )
 
         if not response:
-            return "Lo siento, estoy teniendo dificultades para procesar tu solicitud. Por favor intenta nuevamente."
+            return (
+                "Lo siento, estoy teniendo dificultades para procesar tu solicitud. "
+                "Por favor intenta nuevamente."
+            )
 
         return response
 
-    def _create_system_prompt(self, context: Dict[str, Any] = None) -> str:
+    def _create_system_prompt(self, context: dict[str, Any] = None) -> str:
         """
         Crear prompt del sistema especializado en finanzas
         """
-        base_prompt = """Eres BullBearBroker, un asistente de IA especializado en mercados financieros.
-        Tu expertise incluye: acciones, criptomonedas, forex, análisis técnico y fundamental.
-
-        Reglas importantes:
-        1. Sé preciso y basado en datos reales
-        2. Proporciona análisis objetivos sin bias emocional
-        3. Incluye datos concretos cuando sea posible
-        4. Advierte sobre riesgos cuando sea apropiado
-        5. Mantén un tono profesional pero accesible
-
-        Formato de respuestas:
-        - Incluye emojis relevantes (📈, ₿, 🔍)
-        - Usa negritas para puntos importantes
-        - Proporciona insights accionables
-        - Sé conciso pero completo"""
+        base_prompt = (
+            "Eres BullBearBroker, un asistente de IA especializado en mercados financieros. "
+            "Tu expertise incluye: acciones, criptomonedas, forex, análisis técnico "
+            "y fundamental.\n\n"
+            "Reglas importantes:\n"
+            "1. Sé preciso y basado en datos reales\n"
+            "2. Proporciona análisis objetivos sin bias emocional\n"
+            "3. Incluye datos concretos cuando sea posible\n"
+            "4. Advierte sobre riesgos cuando sea apropiado\n"
+            "5. Mantén un tono profesional pero accesible\n\n"
+            "Formato de respuestas:\n"
+            "- Incluye emojis relevantes (📈, ₿, 🔍)\n"
+            "- Usa negritas para puntos importantes\n"
+            "- Proporciona insights accionables\n"
+            "- Sé conciso pero completo"
+        )
 
         if context:
             # Agregar contexto específico si está disponible
             context_str = "\nContexto adicional:\n"
-            if 'market_data' in context:
+            if "market_data" in context:
                 context_str += f"Datos de mercado: {context['market_data']}\n"
-            if 'user_portfolio' in context:
+            if "user_portfolio" in context:
                 context_str += f"Portfolio usuario: {context['user_portfolio']}\n"
 
             return base_prompt + context_str
 
         return base_prompt
 
-    async def analyze_market_sentiment(self, news_text: str) -> Dict[str, float]:
+    async def analyze_market_sentiment(self, news_text: str) -> dict[str, float]:
         """
         Analizar sentimiento de noticias financieras
         """
@@ -226,13 +237,18 @@ class MistralService:
         """
 
         messages = [
-            {"role": "system", "content": "Eres un analista de sentimiento financiero. Devuelve SOLO JSON válido."},
-            {"role": "user", "content": prompt}
+            {
+                "role": "system",
+                "content": (
+                    "Eres un analista de sentimiento financiero. Devuelve SOLO JSON válido."
+                ),
+            },
+            {"role": "user", "content": prompt},
         ]
 
         try:
-            response = await self.chat_completion(messages, model='small')
-        except (MistralAPIError, asyncio.TimeoutError) as exc:
+            response = await self.chat_completion(messages, model="small")
+        except (TimeoutError, MistralAPIError) as exc:
             logger.error("Error analyzing market sentiment: %s", exc)
             return {"sentiment_score": 0.0, "confidence": 0.0, "keywords": []}
 

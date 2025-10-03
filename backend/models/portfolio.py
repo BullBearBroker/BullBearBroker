@@ -40,15 +40,12 @@ class PortfolioItem(Base):
         DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False
     )
 
-    user: Mapped["User"] = relationship(
+    user: Mapped[User] = relationship(
         "User", back_populates="portfolio_items", lazy="joined"
     )
 
     def __repr__(self) -> str:  # pragma: no cover - debugging helper
-        return (
-            f"PortfolioItem(id={self.id!s}, symbol={self.symbol!r}, "
-            f"amount={self.amount!s})"
-        )
+        return f"PortfolioItem(id={self.id!s}, symbol={self.symbol!r}, amount={self.amount!s})"
 
 
 __all__ = ["PortfolioItem"]

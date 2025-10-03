@@ -3,15 +3,17 @@ from __future__ import annotations
 import os
 from logging.config import fileConfig
 
-from alembic import context
-from sqlalchemy import engine_from_config, pool
 import sqlalchemy as sa
-
+from alembic import context
 from dotenv import load_dotenv
+from sqlalchemy import engine_from_config, pool
+
+from backend import (  # noqa: F401  (asegura que se importen los modelos)
+    models as _models,
+)
 
 # 🚩 Importa la Base y registra todos los modelos en la metadata
 from backend.models import Base
-from backend import models as _models  # noqa: F401  (asegura que se importen los modelos)
 
 # Alembic Config object
 config = context.config

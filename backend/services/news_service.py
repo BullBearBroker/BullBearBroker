@@ -6,9 +6,10 @@ import asyncio
 import html
 import logging
 import re
-from datetime import datetime, timezone
+from collections.abc import Callable, Iterable
+from datetime import UTC, datetime
 from email.utils import parsedate_to_datetime
-from typing import Any, Callable, Dict, Iterable, List, Optional
+from typing import Any
 from urllib.parse import urlparse
 
 import aiohttp
@@ -34,24 +35,26 @@ class NewsService:
     def __init__(
         self,
         *,
-        cache_client: Optional[CacheClient] = None,
+        cache_client: CacheClient | None = None,
         session_factory: Callable[..., aiohttp.ClientSession] = aiohttp.ClientSession,
     ) -> None:
         self.cache = cache_client or CacheClient("news-service", ttl=120)
         self._session_factory = session_factory
         self._timeout = ClientTimeout(total=10)
 
-    async def get_crypto_headlines(self, limit: int = 10) -> List[Dict[str, Any]]:
+    async def get_crypto_headlines(self, limit: int = 10) -> list[dict[str, Any]]:
         """Return crypto headlines prioritising CryptoPanic and falling back to NewsAPI."""
 
         return await self._get_articles(
             cache_namespace="crypto",
             limit=limit,
-            primary_fetcher=self._fetch_cryptopanic if Config.CRYPTOPANIC_API_KEY else None,
+            primary_fetcher=(
+                self._fetch_cryptopanic if Config.CRYPTOPANIC_API_KEY else None
+            ),
             fallback_query="cryptocurrency OR bitcoin OR ethereum",
         )
 
-    async def get_finance_headlines(self, limit: int = 10) -> List[Dict[str, Any]]:
+    async def get_finance_headlines(self, limit: int = 10) -> list[dict[str, Any]]:
         """Return finance headlines prioritising Finfeed and falling back to NewsAPI."""
 
         return await self._get_articles(
@@ -61,7 +64,7 @@ class NewsService:
             fallback_query="stock market OR finance",
         )
 
-    async def get_latest_news(self, limit: int = 20) -> List[Dict[str, Any]]:
+    async def get_latest_news(self, limit: int = 20) -> list[dict[str, Any]]:
         """Aggregate the freshest crypto and finance headlines."""
 
         limited = max(1, min(limit, 100))
@@ -70,35 +73,46 @@ class NewsService:
             asyncio.create_task(self.get_finance_headlines(limited)),
         ]
 
-        aggregated: List[Dict[str, Any]] = []
+        aggregated: list[dict[str, Any]] = []
         for result in await asyncio.gather(*tasks, return_exceptions=True):
             if isinstance(result, Exception):
                 LOGGER.warning("NewsService: error agregando noticias: %s", result)
                 continue
             aggregated.extend(result)
 
-        aggregated.sort(key=self._sort_key, reverse=True)
-        return aggregated[:limited]
+        unique_items: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for item in aggregated:
+            identifier = (item.get("url") or item.get("title") or "").strip().lower()
+            if not identifier or identifier in seen:
+                continue
+            seen.add(identifier)
+            unique_items.append(item)
+
+        unique_items.sort(key=self._sort_key, reverse=True)
+        return unique_items[:limited]
 
     async def _get_articles(
         self,
         *,
         cache_namespace: str,
         limit: int,
-        primary_fetcher: Optional[Callable[[aiohttp.ClientSession, int], Any]],
+        primary_fetcher: Callable[[aiohttp.ClientSession, int], Any] | None,
         fallback_query: str,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         limited = max(1, min(limit, 50))
         cache_key = f"{cache_namespace}:{limited}"
         cached = await self.cache.get(cache_key)
         if cached is not None:
             return cached
 
-        articles: List[Dict[str, Any]] = []
+        articles: list[dict[str, Any]] = []
 
         async with self._session_factory(timeout=self._timeout) as session:
             if primary_fetcher is not None:
-                articles = await self._call_with_retries(primary_fetcher, session, limited)
+                articles = await self._call_with_retries(
+                    primary_fetcher, session, limited
+                )
 
             if not articles and Config.NEWSAPI_API_KEY:
                 articles = await self._call_with_retries(
@@ -108,7 +122,24 @@ class NewsService:
                     query=fallback_query,
                 )
 
-        normalized = [self._prune_article(item) for item in articles[:limited]]
+        normalized: list[dict[str, Any]] = []
+        seen_identifiers: set[str] = set()
+        for item in articles:
+            pruned = self._prune_article(item)
+            title = (pruned.get("title") or "").strip()
+            published = pruned.get("published_at")
+            if not title or title.lower() == "untitled":
+                continue
+            if not published:
+                continue
+            identifier = (pruned.get("url") or title).strip().lower()
+            if identifier in seen_identifiers:
+                continue
+            seen_identifiers.add(identifier)
+            normalized.append(pruned)
+            if len(normalized) >= limited:
+                break
+
         await self.cache.set(cache_key, normalized)
         return normalized
 
@@ -118,7 +149,7 @@ class NewsService:
         session: aiohttp.ClientSession,
         limit: int,
         **kwargs: Any,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         backoff = self.RETRY_BACKOFF
         for attempt in range(1, self.RETRY_ATTEMPTS + 1):
             try:
@@ -128,7 +159,7 @@ class NewsService:
                     return []
                 return result
             except (
-                asyncio.TimeoutError,
+                TimeoutError,
                 ClientError,
                 ContentTypeError,
                 KeyError,
@@ -154,7 +185,7 @@ class NewsService:
 
     async def _fetch_cryptopanic(
         self, session: aiohttp.ClientSession, limit: int, **_: Any
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         if not Config.CRYPTOPANIC_API_KEY:
             raise KeyError("CRYPTOPANIC_API_KEY is not configured")
 
@@ -175,7 +206,7 @@ class NewsService:
         )
 
         results = payload.get("results") or []
-        articles: List[Dict[str, Any]] = []
+        articles: list[dict[str, Any]] = []
         for item in results:
             url_value = item.get("url") or item.get("source_url")
             source_info = item.get("source") or {}
@@ -192,14 +223,16 @@ class NewsService:
                     "title": item.get("title") or "Untitled",
                     "url": url_value,
                     "published_at": self._normalize_datetime(item.get("published_at")),
-                    "summary": self._clean_html(item.get("body") or item.get("title") or ""),
+                    "summary": self._clean_html(
+                        item.get("body") or item.get("title") or ""
+                    ),
                 }
             )
         return articles
 
     async def _fetch_finfeed(
         self, session: aiohttp.ClientSession, limit: int, **_: Any
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         if not Config.FINFEED_API_KEY:
             raise KeyError("FINFEED_API_KEY is not configured")
 
@@ -214,14 +247,14 @@ class NewsService:
             source_name="Finfeed",
         )
 
-        data: Iterable[Dict[str, Any]] = (
+        data: Iterable[dict[str, Any]] = (
             payload.get("data")
             or payload.get("articles")
             or payload.get("results")
             or []
         )
 
-        articles: List[Dict[str, Any]] = []
+        articles: list[dict[str, Any]] = []
         for item in data:
             link = item.get("url") or item.get("link")
             articles.append(
@@ -248,7 +281,7 @@ class NewsService:
         limit: int,
         *,
         query: str,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         if not Config.NEWSAPI_API_KEY:
             raise KeyError("NEWSAPI_API_KEY is not configured")
 
@@ -268,22 +301,26 @@ class NewsService:
             source_name="NewsAPI",
         )
 
-        articles: List[Dict[str, Any]] = []
+        articles: list[dict[str, Any]] = []
         for article in payload.get("articles", []):
             source_info = article.get("source") or {}
             url_value = article.get("url")
             articles.append(
                 {
-                    "source": source_info.get("name") or self._extract_domain(url_value) or "NewsAPI",
+                    "source": (
+                        source_info.get("name")
+                        or self._extract_domain(url_value)
+                        or "NewsAPI"
+                    ),
                     "title": article.get("title")
                     or article.get("description")
                     or "Untitled",
                     "url": url_value,
-                    "published_at": self._normalize_datetime(article.get("publishedAt")),
+                    "published_at": self._normalize_datetime(
+                        article.get("publishedAt")
+                    ),
                     "summary": self._clean_html(
-                        article.get("description")
-                        or article.get("content")
-                        or ""
+                        article.get("description") or article.get("content") or ""
                     ),
                 }
             )
@@ -294,16 +331,16 @@ class NewsService:
         session: aiohttp.ClientSession,
         url: str,
         *,
-        params: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
         source_name: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         async with session.get(url, params=params, headers=headers) as response:
             if response.status >= 400:
                 raise ClientError(f"{source_name} returned status {response.status}")
             return await response.json()
 
-    def _prune_article(self, article: Dict[str, Any]) -> Dict[str, Any]:
+    def _prune_article(self, article: dict[str, Any]) -> dict[str, Any]:
         return {
             "source": article.get("source") or "Unknown",
             "title": article.get("title") or "Untitled",
@@ -312,19 +349,19 @@ class NewsService:
             "summary": article.get("summary") or "",
         }
 
-    def _sort_key(self, article: Dict[str, Any]) -> datetime:
+    def _sort_key(self, article: dict[str, Any]) -> datetime:
         published = article.get("published_at")
         if not published:
-            return datetime.min.replace(tzinfo=timezone.utc)
+            return datetime.min.replace(tzinfo=UTC)
         try:
             return datetime.fromisoformat(published.replace("Z", "+00:00"))
         except ValueError:
             try:
                 return parsedate_to_datetime(published)
             except (TypeError, ValueError, IndexError):
-                return datetime.min.replace(tzinfo=timezone.utc)
+                return datetime.min.replace(tzinfo=UTC)
 
-    def _normalize_datetime(self, value: Optional[str]) -> Optional[str]:
+    def _normalize_datetime(self, value: str | None) -> str | None:
         if not value:
             return None
         try:
@@ -335,14 +372,14 @@ class NewsService:
             except (TypeError, ValueError, IndexError):
                 return None
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
-        return dt.astimezone(timezone.utc).isoformat()
+            dt = dt.replace(tzinfo=UTC)
+        return dt.astimezone(UTC).isoformat()
 
     def _clean_html(self, text: str) -> str:
         cleaned = re.sub(r"<[^>]+>", "", text or "")
         return html.unescape(cleaned).strip()
 
-    def _extract_domain(self, url: Optional[str]) -> str:
+    def _extract_domain(self, url: str | None) -> str:
         if not url:
             return "Unknown"
         try:

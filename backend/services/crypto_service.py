@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Awaitable, Callable, Dict, Optional, Tuple
+from collections.abc import Awaitable, Callable
 
 import aiohttp
 
@@ -27,7 +27,7 @@ COINGECKO_MAP = {
 }
 
 
-def normalize_symbol(symbol: str) -> Dict[str, str]:
+def normalize_symbol(symbol: str) -> dict[str, str]:
     """
     Normaliza un símbolo tipo 'BTCUSDT' en sus variantes
     para distintos proveedores.
@@ -42,7 +42,9 @@ def normalize_symbol(symbol: str) -> Dict[str, str]:
     return {
         "binance": symbol,  # Binance usa BTCUSDT directamente
         "coinmarketcap": base,  # CoinMarketCap espera BTC
-        "coingecko": COINGECKO_MAP.get(base, base.lower()),  # CoinGecko espera 'bitcoin'
+        "coingecko": COINGECKO_MAP.get(
+            base, base.lower()
+        ),  # CoinGecko espera 'bitcoin'
         "twelvedata": pair,
         "alpha_vantage": base,
     }
@@ -52,11 +54,11 @@ class CryptoService:
     RETRY_ATTEMPTS = 3
     RETRY_BACKOFF = 0.75
 
-    def __init__(self, cache_client: Optional[CacheClient] = None):
+    def __init__(self, cache_client: CacheClient | None = None):
         self.cache = cache_client or CacheClient("crypto-prices", ttl=45)
-        self._coingecko_id_cache: Dict[str, Optional[str]] = {}
+        self._coingecko_id_cache: dict[str, str | None] = {}
 
-    async def get_price(self, symbol: str) -> Optional[float]:
+    async def get_price(self, symbol: str) -> float | None:
         """Obtener precio de un activo crypto con reintentos y fallback."""
         try:
             cache_key = symbol.upper()
@@ -67,7 +69,9 @@ class CryptoService:
             # 🔹 Normalizamos una sola vez
             normalized = normalize_symbol(symbol)
 
-            providers: Tuple[Tuple[str, Callable[[str], Awaitable[Optional[float]]]], ...] = (
+            providers: tuple[
+                tuple[str, Callable[[str], Awaitable[float | None]]], ...
+            ] = (
                 ("CoinGecko", lambda _: self.coingecko(normalized["coingecko"])),
                 ("Binance", lambda _: self.binance(normalized["binance"])),
                 (
@@ -96,7 +100,7 @@ class CryptoService:
             LOGGER.exception("Error getting crypto price for %s: %s", symbol, exc)
             return None
 
-    async def coingecko(self, coin_id: str) -> Optional[float]:
+    async def coingecko(self, coin_id: str) -> float | None:
         """API Primaria: CoinGecko"""
         if not coin_id:
             return None
@@ -110,11 +114,11 @@ class CryptoService:
             return None
 
         price = data.get(coin_id, {}).get("usd")
-        if isinstance(price, (int, float)):
+        if isinstance(price, int | float):
             return float(price)
         return None
 
-    async def binance(self, symbol: str) -> Optional[float]:
+    async def binance(self, symbol: str) -> float | None:
         """API Secundaria: Binance"""
         url = "https://api.binance.com/api/v3/ticker/price"
         params = {"symbol": symbol}  # 🔹 ahora no agregamos 'USDT' extra
@@ -122,7 +126,7 @@ class CryptoService:
         try:
             async with aiohttp.ClientSession(timeout=CLIENT_TIMEOUT) as session:
                 data = await self._request_json(url, session=session, params=params)
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
+        except (TimeoutError, aiohttp.ClientError, ValueError) as exc:
             LOGGER.error("Error obteniendo precio en Binance para %s: %s", symbol, exc)
             return None
 
@@ -132,7 +136,7 @@ class CryptoService:
             LOGGER.error("Respuesta inválida de Binance para %s: %s", symbol, exc)
             return None
 
-    async def coinmarketcap(self, symbol: str) -> Optional[float]:
+    async def coinmarketcap(self, symbol: str) -> float | None:
         """API Fallback: CoinMarketCap"""
         if not Config.COINMARKETCAP_API_KEY:
             raise RuntimeError("COINMARKETCAP_API_KEY is not configured")
@@ -145,8 +149,10 @@ class CryptoService:
                 data = await self._request_json(
                     url, session=session, headers=headers, params=params
                 )
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
-            LOGGER.error("Error obteniendo precio en CoinMarketCap para %s: %s", symbol, exc)
+        except (TimeoutError, aiohttp.ClientError, ValueError) as exc:
+            LOGGER.error(
+                "Error obteniendo precio en CoinMarketCap para %s: %s", symbol, exc
+            )
             return None
 
         try:
@@ -156,7 +162,7 @@ class CryptoService:
             LOGGER.error("Respuesta inválida de CoinMarketCap para %s: %s", symbol, exc)
             return None
 
-    async def twelvedata(self, pair: str) -> Optional[float]:
+    async def twelvedata(self, pair: str) -> float | None:
         """Support crypto pricing using TwelveData when API key is available."""
 
         if not Config.TWELVEDATA_API_KEY:
@@ -168,7 +174,7 @@ class CryptoService:
         try:
             async with aiohttp.ClientSession(timeout=CLIENT_TIMEOUT) as session:
                 data = await self._request_json(url, session=session, params=params)
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
+        except (TimeoutError, aiohttp.ClientError, ValueError) as exc:
             LOGGER.error("Error obteniendo precio en TwelveData para %s: %s", pair, exc)
             return None
 
@@ -178,7 +184,7 @@ class CryptoService:
             LOGGER.error("Respuesta inválida de TwelveData para %s: %s", pair, exc)
             return None
 
-    async def alpha_vantage(self, symbol: str) -> Optional[float]:
+    async def alpha_vantage(self, symbol: str) -> float | None:
         """Fallback provider using Alpha Vantage currency exchange endpoint."""
 
         if not Config.ALPHA_VANTAGE_API_KEY:
@@ -195,8 +201,10 @@ class CryptoService:
         try:
             async with aiohttp.ClientSession(timeout=CLIENT_TIMEOUT) as session:
                 data = await self._request_json(url, session=session, params=params)
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
-            LOGGER.error("Error obteniendo precio en Alpha Vantage para %s: %s", symbol, exc)
+        except (TimeoutError, aiohttp.ClientError, ValueError) as exc:
+            LOGGER.error(
+                "Error obteniendo precio en Alpha Vantage para %s: %s", symbol, exc
+            )
             return None
 
         try:
@@ -211,7 +219,7 @@ class CryptoService:
         self,
         url: str,
         *,
-        session: Optional[aiohttp.ClientSession] = None,
+        session: aiohttp.ClientSession | None = None,
         **kwargs,
     ):
         owns_session = session is None
@@ -220,14 +228,14 @@ class CryptoService:
             async with session.get(url, **kwargs) as response:
                 response.raise_for_status()
                 return await response.json()
-        except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
+        except (TimeoutError, aiohttp.ClientError, ValueError) as exc:
             LOGGER.error("Error al solicitar %s: %s", url, exc)
             raise
         finally:
             if owns_session:
                 await session.close()
 
-    async def _resolve_coingecko_id(self, symbol: str) -> Optional[str]:
+    async def _resolve_coingecko_id(self, symbol: str) -> str | None:
         normalized = symbol.lower()
         if normalized in self._coingecko_id_cache:
             return self._coingecko_id_cache[normalized]
@@ -253,10 +261,10 @@ class CryptoService:
 
     async def _call_with_retries(
         self,
-        handler: Callable[[str], Awaitable[Optional[float]]],
+        handler: Callable[[str], Awaitable[float | None]],
         symbol: str,
         source_name: str,
-    ) -> Optional[float]:
+    ) -> float | None:
         backoff = self.RETRY_BACKOFF
         for attempt in range(1, self.RETRY_ATTEMPTS + 1):
             try:

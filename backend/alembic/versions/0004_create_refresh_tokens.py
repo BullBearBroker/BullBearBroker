@@ -8,8 +8,8 @@ Create Date: 2025-09-24 02:00:00
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
@@ -22,7 +22,9 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "refresh_tokens",
-        sa.Column("id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False),
+        sa.Column(
+            "id", postgresql.UUID(as_uuid=True), primary_key=True, nullable=False
+        ),
         sa.Column(
             "user_id",
             postgresql.UUID(as_uuid=True),

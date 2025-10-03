@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -14,13 +14,17 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.models import ChatMessage as ChatMessageModel, ChatSession as ChatSessionModel, User
+from backend.models import (
+    ChatMessage as ChatMessageModel,
+    ChatSession as ChatSessionModel,
+    User,
+)
 from backend.utils.config import Config
 
 try:  # pragma: no cover - allow running from different entrypoints
-    from backend.services.ai_service import ai_service, AIResponsePayload
+    from backend.services.ai_service import AIResponsePayload, ai_service
 except ImportError:  # pragma: no cover
-    from services.ai_service import ai_service, AIResponsePayload  # type: ignore
+    from services.ai_service import AIResponsePayload, ai_service  # type: ignore
 
 try:  # pragma: no cover - optional when running without user_service
     from backend.services.user_service import InvalidTokenError, user_service
@@ -36,10 +40,10 @@ security = HTTPBearer()
 
 class ChatRequest(BaseModel):
     prompt: str = Field(..., min_length=1, description="Mensaje del usuario")
-    context: Optional[Dict[str, Any]] = Field(
+    context: dict[str, Any] | None = Field(
         default=None, description="Contexto adicional opcional"
     )
-    session_id: Optional[UUID] = Field(
+    session_id: UUID | None = Field(
         default=None,
         description="Identificador de la sesión persistida",
     )
@@ -47,9 +51,9 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     response: str
-    provider: Optional[str] = None
+    provider: str | None = None
     used_data: bool = False
-    sources: List[str] = Field(default_factory=list)
+    sources: list[str] = Field(default_factory=list)
     session_id: UUID
 
 
@@ -67,12 +71,14 @@ class ChatHistoryResponse(BaseModel):
 
     session_id: UUID
     created_at: datetime
-    messages: List[PersistedMessage]
+    messages: list[PersistedMessage]
 
 
 def _ensure_provider_available() -> None:
     if not (Config.MISTRAL_API_KEY or Config.HUGGINGFACE_API_KEY):
-        LOGGER.error("No AI providers configured. Check MISTRAL_API_KEY or HUGGINGFACE_API_KEY")
+        LOGGER.error(
+            "No AI providers configured. Check MISTRAL_API_KEY or HUGGINGFACE_API_KEY"
+        )
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="No hay proveedores de IA configurados en el servidor.",
@@ -88,7 +94,7 @@ def _ensure_user_service_available() -> None:
 
 
 async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security),
+    credentials: Annotated[HTTPAuthorizationCredentials, Depends(security)],
 ) -> User:
     _ensure_user_service_available()
 
@@ -97,11 +103,13 @@ async def get_current_user(
             user_service.get_current_user, credentials.credentials
         )
     except InvalidTokenError as exc:  # pragma: no cover - defensive
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)
+        ) from exc
 
 
 def _fetch_session(
-    db: Session, user_id: UUID, session_id: Optional[UUID]
+    db: Session, user_id: UUID, session_id: UUID | None
 ) -> ChatSessionModel:
     if session_id is None:
         session = ChatSessionModel(user_id=user_id)
@@ -115,11 +123,13 @@ def _fetch_session(
         .one_or_none()
     )
     if session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sesión no encontrada")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Sesión no encontrada"
+        )
     return session
 
 
-def _load_history(db: Session, session: ChatSessionModel) -> List[ChatMessageModel]:
+def _load_history(db: Session, session: ChatSessionModel) -> list[ChatMessageModel]:
     return (
         db.query(ChatMessageModel)
         .filter(ChatMessageModel.session_id == session.id)
@@ -129,10 +139,10 @@ def _load_history(db: Session, session: ChatSessionModel) -> List[ChatMessageMod
 
 
 def _prepare_context(
-    base_context: Optional[Dict[str, Any]],
-    history: List[ChatMessageModel],
-) -> Dict[str, Any]:
-    context: Dict[str, Any] = dict(base_context or {})
+    base_context: dict[str, Any] | None,
+    history: list[ChatMessageModel],
+) -> dict[str, Any]:
+    context: dict[str, Any] = dict(base_context or {})
     serialized_history = [
         {"role": message.role, "content": message.content}
         for message in history
@@ -158,8 +168,8 @@ def _persist_message(
 @router.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(
     payload: ChatRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> ChatResponse:
     """Procesa una consulta mediante los proveedores de IA configurados y la persiste."""
 
@@ -167,7 +177,10 @@ async def chat_endpoint(
 
     prompt = payload.prompt.strip()
     if not prompt:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El mensaje no puede estar vacío")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="El mensaje no puede estar vacío",
+        )
 
     session = _fetch_session(db, current_user.id, payload.session_id)
     history = _load_history(db, session)
@@ -200,7 +213,9 @@ async def chat_endpoint(
     except Exception as exc:  # pragma: no cover - unexpected db error
         LOGGER.exception("Failed to persist chat messages")
         db.rollback()
-        raise HTTPException(status_code=500, detail="No se pudo guardar la conversación") from exc
+        raise HTTPException(
+            status_code=500, detail="No se pudo guardar la conversación"
+        ) from exc
 
     db.refresh(user_message)
     db.refresh(assistant_message)
@@ -218,18 +233,23 @@ async def chat_endpoint(
 @router.get("/history/{session_id}", response_model=ChatHistoryResponse)
 async def get_history(
     session_id: UUID,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
 ) -> ChatHistoryResponse:
     _ensure_user_service_available()
 
     session = (
         db.query(ChatSessionModel)
-        .filter(ChatSessionModel.id == session_id, ChatSessionModel.user_id == current_user.id)
+        .filter(
+            ChatSessionModel.id == session_id,
+            ChatSessionModel.user_id == current_user.id,
+        )
         .one_or_none()
     )
     if session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Sesión no encontrada")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Sesión no encontrada"
+        )
 
     messages = _load_history(db, session)
 

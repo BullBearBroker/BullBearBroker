@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime
 import uuid
+from datetime import datetime
+from typing import TYPE_CHECKING
 
 from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+if TYPE_CHECKING:
+    from backend.models.user import User
 
 try:  # pragma: no cover - support running from different entrypoints
     from .base import Base
@@ -30,10 +34,10 @@ class ChatSession(Base):
         DateTime, default=datetime.utcnow, nullable=False
     )
 
-    messages: Mapped[list["ChatMessage"]] = relationship(
+    messages: Mapped[list[ChatMessage]] = relationship(
         "ChatMessage", back_populates="session", cascade="all, delete-orphan"
     )
-    user: Mapped["User"] = relationship("User", back_populates="chat_sessions")
+    user: Mapped[User] = relationship("User", back_populates="chat_sessions")
 
 
 class ChatMessage(Base):
@@ -45,7 +49,9 @@ class ChatMessage(Base):
         PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     session_id: Mapped[uuid.UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("chat_sessions.id", ondelete="CASCADE"), nullable=False
+        PGUUID(as_uuid=True),
+        ForeignKey("chat_sessions.id", ondelete="CASCADE"),
+        nullable=False,
     )
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
@@ -53,5 +59,6 @@ class ChatMessage(Base):
         DateTime, default=datetime.utcnow, nullable=False
     )
 
-    session: Mapped[ChatSession] = relationship("ChatSession", back_populates="messages")
-
+    session: Mapped[ChatSession] = relationship(
+        "ChatSession", back_populates="messages"
+    )

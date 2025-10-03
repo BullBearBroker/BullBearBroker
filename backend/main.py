@@ -3,22 +3,26 @@ import json
 import os
 from contextlib import asynccontextmanager
 
+import redis.asyncio as redis
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi_limiter import FastAPILimiter
-import redis.asyncio as redis
 
-from backend.core.logging_config import get_logger
+from backend import database as database_module
 from backend.core.http_logging import RequestLogMiddleware
+from backend.core.logging_config import get_logger, log_event
 from backend.core.metrics import MetricsMiddleware, metrics_router
-from backend.utils.config import ENV
+from backend.core.tracing import configure_tracing
+from backend.models.base import Base
 
 # Routers de la app
-from backend.routers import alerts, markets, news, auth, ai, portfolio, push
 from backend.routers import health  # nuevo router de salud
-from backend.services.integration_reporter import log_api_integration_report
+from backend.routers import ai, alerts, auth, markets, news, portfolio, push
 from backend.services.alert_service import alert_service
+from backend.services.integration_reporter import log_api_integration_report
 from backend.services.websocket_manager import AlertWebSocketManager
+from backend.utils.config import ENV, Config
 
 try:  # pragma: no cover - user service puede no estar disponible en algunos tests
     from backend.services.user_service import InvalidTokenError, user_service
@@ -28,6 +32,7 @@ except Exception:  # pragma: no cover - entorno sin servicio de usuarios
 
 logger = get_logger(service="backend")
 logger.info("backend_started")
+
 
 # ========================
 # Lifespan (startup/shutdown)
@@ -54,22 +59,63 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # pragma: no cover - redis opcional en tests
         logger.warning("fastapi_limiter_unavailable", error=str(exc))
 
+    if getattr(Config, "TESTING", False):
+        try:
+            from backend.core.rate_limit import clear_testing_state
+
+            await clear_testing_state()
+        except Exception:  # pragma: no cover - limpieza defensiva
+            pass
+        try:
+            from backend.core.login_backoff import login_backoff
+
+            await login_backoff.clear_all()
+        except Exception:  # pragma: no cover - limpieza defensiva
+            pass
+
+    database_setup_failed = False
+    database_setup_error_message: str | None = None
+
     try:
-        from backend.database import Base, engine
         from backend.services.user_service import user_service
 
-        if ENV == "local":
-            Base.metadata.create_all(bind=engine)
-            logger.info("database_ready")
+        database_engine = getattr(database_module, "engine", None)
+        database_ready = True
+        if ENV in {"local", "test"}:
+            try:
+                if database_engine is None:
+                    raise RuntimeError("database engine is not configured")
+                Base.metadata.create_all(bind=database_engine, checkfirst=True)
+                logger.info("database_ready")
+            except Exception as exc:
+                logger.error("database_setup_error", exc_info=True)
+                database_ready = False
+                database_setup_failed = True
+                database_setup_error_message = str(exc)
+                log_event(
+                    logger,
+                    service="backend",
+                    event="database_setup_error",
+                    error=database_setup_error_message,
+                )
         else:
             logger.info("database_migrations_required", env=ENV)
 
-        default_email = os.environ.get("BULLBEAR_DEFAULT_USER", "test@bullbear.ai")
-        default_password = os.environ.get("BULLBEAR_DEFAULT_PASSWORD", "Test1234!")
-        user_service.ensure_user(default_email, default_password)
-        logger.info("default_user_ready", email=default_email)
+        if database_ready:
+            default_email = os.environ.get("BULLBEAR_DEFAULT_USER", "test@bullbear.ai")
+            default_password = os.environ.get("BULLBEAR_DEFAULT_PASSWORD", "Test1234!")
+            user_service.ensure_user(default_email, default_password)
+            logger.info("default_user_ready", email=default_email)
     except Exception as exc:  # pragma: no cover - evita fallas en despliegues sin DB
+        database_setup_failed = True
+        database_setup_error_message = database_setup_error_message or str(exc)
         logger.error("database_setup_error", error=str(exc))
+        log_event(
+            logger,
+            service="backend",
+            event="database_setup_error",
+            error=database_setup_error_message,
+        )
 
     try:
         # Informe de integraciones para confirmar que usamos APIs reales.
@@ -79,25 +125,79 @@ async def lifespan(app: FastAPI):
 
     yield  # ⬅️ Aquí FastAPI empieza a servir requests
 
+    if database_setup_failed and database_setup_error_message is not None:
+        log_event(
+            logger,
+            service="backend",
+            event="database_setup_error",
+            error=database_setup_error_message,
+        )
+
     # 🔹 Shutdown
     # Si necesitas liberar recursos (ej: cerrar redis) hazlo aquí
     try:
         if "redis_client" in locals() and redis_client:
-            await redis_client.close()
+            await redis_client.aclose()
+            FastAPILimiter.redis = None
             logger.info("redis_closed")
     except Exception as exc:
         logger.warning("redis_close_error", error=str(exc))
+
+    try:
+        current_engine = getattr(database_module, "engine", None)
+        if hasattr(current_engine, "dispose") and callable(
+            getattr(current_engine, "dispose", None)
+        ):
+            current_engine.dispose()
+            logger.info("engine_disposed")
+        else:
+            log_event(
+                logger,
+                service="backend",
+                event="engine_dispose_error",
+                error="engine has no dispose()",
+            )
+    except Exception as exc:
+        log_event(
+            logger,
+            service="backend",
+            event="engine_dispose_error",
+            error=str(exc),
+        )
 
 
 # ========================
 # App principal
 # ========================
+OPENAPI_TAGS = [
+    {"name": "health", "description": "Monitoreo y diagnósticos de la API."},
+    {"name": "alerts", "description": "Gestión de alertas financieras en tiempo real."},
+    {"name": "markets", "description": "Consulta de datos de mercados bursátiles."},
+    {"name": "news", "description": "Noticias financieras relevantes."},
+    {"name": "auth", "description": "Autenticación y manejo de sesiones."},
+    {"name": "ai", "description": "Interacciones con el asistente de IA."},
+    {
+        "name": "push",
+        "description": "Suscripciones y preferencias de notificaciones push.",
+    },
+    {
+        "name": "portfolio",
+        "description": "Importación, exportación y consulta de portafolios.",
+    },
+]
+
 app = FastAPI(
     title="BullBearBroker API",
     version="0.1.0",
     description="🚀 API conversacional para análisis financiero en tiempo real",
     lifespan=lifespan,
+    openapi_tags=OPENAPI_TAGS,
 )
+
+try:  # pragma: no cover - tracing may be optional during tests
+    configure_tracing(app)
+except Exception as exc:  # pragma: no cover - defensive logging
+    logger.warning("tracing_configuration_failed", error=str(exc))
 
 # Configuración de CORS (controlada por variables de entorno)
 raw_origins = os.environ.get("CORS_ALLOW_ORIGINS", "http://localhost:3000")
@@ -112,6 +212,7 @@ app.add_middleware(
 )
 app.add_middleware(MetricsMiddleware)
 app.add_middleware(RequestLogMiddleware)
+
 
 # Endpoint raíz (health básico de la API)
 @app.get("/")
@@ -135,10 +236,26 @@ alerts_ws_manager = AlertWebSocketManager()
 alert_service.register_websocket_manager(alerts_ws_manager)
 app.state.alerts_ws_manager = alerts_ws_manager
 
+_readiness_path = os.getenv("READINESS_PROBE_PATH", "/health")
+if not _readiness_path.startswith("/"):
+    _readiness_path = f"/{_readiness_path}"
+
+if _readiness_path != "/api/health":
+
+    @app.get(_readiness_path, include_in_schema=False)
+    async def readiness_probe() -> JSONResponse:
+        """Ruta liviana para sondas de readiness."""
+
+        result = await health.health()
+        if isinstance(result, JSONResponse):
+            return result
+        return JSONResponse(content=result)
+
 
 @app.websocket("/ws/alerts")
 async def alerts_websocket(
-    websocket: WebSocket, token: str | None = Query(default=None, description="Bearer token opcional")
+    websocket: WebSocket,
+    token: str | None = Query(default=None, description="Bearer token opcional"),
 ) -> None:
     """Canal WebSocket que transmite alertas en tiempo real."""
 

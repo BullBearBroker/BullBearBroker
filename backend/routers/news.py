@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Awaitable, Callable, Dict, List
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
@@ -14,17 +15,19 @@ except ImportError:  # pragma: no cover - fallback for package-based imports
 router = APIRouter(tags=["News"])
 
 
-NewsFetcher = Callable[[int], Awaitable[List[Dict[str, Any]]]]
+NewsFetcher = Callable[[int], Awaitable[list[dict[str, Any]]]]
 
 
 async def _get_news(
     category: str,
     limit: int,
     fetcher: NewsFetcher,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     try:
         articles = await fetcher(limit)
-    except Exception as exc:  # pragma: no cover - defensive logging happens in the service
+    except (
+        Exception
+    ) as exc:  # pragma: no cover - defensive logging happens in the service
         raise HTTPException(
             status_code=502,
             detail=f"Error obteniendo noticias de {category}: {exc}",
@@ -40,7 +43,7 @@ async def _get_news(
 
 
 @router.get("/latest")
-async def get_latest_news(limit: int = 20) -> Dict[str, Any]:
+async def get_latest_news(limit: int = 20) -> dict[str, Any]:
     """Aggregate the latest headlines from all providers."""
 
     try:
@@ -61,7 +64,7 @@ async def get_latest_news(limit: int = 20) -> Dict[str, Any]:
 
 
 @router.get("/crypto")
-async def get_crypto_news(limit: int = 10) -> Dict[str, Any]:
+async def get_crypto_news(limit: int = 10) -> dict[str, Any]:
     """Return crypto-related news articles following the configured fallbacks."""
 
     articles = await _get_news("crypto", limit, news_service.get_crypto_headlines)
@@ -69,7 +72,7 @@ async def get_crypto_news(limit: int = 10) -> Dict[str, Any]:
 
 
 @router.get("/finance")
-async def get_finance_news(limit: int = 10) -> Dict[str, Any]:
+async def get_finance_news(limit: int = 10) -> dict[str, Any]:
     """Return finance news articles following the configured fallbacks."""
 
     articles = await _get_news("finance", limit, news_service.get_finance_headlines)

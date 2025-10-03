@@ -1,8 +1,10 @@
 # scripts/check_backend.py
-import requests
 import sys
 
+import requests
+
 BASE_URL = "http://127.0.0.1:8000"
+
 
 def check_health():
     try:
@@ -17,6 +19,7 @@ def check_health():
         print(f"❌ No se pudo conectar al backend: {e}")
         return False
 
+
 def check_docs():
     try:
         resp = requests.get(f"{BASE_URL}/docs", timeout=5)
@@ -29,6 +32,7 @@ def check_docs():
     except Exception as e:
         print(f"❌ Error al conectar con /docs: {e}")
         return False
+
 
 if __name__ == "__main__":
     ok_health = check_health()

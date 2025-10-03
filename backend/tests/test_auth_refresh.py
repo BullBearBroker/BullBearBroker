@@ -1,8 +1,8 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime
 
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
 from backend.core.security import decode_refresh
 from backend.database import SessionLocal
@@ -14,7 +14,9 @@ from backend.models.refresh_token import RefreshToken
 async def test_rate_limit_health():
     ok_count = 0
     too_many = 0
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         for _ in range(6):
             response = await client.get("/api/health")
             if response.status_code == 200:
@@ -30,7 +32,9 @@ async def test_refresh_flow():
     # Generar email único para cada ejecución del test
     unique_email = f"refresh_{uuid.uuid4().hex}@test.com"
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         # 1. Registrar usuario nuevo
         register = await client.post(
             "/api/auth/register",
@@ -51,13 +55,11 @@ async def test_refresh_flow():
 
         with SessionLocal() as db:
             stored = (
-                db.query(RefreshToken)
-                .filter(RefreshToken.token == refresh_token)
-                .one()
+                db.query(RefreshToken).filter(RefreshToken.token == refresh_token).one()
             )
             assert stored.expires_at is not None
             expected_exp = datetime.fromtimestamp(
-                decode_refresh(refresh_token)["exp"], tz=timezone.utc
+                decode_refresh(refresh_token)["exp"], tz=UTC
             )
             if stored.expires_at.tzinfo is None:
                 assert stored.expires_at == expected_exp.replace(tzinfo=None)
@@ -80,7 +82,9 @@ async def test_refresh_flow():
 async def test_logout_revokes_refresh_token():
     unique_email = f"logout_{uuid.uuid4().hex}@test.com"
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         register = await client.post(
             "/api/auth/register",
             json={"email": unique_email, "password": "logout123"},
@@ -96,9 +100,7 @@ async def test_logout_revokes_refresh_token():
 
         with SessionLocal() as db:
             stored = (
-                db.query(RefreshToken)
-                .filter(RefreshToken.token == refresh_token)
-                .one()
+                db.query(RefreshToken).filter(RefreshToken.token == refresh_token).one()
             )
             assert stored is not None
 
@@ -126,7 +128,9 @@ async def test_logout_revokes_refresh_token():
 async def test_logout_revoke_all_refresh_tokens():
     unique_email = f"logout_all_{uuid.uuid4().hex}@test.com"
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         register = await client.post(
             "/api/auth/register",
             json={"email": unique_email, "password": "logout123"},
@@ -152,9 +156,7 @@ async def test_logout_revoke_all_refresh_tokens():
 
         with SessionLocal() as db:
             tokens = (
-                db.query(RefreshToken)
-                .filter(RefreshToken.user_id == user_id)
-                .all()
+                db.query(RefreshToken).filter(RefreshToken.user_id == user_id).all()
             )
             assert len(tokens) >= 2
 
@@ -166,9 +168,7 @@ async def test_logout_revoke_all_refresh_tokens():
 
         with SessionLocal() as db:
             remaining = (
-                db.query(RefreshToken)
-                .filter(RefreshToken.user_id == user_id)
-                .all()
+                db.query(RefreshToken).filter(RefreshToken.user_id == user_id).all()
             )
             assert remaining == []
 

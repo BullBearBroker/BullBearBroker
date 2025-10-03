@@ -8,16 +8,18 @@ import sys
 import types
 from types import SimpleNamespace
 
-
 _EMAIL_METADATA_PATCHED = False
 
 
 def ensure() -> None:
     """Install lightweight stubs for optional packages used by the app."""
 
-    os.environ.setdefault("DATABASE_URL", "postgresql+psycopg://user:pass@localhost/testdb")
+    os.environ.setdefault(
+        "DATABASE_URL", "postgresql+psycopg://user:pass@localhost/testdb"
+    )
 
     if "passlib.context" not in sys.modules:
+
         class _FakeCryptContext:  # pragma: no cover - stub for tests
             def __init__(self, *_args, **_kwargs) -> None:
                 pass
@@ -44,7 +46,9 @@ def ensure() -> None:
 
         def _validate_email(value: str, *_args, **_kwargs):  # pragma: no cover - stub
             local_part = value.split("@", 1)[0]
-            return SimpleNamespace(email=value, normalized=value.lower(), local_part=local_part)
+            return SimpleNamespace(
+                email=value, normalized=value.lower(), local_part=local_part
+            )
 
         email_validator_module.EmailNotValidError = _EmailNotValidError  # type: ignore[attr-defined]
         email_validator_module.validate_email = _validate_email  # type: ignore[attr-defined]

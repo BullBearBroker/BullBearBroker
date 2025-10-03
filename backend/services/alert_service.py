@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Awaitable, Dict, List, Optional, Tuple, NamedTuple
 import re
+from collections.abc import Awaitable
+from typing import NamedTuple
 
 # APScheduler es opcional
 try:
@@ -58,10 +59,10 @@ class AlertService:
     def __init__(
         self,
         *,
-        session_factory: Optional[sessionmaker] = DefaultSessionLocal,
-        scheduler: Optional[AsyncIOScheduler] = None,
+        session_factory: sessionmaker | None = DefaultSessionLocal,
+        scheduler: AsyncIOScheduler | None = None,
         interval_seconds: int = 60,
-        telegram_bot_token: Optional[str] = Config.TELEGRAM_BOT_TOKEN,
+        telegram_bot_token: str | None = Config.TELEGRAM_BOT_TOKEN,
     ) -> None:
         self._session_factory = session_factory
         if scheduler is not None:
@@ -91,7 +92,9 @@ class AlertService:
             LOGGER.warning("AlertService: sin base de datos, se omite el scheduler")
             return
         if self._scheduler is None:
-            LOGGER.warning("AlertService: APScheduler no disponible, las alertas se ejecutarán bajo demanda")
+            LOGGER.warning(
+                "AlertService: APScheduler no disponible, las alertas se ejecutarán bajo demanda"
+            )
             return
         if not self._scheduler.running:
             self._scheduler.start()
@@ -117,7 +120,7 @@ class AlertService:
         if not alerts:
             return
 
-        triggered: List[Tuple[Alert, float]] = []
+        triggered: list[tuple[Alert, float]] = []
         for alert in alerts:
             if not getattr(alert, "active", True):
                 continue
@@ -133,7 +136,7 @@ class AlertService:
         for alert, price in triggered:
             await self._notify(alert, price)
 
-    def _fetch_alerts(self) -> List[Alert]:
+    def _fetch_alerts(self) -> list[Alert]:
         assert self._session_factory is not None
         with self._session_factory() as session:
             result = session.scalars(select(Alert).where(Alert.active.is_(True))).all()
@@ -141,7 +144,7 @@ class AlertService:
                 session.expunge(alert)
             return result
 
-    async def _resolve_price(self, symbol: str) -> Optional[float]:
+    async def _resolve_price(self, symbol: str) -> float | None:
         stock = await market_service.get_stock_price(symbol)
         if stock and stock.get("price") is not None:
             return float(stock["price"])
@@ -199,7 +202,9 @@ class AlertService:
         except Exception as exc:
             LOGGER.warning("AlertService: error enviando mensaje a Telegram: %s", exc)
 
-    async def suggest_alert_condition(self, asset: str, interval: str = "1h") -> Dict[str, str]:
+    async def suggest_alert_condition(
+        self, asset: str, interval: str = "1h"
+    ) -> dict[str, str]:
         """Genera una condición sugerida usando IA para un activo dado."""  # [Codex] nuevo
         asset_clean = (asset or "").strip().upper()
         if not asset_clean:
@@ -210,8 +215,8 @@ class AlertService:
             interval_norm = "1h"
 
         prompt = (
-            f"Genera una recomendación breve para configurar una alerta automática en el activo {asset_clean} "
-            f"con datos del intervalo {interval_norm}. "
+            "Genera una recomendación breve para configurar una alerta automática "
+            f"en el activo {asset_clean} con datos del intervalo {interval_norm}. "
             "Responde EXACTAMENTE en dos líneas usando el formato:\n"
             "Condición: <regla técnica concisa>\nNota: <explicación corta>."
             "Utiliza indicadores como RSI, MACD, ATR o VWAP según aplique."
@@ -220,9 +225,14 @@ class AlertService:
         try:
             ai_payload = await ai_service.process_message(prompt)
         except Exception as exc:
-            LOGGER.warning("No se pudo obtener sugerencia AI para %s: %s", asset_clean, exc)
+            LOGGER.warning(
+                "No se pudo obtener sugerencia AI para %s: %s", asset_clean, exc
+            )
             fallback = f"{asset_clean} precio cruza promedio de 20 velas"
-            return {"suggestion": fallback, "notes": "Sugerencia local por indisponibilidad de IA"}
+            return {
+                "suggestion": fallback,
+                "notes": "Sugerencia local por indisponibilidad de IA",
+            }
 
         # [Codex] cambiado - la IA ahora regresa metadatos, tomamos el texto plano
         ai_text = ai_payload.text if hasattr(ai_payload, "text") else str(ai_payload)
@@ -240,7 +250,11 @@ class AlertService:
                 note = line.split(":", 1)[-1].strip() if ":" in line else line
 
         if not condition:
-            condition = ai_text.splitlines()[0].strip() if ai_text.strip() else "Condición no disponible"
+            condition = (
+                ai_text.splitlines()[0].strip()
+                if ai_text.strip()
+                else "Condición no disponible"
+            )
         if not note:
             note = "Generada automáticamente por IA"
 
@@ -267,9 +281,9 @@ class AlertService:
         self,
         *,
         message: str,
-        telegram_chat_id: Optional[str] = None,
-        discord_channel_id: Optional[str] = None,
-    ) -> Dict[str, Dict[str, str]]:
+        telegram_chat_id: str | None = None,
+        discord_channel_id: str | None = None,
+    ) -> dict[str, dict[str, str]]:
         """Send an arbitrary alert message through configured providers."""
 
         targets = []
@@ -281,7 +295,7 @@ class AlertService:
         if not targets:
             raise ValueError("No notification targets were provided")
 
-        results: Dict[str, Dict[str, str]] = {}
+        results: dict[str, dict[str, str]] = {}
         deliveries = []
         for provider, target in targets:
             if provider == "telegram":
@@ -315,7 +329,7 @@ class AlertService:
         provider: str,
         target: str,
         coroutine: Awaitable[None],
-    ) -> Tuple[str, str, Optional[str]]:
+    ) -> tuple[str, str, str | None]:
         try:
             await coroutine
             return provider, target, None
@@ -337,13 +351,15 @@ class AlertService:
 
         url = f"https://api.telegram.org/bot{token}/sendMessage"
         payload = {"chat_id": chat_id, "text": message}
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, timeout=10) as response:
-                if response.status >= 400:
-                    body = await response.text()
-                    raise RuntimeError(
-                        f"Telegram API devolvió estado {response.status}: {body}"
-                    )
+        async with (
+            aiohttp.ClientSession() as session,
+            session.post(url, json=payload, timeout=10) as response,
+        ):
+            if response.status >= 400:
+                body = await response.text()
+                raise RuntimeError(
+                    f"Telegram API devolvió estado {response.status}: {body}"
+                )
 
     async def _send_discord_message(self, channel_id: str, message: str) -> None:
         if not self._discord_token:
@@ -360,13 +376,15 @@ class AlertService:
         }
         payload = {"content": message}
 
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=payload, timeout=10) as response:
-                if response.status >= 400:
-                    body = await response.text()
-                    raise RuntimeError(
-                        f"Discord API devolvió estado {response.status}: {body}"
-                    )
+        async with (
+            aiohttp.ClientSession() as session,
+            session.post(url, headers=headers, json=payload, timeout=10) as response,
+        ):
+            if response.status >= 400:
+                body = await response.text()
+                raise RuntimeError(
+                    f"Discord API devolvió estado {response.status}: {body}"
+                )
 
 
 class _ConditionExpressionParser:
@@ -441,7 +459,9 @@ class _ConditionExpressionParser:
 
         token = self._match("IDENT")
         if token is None:
-            raise ValueError("Se esperaba un indicador, identificador o número en la condición")
+            raise ValueError(
+                "Se esperaba un indicador, identificador o número en la condición"
+            )
 
         # Funciones tipo RSI(14)
         if self._match("LPAREN"):
@@ -459,13 +479,13 @@ class _ConditionExpressionParser:
             break
 
     # ---- Token utilities -------------------------------------------------
-    def _tokenize(self, expression: str) -> List["_Token"]:
-        tokens: List[_Token] = []
+    def _tokenize(self, expression: str) -> list[_Token]:
+        tokens: list[_Token] = []
         position = 0
         while position < len(expression):
             match = self._TOKEN_REGEX.match(expression, position)
             if not match:
-                snippet = expression[position:position + 10]
+                snippet = expression[position : position + 10]
                 raise ValueError(f"Símbolo inesperado cerca de '{snippet}'")
             kind = match.lastgroup
             value = match.group()
@@ -479,12 +499,12 @@ class _ConditionExpressionParser:
                 tokens.append(_Token(kind.upper(), value))
         return tokens
 
-    def _current(self) -> Optional["_Token"]:
+    def _current(self) -> _Token | None:
         if self.index < len(self.tokens):
             return self.tokens[self.index]
         return None
 
-    def _match(self, token_type: str) -> Optional["_Token"]:
+    def _match(self, token_type: str) -> _Token | None:
         current = self._current()
         if current and current.type == token_type:
             self.index += 1

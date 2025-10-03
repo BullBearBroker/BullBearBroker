@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
 from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator
@@ -25,8 +24,8 @@ class PortfolioItemResponse(BaseModel):
     id: UUID
     symbol: str
     amount: float
-    price: Optional[float] = None
-    value: Optional[float] = None
+    price: float | None = None
+    value: float | None = None
 
     model_config = {
         "from_attributes": True,
@@ -34,12 +33,49 @@ class PortfolioItemResponse(BaseModel):
 
 
 class PortfolioSummaryResponse(BaseModel):
-    items: List[PortfolioItemResponse]
+    items: list[PortfolioItemResponse]
     total_value: float
+
+
+class PortfolioImportError(BaseModel):
+    row: int
+    message: str
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {"row": 5, "message": "La cantidad debe ser numérica"}
+        }
+    }
+
+
+class PortfolioImportResult(BaseModel):
+    created: int
+    items: list[PortfolioItemResponse]
+    errors: list[PortfolioImportError]
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "created": 1,
+                "items": [
+                    {
+                        "id": "6b2c6d4d-5b2f-4cd0-9e10-0afadf7c6c71",
+                        "symbol": "AAPL",
+                        "amount": 3.0,
+                    }
+                ],
+                "errors": [
+                    {"row": 4, "message": "El símbolo ya existe en tu portafolio"}
+                ],
+            }
+        }
+    }
 
 
 __all__ = [
     "PortfolioCreate",
     "PortfolioItemResponse",
     "PortfolioSummaryResponse",
+    "PortfolioImportError",
+    "PortfolioImportResult",
 ]

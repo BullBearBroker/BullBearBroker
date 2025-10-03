@@ -1,0 +1,919 @@
+{
+  "info": {
+    "name": "BullBearBroker API",
+    "_postman_id": "auto-generated",
+    "description": "",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Read Root",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": []
+        }
+      }
+    },
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/health/",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "health"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/health",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "health"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Ping",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/health/ping",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "health",
+            "ping"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Version",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/health/version",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "health",
+            "version"
+          ]
+        }
+      }
+    },
+    {
+      "name": "List Alerts",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/alerts",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "alerts"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Create Alert",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/alerts",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "alerts"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Delete All Alerts",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/alerts",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "alerts"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Suggest Alert Condition",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/alerts/suggest",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "alerts",
+            "suggest"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Delete Alert",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/alerts/{alert_id}",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "alerts",
+            "{alert_id}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Update Alert",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/alerts/{alert_id}",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "alerts",
+            "{alert_id}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Send Alert Notification",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/alerts/send",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "alerts",
+            "send"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Crypto Prices",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/markets/crypto/prices",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "markets",
+            "crypto",
+            "prices"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Stock Quotes",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/markets/stocks/quotes",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "markets",
+            "stocks",
+            "quotes"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Forex Rates",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/markets/forex/rates",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "markets",
+            "forex",
+            "rates"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Crypto",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/markets/crypto/{symbol}",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "markets",
+            "crypto",
+            "{symbol}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get History",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/markets/history/{symbol}",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "markets",
+            "history",
+            "{symbol}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Stock",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/markets/stock/{symbol}",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "markets",
+            "stock",
+            "{symbol}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Forex",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/markets/forex/{pair}",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "markets",
+            "forex",
+            "{pair}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Indicators",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/markets/indicators",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "markets",
+            "indicators"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Latest News",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/news/latest",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "news",
+            "latest"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Crypto News",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/news/crypto",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "news",
+            "crypto"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Finance News",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/news/finance",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "news",
+            "finance"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Register",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/auth/register",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "register"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Login",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/auth/login",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "login"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Refresh Token",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/auth/refresh",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "refresh"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Logout",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/auth/logout",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "logout"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get Current User",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/auth/me",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "auth",
+            "me"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Chat Endpoint",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/ai/chat",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "ai",
+            "chat"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Get History",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/ai/history/{session_id}",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "ai",
+            "history",
+            "{session_id}"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Subscribe Push",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/push/subscribe",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "push",
+            "subscribe"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Update Preferences",
+      "request": {
+        "method": "PUT",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/push/preferences",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "push",
+            "preferences"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Send Test Notification",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/push/send-test",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "push",
+            "send-test"
+          ]
+        }
+      }
+    },
+    {
+      "name": "List Portfolio",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/portfolio",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "portfolio"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Create Portfolio Item",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/portfolio",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "portfolio"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Export Portfolio",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/portfolio/export",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "portfolio",
+            "export"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Import Portfolio",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/portfolio/import",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "portfolio",
+            "import"
+          ]
+        }
+      }
+    },
+    {
+      "name": "Delete Portfolio Item",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8000/api/portfolio/{item_id}",
+          "protocol": "http",
+          "host": [
+            "localhost:8000"
+          ],
+          "path": [
+            "api",
+            "portfolio",
+            "{item_id}"
+          ]
+        }
+      }
+    }
+  ]
+}

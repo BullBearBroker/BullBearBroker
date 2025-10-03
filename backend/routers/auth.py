@@ -1,31 +1,116 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone, timedelta
+import asyncio
+import hashlib
+import re
+import time
+from contextlib import nullcontext
+from datetime import UTC, datetime, timedelta
+
+# [Codex] cambiado - se añaden tipos para risk profile
+from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from sqlalchemy.orm import Session
-from typing import Dict, Literal, Optional  # [Codex] cambiado - se añaden tipos para risk profile
-import re
-
 from pydantic import BaseModel, field_validator
+from sqlalchemy.orm import Session
 
-from backend.core.security import create_access_token, create_refresh_token, decode_refresh
+import backend.core.login_backoff as login_backoff_module
+from backend.core.logging_config import get_logger, log_event
+from backend.core.login_backoff import login_backoff
+from backend.core.metrics import LOGIN_ATTEMPTS, LOGIN_DURATION, LOGIN_RATE_LIMITED
+from backend.core.rate_limit import login_rate_limiter, rate_limit
+from backend.core.security import (
+    create_access_token,
+    create_refresh_token,
+    decode_refresh,
+)
 from backend.database import get_db
-from backend.models import User
 from backend.models.refresh_token import RefreshToken
 from backend.schemas.auth import RefreshRequest, TokenPair
+from backend.services.captcha_service import CaptchaVerificationError, verify_captcha
+from backend.services.password_guard import is_password_compromised
 from backend.services.user_service import (
     InvalidCredentialsError,
     InvalidTokenError,
     UserAlreadyExistsError,
     user_service,
 )
+from backend.utils.config import Config
+
+try:  # pragma: no cover - tracing opcional
+    from opentelemetry import trace
+except Exception:  # pragma: no cover - entorno sin tracing
+    trace = None  # type: ignore[assignment]
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 security = HTTPBearer()
+logger = get_logger(service="auth_router")
+
+_TRACER = trace.get_tracer("backend.auth") if trace else None
+
+_LOGIN_IP_LIMIT_REQUESTS = getattr(
+    Config,
+    "LOGIN_IP_LIMIT_REQUESTS",
+    getattr(Config, "LOGIN_IP_LIMIT_TIMES", 20),
+)
+_LOGIN_IP_LIMIT_WINDOW_SECONDS = getattr(
+    Config,
+    "LOGIN_IP_LIMIT_WINDOW_SECONDS",
+    getattr(Config, "LOGIN_IP_LIMIT_SECONDS", 60),
+)
+_LOGIN_BACKOFF_START_AFTER = getattr(Config, "LOGIN_BACKOFF_START_AFTER", 3)
+_SOFT_LOCK_THRESHOLD = max(0, getattr(Config, "LOGIN_SOFT_LOCK_THRESHOLD", 0))
+_SOFT_LOCK_COOLDOWN = max(0, getattr(Config, "LOGIN_SOFT_LOCK_COOLDOWN", 0))
+_EMAIL_BACKOFF_DETAIL = (
+    "Demasiados intentos de inicio de sesión. Intenta nuevamente más tarde."
+)
+_MIN_INVALID_DELAY_SECONDS = 0.1
+
+
+def _record_login_rate_limit(request: Request, dimension: str) -> None:
+    client_ip = request.client.host if request.client else "unknown"
+    payload: dict[str, object] = {
+        "service": "auth_router",
+        "event": "login_rate_limited",
+        "level": "warning",
+        "dimension": dimension,
+        "client_ip": client_ip,
+    }
+    email_hash = getattr(request.state, "login_email_hash", None)
+    if dimension == "email" and email_hash:
+        payload["email_hash"] = email_hash
+    log_event(logger, **payload)
+    LOGIN_ATTEMPTS.labels(outcome="limited").inc()
+    LOGIN_RATE_LIMITED.labels(dimension=dimension).inc()
+
+
+_login_rate_limit = login_rate_limiter(
+    times=5,
+    seconds=60,
+    on_limit=_record_login_rate_limit,
+    state_attribute="login_limited_email",
+)
+_login_ip_rate_limit = rate_limit(
+    times=_LOGIN_IP_LIMIT_REQUESTS,
+    seconds=_LOGIN_IP_LIMIT_WINDOW_SECONDS,
+    identifier="auth_login_ip",
+    detail=(
+        "Demasiadas solicitudes de inicio de sesión desde esta IP. "
+        "Espera antes de volver a intentarlo."
+    ),
+    on_limit=_record_login_rate_limit,
+    on_limit_dimension="ip",
+    state_attribute="login_limited_ip",
+)
+_refresh_rate_limit = rate_limit(
+    times=10,
+    seconds=120,
+    identifier="auth_refresh",
+    detail="Demasiadas solicitudes de refresco. Espera antes de volver a intentarlo.",
+)
 
 
 EMAIL_REGEX = re.compile(r"^[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}$", re.IGNORECASE)
@@ -38,7 +123,7 @@ def _validate_email(value: str) -> str:
         from email_validator import EmailNotValidError, validate_email  # type: ignore
     except Exception:  # pragma: no cover - dependencia opcional ausente en tests
         if not EMAIL_REGEX.fullmatch(value):
-            raise ValueError("Correo electrónico inválido")
+            raise ValueError("Correo electrónico inválido") from None
         return value.lower()
 
     try:
@@ -51,7 +136,9 @@ def _validate_email(value: str) -> str:
 class UserCreate(BaseModel):
     email: str
     password: str
-    risk_profile: Optional[Literal["conservador", "moderado", "agresivo"]] = None  # [Codex] nuevo
+    risk_profile: Literal["conservador", "moderado", "agresivo"] | None = (
+        None  # [Codex] nuevo
+    )
 
     @field_validator("email")
     @classmethod
@@ -60,7 +147,7 @@ class UserCreate(BaseModel):
 
     @field_validator("risk_profile")  # [Codex] nuevo
     @classmethod
-    def _normalize_risk_profile(cls, value: Optional[str]) -> Optional[str]:
+    def _normalize_risk_profile(cls, value: str | None) -> str | None:
         if value is None:
             return None
         return value.lower()
@@ -69,6 +156,7 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
     email: str
     password: str
+    captcha_token: str | None = None
 
     @field_validator("email")
     @classmethod
@@ -84,7 +172,23 @@ class LogoutRequest(BaseModel):
 @router.post("/register", status_code=status.HTTP_201_CREATED)
 async def register(user_data: UserCreate):
     if len(user_data.password) < 6:
-        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 6 caracteres")
+        raise HTTPException(
+            status_code=400,
+            detail="La contraseña debe tener al menos 6 caracteres",
+        )
+
+    if Config.ENABLE_PASSWORD_BREACH_CHECK and is_password_compromised(
+        user_data.password
+    ):
+        email_hash = hashlib.sha256(user_data.email.encode("utf-8")).hexdigest()[:8]
+        log_event(
+            logger,
+            service="auth_router",
+            event="password_rejected",  # generic event to avoid leaking reason
+            level="warning",
+            email_hash=email_hash,
+        )
+        raise HTTPException(status_code=400, detail="Credenciales inválidas")
 
     try:
         new_user = user_service.create_user(
@@ -98,6 +202,14 @@ async def register(user_data: UserCreate):
             password=user_data.password,
         )
     except UserAlreadyExistsError as exc:  # pragma: no cover - tests cubren el éxito
+        email_hash = hashlib.sha256(user_data.email.encode("utf-8")).hexdigest()[:8]
+        log_event(
+            logger,
+            service="auth_router",
+            event="user_registration_conflict",
+            level="warning",
+            email_hash=email_hash,
+        )
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:  # [Codex] nuevo - valida perfil de riesgo
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -113,62 +225,312 @@ async def register(user_data: UserCreate):
     return payload
 
 
-@router.post("/login", response_model=TokenPair)
-async def login(credentials: UserLogin, db: Session = Depends(get_db)) -> TokenPair:
-    try:
-        user = user_service.authenticate_user(
-            email=credentials.email,
-            password=credentials.password,
-        )
-    except InvalidCredentialsError as exc:
-        raise HTTPException(status_code=401, detail=str(exc)) from exc
+@router.post(
+    "/login",
+    response_model=TokenPair,
+    dependencies=[Depends(_login_rate_limit)],
+)
+async def login(
+    credentials: UserLogin,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+) -> TokenPair:
+    start = time.perf_counter()
+    limited_email = bool(getattr(request.state, "login_limited_email", False))
+    limited_ip = False
+    email_hash = getattr(request.state, "login_email_hash", None)
+    normalized_email = credentials.email.strip().lower()
+    if not email_hash:
+        email_hash = hashlib.sha256(normalized_email.encode("utf-8")).hexdigest()[:8]
+        request.state.login_email_hash = email_hash
 
-    sub = str(user.id)
-    jti = str(uuid4())
-    refresh_token = create_refresh_token(sub=sub, jti=jti)
-    refresh_payload = decode_refresh(refresh_token)
-    refresh_expires = datetime.fromtimestamp(refresh_payload["exp"], tz=timezone.utc)
-
-    # ⬇️ Persistimos el refresh token siempre con nuestro servicio
-    user_service.store_refresh_token(user.id, refresh_token)
-
-    access_token = create_access_token(sub=sub, extra={"jti": str(uuid4())})
-    access_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
-    user_service.register_external_session(user.id, access_token, access_expires)
-
-    return TokenPair(
-        access_token=access_token,
-        refresh_token=refresh_token,
-        access_expires_at=access_expires.isoformat(),
-        refresh_expires_at=refresh_expires.isoformat(),
+    span_manager = (
+        _TRACER.start_as_current_span("auth.login") if _TRACER else nullcontext()
     )
+    outcome = "ok"
+    with span_manager as span:
+        if span is not None:
+            span.set_attribute("limited.email", limited_email)
+            span.set_attribute("limited.ip", limited_ip)
+            span.set_attribute("user.email_hash", email_hash)
+
+        cooldown_remaining = await login_backoff.cooldown_remaining_seconds(email_hash)
+        if cooldown_remaining > 0:
+            outcome = "locked"
+            duration = time.perf_counter() - start
+            LOGIN_DURATION.observe(duration)
+            LOGIN_ATTEMPTS.labels(outcome=outcome).inc()
+            if span is not None:
+                span.set_attribute("outcome", outcome)
+                span.set_attribute("limited.cooldown", True)
+            log_event(
+                logger,
+                service="auth_router",
+                event="login_failed",
+                level="warning",
+                email_hash=email_hash,
+                reason="cooldown",
+                retry_after=cooldown_remaining,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_423_LOCKED,
+                detail=_EMAIL_BACKOFF_DETAIL,
+                headers={"Retry-After": str(cooldown_remaining)},
+            )
+
+        backoff_threshold = _LOGIN_BACKOFF_START_AFTER
+        windows = getattr(login_backoff_module, "BACKOFF_WINDOWS", None)
+        if windows:
+            try:
+                first_window = float(windows[0])
+            except (TypeError, ValueError):  # pragma: no cover - defensive casting
+                first_window = float(_LOGIN_BACKOFF_START_AFTER)
+            if first_window < 1:
+                backoff_threshold = max(1, backoff_threshold - 1)
+
+        failure_count = await login_backoff.failure_count(email_hash)
+        wait_seconds = await login_backoff.required_wait_seconds(email_hash)
+        if wait_seconds == 0 and failure_count >= backoff_threshold:
+            await login_backoff.clear(email_hash)
+            failure_count = 0
+
+        if Config.ENABLE_CAPTCHA_ON_LOGIN:
+            captcha_required = failure_count >= Config.LOGIN_CAPTCHA_THRESHOLD
+            if captcha_required:
+                try:
+                    verify_captcha(credentials.captcha_token)
+                except CaptchaVerificationError as exc:
+                    outcome = "captcha_required"
+                    duration = time.perf_counter() - start
+                    LOGIN_DURATION.observe(duration)
+                    LOGIN_ATTEMPTS.labels(outcome=outcome).inc()
+                    if span is not None:
+                        span.set_attribute("outcome", outcome)
+                        span.set_attribute("limited.ip", limited_ip)
+                    log_event(
+                        logger,
+                        service="auth_router",
+                        event="login_failed",
+                        level="warning",
+                        email_hash=email_hash,
+                        reason="rate_limited",
+                    )
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Se requiere verificación adicional antes de continuar.",
+                    ) from exc
+
+        if wait_seconds > 0:
+            outcome = "limited"
+            duration = time.perf_counter() - start
+            LOGIN_DURATION.observe(duration)
+            LOGIN_ATTEMPTS.labels(outcome=outcome).inc()
+            LOGIN_RATE_LIMITED.labels(dimension="email").inc()
+            if span is not None:
+                span.set_attribute("outcome", outcome)
+            log_event(
+                logger,
+                service="auth_router",
+                event="login_failed",
+                level="warning",
+                email_hash=email_hash,
+                reason="rate_limited",
+            )
+            raise HTTPException(
+                status_code=429,
+                detail=_EMAIL_BACKOFF_DETAIL,
+                headers={"Retry-After": str(wait_seconds)},
+            )
+
+        try:
+            user = user_service.authenticate_user(
+                email=credentials.email,
+                password=credentials.password,
+            )
+        except InvalidCredentialsError as exc:
+            backoff_seconds = await login_backoff.register_failure(
+                email_hash,
+                start_after=backoff_threshold,
+            )
+            soft_lock_triggered = False
+            if _SOFT_LOCK_THRESHOLD > 0:
+                failures = await login_backoff.failure_count(email_hash)
+                if failures >= _SOFT_LOCK_THRESHOLD:
+                    cooldown_seconds = _SOFT_LOCK_COOLDOWN
+                    if cooldown_seconds > 0:
+                        soft_lock_triggered = await login_backoff.activate_cooldown(
+                            email_hash,
+                            cooldown_seconds,
+                        )
+                        if soft_lock_triggered:
+                            if span is not None:
+                                span.set_attribute("soft_lock", True)
+                            log_event(
+                                logger,
+                                service="auth_router",
+                                event="account_soft_lock",
+                                level="warning",
+                                email_hash=email_hash,
+                                cooldown_sec=cooldown_seconds,
+                            )
+            duration = time.perf_counter() - start
+            limiter_response = Response()
+            try:
+                await _login_ip_rate_limit(request, limiter_response)
+            except HTTPException as limit_exc:
+                limited_ip = True
+                if span is not None:
+                    span.set_attribute("limited.ip", limited_ip)
+                    span.set_attribute("outcome", "limited")
+                outcome = "limited"
+                LOGIN_DURATION.observe(duration)
+                log_event(
+                    logger,
+                    service="auth_router",
+                    event="login_failed",
+                    level="warning",
+                    email_hash=email_hash,
+                    reason="rate_limited",
+                )
+                raise limit_exc from exc
+            if backoff_seconds > 0:
+                outcome = "limited"
+                LOGIN_DURATION.observe(duration)
+                LOGIN_ATTEMPTS.labels(outcome=outcome).inc()
+                LOGIN_RATE_LIMITED.labels(dimension="email").inc()
+                if span is not None:
+                    span.set_attribute("outcome", outcome)
+                    span.set_attribute("limited.ip", limited_ip)
+                retry_after = await login_backoff.required_wait_seconds(email_hash)
+                log_event(
+                    logger,
+                    service="auth_router",
+                    event="login_failed",
+                    level="warning",
+                    email_hash=email_hash,
+                    reason="rate_limited",
+                    backoff_seconds=backoff_seconds,
+                )
+                raise HTTPException(
+                    status_code=429,
+                    detail=_EMAIL_BACKOFF_DETAIL,
+                    headers={"Retry-After": str(retry_after)},
+                ) from exc
+
+            outcome = "invalid"
+            if duration < _MIN_INVALID_DELAY_SECONDS:
+                await asyncio.sleep(_MIN_INVALID_DELAY_SECONDS - duration)
+                duration = time.perf_counter() - start
+            LOGIN_DURATION.observe(duration)
+            LOGIN_ATTEMPTS.labels(outcome=outcome).inc()
+            if span is not None:
+                span.set_attribute("outcome", outcome)
+                span.set_attribute("limited.ip", limited_ip)
+            log_event(
+                logger,
+                service="auth_router",
+                event="login_failed",
+                level="warning",
+                email_hash=email_hash,
+                reason="invalid",
+            )
+            raise HTTPException(status_code=401, detail=str(exc)) from exc
+        except Exception as exc:
+            outcome = "error"
+            duration = time.perf_counter() - start
+            LOGIN_DURATION.observe(duration)
+            LOGIN_ATTEMPTS.labels(outcome=outcome).inc()
+            if span is not None:
+                span.set_attribute("outcome", outcome)
+                span.set_attribute("error.dependency", "database")
+            log_event(
+                logger,
+                service="auth_router",
+                event="dependency_unavailable",
+                level="error",
+                dependency="database",
+                email_hash=email_hash,
+                error=str(exc),
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Servicio de usuarios no disponible",
+            ) from exc
+
+        sub = str(user.id)
+        jti = str(uuid4())
+        refresh_token = create_refresh_token(sub=sub, jti=jti)
+        refresh_payload = decode_refresh(refresh_token)
+        refresh_expires = datetime.fromtimestamp(refresh_payload["exp"], tz=UTC)
+
+        # ⬇️ Persistimos el refresh token siempre con nuestro servicio
+        user_service.store_refresh_token(user.id, refresh_token)
+
+        access_token = create_access_token(sub=sub, extra={"jti": str(uuid4())})
+        access_expires = datetime.now(UTC) + timedelta(minutes=15)
+        user_service.register_external_session(user.id, access_token, access_expires)
+        await login_backoff.clear(email_hash)
+
+        duration = time.perf_counter() - start
+        LOGIN_DURATION.observe(duration)
+        LOGIN_ATTEMPTS.labels(outcome=outcome).inc()
+        if span is not None:
+            span.set_attribute("outcome", outcome)
+
+        return TokenPair(
+            access_token=access_token,
+            refresh_token=refresh_token,
+            access_expires_at=access_expires.isoformat(),
+            refresh_expires_at=refresh_expires.isoformat(),
+        )
 
 
-@router.post("/refresh", response_model=TokenPair)
-def refresh_token(req: RefreshRequest, db: Session = Depends(get_db)) -> TokenPair:
+@router.post(
+    "/refresh",
+    response_model=TokenPair,
+    dependencies=[Depends(_refresh_rate_limit)],
+)
+def refresh_token(
+    req: RefreshRequest, db: Annotated[Session, Depends(get_db)]
+) -> TokenPair:
     token_str = req.refresh_token
     db_token = None
     if db is not None:
-        db_token = db.query(RefreshToken).filter(RefreshToken.token == token_str).first()
+        db_token = (
+            db.query(RefreshToken).filter(RefreshToken.token == token_str).first()
+        )
 
     if db_token:
         try:
             payload = decode_refresh(token_str)
             sub = payload.get("sub")
             if not sub:
-                raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token payload")
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid token payload",
+                )
             sub_uuid = UUID(sub)
-        except (jwt.PyJWTError, ValueError):
+        except (jwt.PyJWTError, ValueError) as err:
+            log_event(
+                logger,
+                service="auth_router",
+                event="refresh_token_invalid",
+                level="warning",
+                refresh_id=str(getattr(db_token, "id", "")),
+            )
             db.delete(db_token)
             db.commit()
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid refresh token",
+            ) from err
 
         db.delete(db_token)
         db.commit()
 
         new_refresh = create_refresh_token(sub=sub, jti=str(uuid4()))
         refresh_payload = decode_refresh(new_refresh)
-        refresh_expires = datetime.fromtimestamp(refresh_payload["exp"], tz=timezone.utc)
+        refresh_expires = datetime.fromtimestamp(refresh_payload["exp"], tz=UTC)
         db.add(
             RefreshToken(
                 user_id=sub_uuid,
@@ -178,7 +540,7 @@ def refresh_token(req: RefreshRequest, db: Session = Depends(get_db)) -> TokenPa
         )
         db.commit()
         access_token = create_access_token(sub=sub)
-        access_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
+        access_expires = datetime.now(UTC) + timedelta(minutes=15)
         user_service.register_external_session(sub_uuid, access_token, access_expires)
         return TokenPair(
             access_token=access_token,
@@ -188,12 +550,23 @@ def refresh_token(req: RefreshRequest, db: Session = Depends(get_db)) -> TokenPa
         )
 
     try:
-        user, new_refresh, refresh_expires = user_service.rotate_refresh_token(token_str)
+        user, new_refresh, refresh_expires = user_service.rotate_refresh_token(
+            token_str
+        )
     except InvalidTokenError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+        log_event(
+            logger,
+            service="auth_router",
+            event="refresh_token_rotation_failed",
+            level="warning",
+            reason=str(exc),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)
+        ) from exc
 
     access_token = create_access_token(sub=str(user.id), extra={"jti": str(uuid4())})
-    access_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
+    access_expires = datetime.now(UTC) + timedelta(minutes=15)
     user_service.register_external_session(user.id, access_token, access_expires)
     return TokenPair(
         access_token=access_token,
@@ -204,7 +577,9 @@ def refresh_token(req: RefreshRequest, db: Session = Depends(get_db)) -> TokenPa
 
 
 @router.post("/logout")
-def logout(req: LogoutRequest, db: Session = Depends(get_db)) -> Dict[str, str]:
+def logout(
+    req: LogoutRequest, db: Annotated[Session, Depends(get_db)]
+) -> dict[str, str]:
     if req.revoke_all:
         if not req.refresh_token:
             raise HTTPException(status_code=400, detail="refresh_token required")
@@ -214,8 +589,10 @@ def logout(req: LogoutRequest, db: Session = Depends(get_db)) -> Dict[str, str]:
             if not sub:
                 raise HTTPException(status_code=400, detail="refresh_token invalid")
             sub_uuid = UUID(sub)
-        except (jwt.PyJWTError, ValueError):
-            raise HTTPException(status_code=400, detail="refresh_token invalid")
+        except (jwt.PyJWTError, ValueError) as err:
+            raise HTTPException(
+                status_code=400, detail="refresh_token invalid"
+            ) from err
 
         if db is not None:
             db.query(RefreshToken).filter(RefreshToken.user_id == sub_uuid).delete()
@@ -237,7 +614,9 @@ def logout(req: LogoutRequest, db: Session = Depends(get_db)) -> Dict[str, str]:
 
 
 @router.get("/me")
-async def get_current_user(token: HTTPAuthorizationCredentials = Depends(security)):
+async def get_current_user(
+    token: Annotated[HTTPAuthorizationCredentials, Depends(security)],
+):
     try:
         user = user_service.get_current_user(token.credentials)
         user_service.register_session_activity(token.credentials)

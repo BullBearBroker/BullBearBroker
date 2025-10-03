@@ -1,34 +1,27 @@
+import uuid
+
 import pytest
-from httpx import AsyncClient, ASGITransport
+import pytest_asyncio
 from fastapi_limiter import FastAPILimiter
+from httpx import ASGITransport, AsyncClient
 
 from backend.main import app
 
 
+@pytest_asyncio.fixture()
+async def async_client() -> AsyncClient:
+    transport = ASGITransport(app=app, client=(f"test-{uuid.uuid4()}", 80))
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        yield client
+
+
 @pytest.mark.asyncio
-async def test_app_lifespan_and_health():
-    # ✅ limpiar rate limiter antes de ejecutar este test
+async def test_app_lifespan_and_health(async_client: AsyncClient) -> None:
+    """Ensure the app lifespan keeps Redis healthy and the health endpoint responds."""
     if FastAPILimiter.redis:
-        await FastAPILimiter.redis.flushdb()
+        pong = await FastAPILimiter.redis.ping()
+        assert pong is True
 
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        # Test del endpoint raíz
-        root_resp = await client.get("/")
-        assert root_resp.status_code == 200
-        data = root_resp.json()
-        assert "message" in data
-        assert "BullBearBroker API" in data["message"]
-
-        # Test del endpoint /api/health
-        health_resp = await client.get("/api/health")
-        if health_resp.status_code == 200:
-            data = health_resp.json()
-            assert "status" in data
-            assert data["status"] == "ok"
-        elif health_resp.status_code == 429:
-            data = health_resp.json()
-            assert "detail" in data
-            assert data["detail"] == "Too Many Requests"
-        else:
-            pytest.fail(f"Respuesta inesperada: {health_resp.status_code}, {health_resp.json()}")
+    response = await async_client.get("/api/health/")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ok"

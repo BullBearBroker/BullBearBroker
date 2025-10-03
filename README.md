@@ -47,6 +47,8 @@ Campos destacados:
 - **DATABASE_URL**: apunta por defecto al contenedor de PostgreSQL lanzado vía
   Docker Compose (`postgresql+psycopg2://bullbear:bullbear@db:5432/bullbear`).
 - **REDIS_URL**: requerido para rate limiting y futuras colas de tareas.
+- **LOGIN_IP_LIMIT_TIMES / LOGIN_IP_LIMIT_SECONDS**: controlan el límite suave por IP
+  para `/api/auth/login`.
 - **BULLBEAR_DEFAULT_USER / PASSWORD**: credenciales sembradas automáticamente para pruebas.
 - **NEXT_PUBLIC_API_URL**: URL base que consume el frontend (en Docker se
   resuelve a `http://backend:8000`).
@@ -93,10 +95,12 @@ Campos destacados:
    ```bash
    python -m venv .venv
    source .venv/bin/activate
-   pip install -r backend/requirements.txt
-   export $(grep -v '^#' .env | xargs)  # o configura variables manualmente
+   python -m pip install -r backend/requirements.txt
+   export $(grep -v '^#' .env | xargs)
    uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
    ```
+
+   Configurá las variables manualmente si preferís otro enfoque.
 
 2. **Frontend**
    ```bash
@@ -141,9 +145,19 @@ make migrate          # docker compose exec backend alembic upgrade head
 
 💡 Recomendación: tras cada despliegue en staging/prod ejecuta `make migrate` (o el comando equivalente en tu pipeline) antes de exponer la API. Esto garantiza que el esquema coincida con la última versión del código.
 
-## Pruebas automatizadas
+## Testing
 
-Ejecuta toda la suite (backend + frontend) con un solo comando:
+Desde la raíz del repositorio podés lanzar las suites de manera unificada con
+los scripts de `pnpm`:
+
+```bash
+pnpm test:frontend       # Jest modo desarrollo con watch inteligente
+pnpm test:frontend:list  # Lista los tests detectados por Jest
+pnpm test:backend        # Pytest completo para el backend
+pnpm test:backend:cov    # Pytest con cobertura para backend
+```
+
+Si preferís orquestar todo en un solo paso, mantenemos el objetivo clásico:
 
 ```bash
 make test
@@ -158,6 +172,22 @@ make test
 > Usa `npm --prefix frontend run test:ci` para validar cobertura estricta en CI.
 > Durante el desarrollo utiliza `npm --prefix frontend run test:dev` para
 > ejecutar suites filtradas sin fallos por cobertura.
+
+## Logging estructurado
+
+El backend utiliza utilidades basadas en `structlog` definidas en
+[`backend/core/logging_config.py`](backend/core/logging_config.py). La función
+`log_event` encapsula la escritura de eventos estructurados y añade
+metadatos consistentes:
+
+- `service`: servicio o módulo que emite el log (por ejemplo, `alerts`).
+- `event`: descripción corta y accionable del evento.
+- `timestamp`: ISO 8601 en UTC generado automáticamente.
+- `error`: campo opcional para adjuntar mensajes de excepción o trazas.
+
+Podés enlazar contexto adicional mediante kwargs (`user_id`, `payload`, etc.).
+El logger serializa el evento como JSON, lo que facilita enviarlo a sistemas de
+observabilidad sin parseos adicionales.
 
 ## Observabilidad (logs y métricas)
 
@@ -199,3 +229,26 @@ make test
 
 ¡Sugerencias y contribuciones son bienvenidas! Abre un issue o PR para seguir
 iterando sobre el asistente financiero inteligente de BullBearBroker.
+
+## 🔧 Desarrollo rápido
+
+```bash
+python -m pip install -r backend/requirements.txt
+python -m pip install -r backend/requirements-dev.txt
+pre-commit install
+make lint
+make test
+Generar OpenAPI/Postman:
+make openapi      # postman/openapi.json
+make postman      # postman/BullBearBroker.postman_collection.json
+```
+
+🧪 CI
+Este repo incluye GitHub Actions (.github/workflows/ci.yml) con lint (ruff/black/isort) y tests (pytest) en Python 3.12.
+
+✅ Aceptación (debe pasar)
+python -m pip install -r backend/requirements.txt
+python -m pip install -r backend/requirements-dev.txt
+pre-commit run --all-files (o make lint)
+pytest backend -q (debe quedar en verde)
+make postman crea postman/BullBearBroker.postman_collection.json

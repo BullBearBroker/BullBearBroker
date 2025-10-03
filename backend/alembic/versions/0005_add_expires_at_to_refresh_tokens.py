@@ -1,8 +1,7 @@
 """add expires_at to refresh_tokens"""
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 # ✅ Usa un string único para esta migración
 revision = "0005_refresh_tokens_expires_at"

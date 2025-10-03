@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import jwt
 
@@ -21,12 +21,12 @@ REFRESH_SECRET = os.environ.get(
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
-def create_access_token(sub: str, extra: Optional[Dict[str, Any]] = None) -> str:
+def create_access_token(sub: str, extra: dict[str, Any] | None = None) -> str:
     now = _now()
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "sub": sub,
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(minutes=ACCESS_MIN)).timestamp()),
@@ -36,9 +36,9 @@ def create_access_token(sub: str, extra: Optional[Dict[str, Any]] = None) -> str
     return jwt.encode(payload, ACCESS_SECRET, algorithm=JWT_ALG)
 
 
-def create_refresh_token(sub: str, jti: Optional[str] = None) -> str:
+def create_refresh_token(sub: str, jti: str | None = None) -> str:
     now = _now()
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "sub": sub,
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(days=REFRESH_DAYS)).timestamp()),
@@ -48,9 +48,9 @@ def create_refresh_token(sub: str, jti: Optional[str] = None) -> str:
     return jwt.encode(payload, REFRESH_SECRET, algorithm=JWT_ALG)
 
 
-def decode_access(token: str) -> Dict[str, Any]:
+def decode_access(token: str) -> dict[str, Any]:
     return jwt.decode(token, ACCESS_SECRET, algorithms=[JWT_ALG])
 
 
-def decode_refresh(token: str) -> Dict[str, Any]:
+def decode_refresh(token: str) -> dict[str, Any]:
     return jwt.decode(token, REFRESH_SECRET, algorithms=[JWT_ALG])

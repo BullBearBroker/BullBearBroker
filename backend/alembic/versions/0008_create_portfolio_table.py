@@ -1,9 +1,8 @@
 """Create portfolio_items table"""
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
-
 
 revision = "0008_create_portfolio_table"
 down_revision = "0007_alerts_title_active"
@@ -28,7 +27,9 @@ def upgrade() -> None:
         ),
         sa.Column("symbol", sa.String(length=20), nullable=False),
         sa.Column("amount", sa.Numeric(20, 8), nullable=False),
-        sa.Column("created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column(
             "updated_at",
             sa.DateTime(),

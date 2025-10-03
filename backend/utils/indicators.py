@@ -1,13 +1,14 @@
 # backend/utils/indicators.py
 
-from typing import List, Optional, Dict, Sequence  # [Codex] cambiado - se amplía tipado
 import math
+from collections.abc import Sequence
 
-def _ema_series(values: List[float], period: int) -> List[Optional[float]]:
+
+def _ema_series(values: list[float], period: int) -> list[float | None]:
     if len(values) < period:
         return [None] * len(values)
     k = 2 / (period + 1)
-    series: List[Optional[float]] = [None] * (period - 1)
+    series: list[float | None] = [None] * (period - 1)
     ema_prev = sum(values[:period]) / period
     series.append(ema_prev)
     for price in values[period:]:
@@ -15,12 +16,14 @@ def _ema_series(values: List[float], period: int) -> List[Optional[float]]:
         series.append(ema_prev)
     return series
 
-def ema(values: List[float], period: int) -> Optional[float]:
+
+def ema(values: list[float], period: int) -> float | None:
     if len(values) < period:
         return None
     return round(_ema_series(values, period)[-1] or 0.0, 6)
 
-def rsi(values: List[float], period: int = 14) -> Optional[float]:
+
+def rsi(values: list[float], period: int = 14) -> float | None:
     if len(values) <= period:
         return None
     gains = 0.0
@@ -50,13 +53,16 @@ def rsi(values: List[float], period: int = 14) -> Optional[float]:
 
     return round(rsi_val, 2)
 
-def macd(values: List[float], fast: int = 12, slow: int = 26, signal: int = 9) -> Optional[Dict[str, float]]:
+
+def macd(
+    values: list[float], fast: int = 12, slow: int = 26, signal: int = 9
+) -> dict[str, float] | None:
     if len(values) < slow + signal:
         return None
     ema_fast = _ema_series(values, fast)
     ema_slow = _ema_series(values, slow)
-    macd_line: List[Optional[float]] = []
-    for f, s in zip(ema_fast, ema_slow):
+    macd_line: list[float | None] = []
+    for f, s in zip(ema_fast, ema_slow, strict=False):
         if f is None or s is None:
             macd_line.append(None)
         else:
@@ -80,13 +86,16 @@ def macd(values: List[float], fast: int = 12, slow: int = 26, signal: int = 9) -
         "hist": round(hist, 6),
     }
 
-def bollinger(values: List[float], period: int = 20, mult: float = 2.0) -> Optional[Dict[str, float]]:
+
+def bollinger(
+    values: list[float], period: int = 20, mult: float = 2.0
+) -> dict[str, float] | None:
     if len(values) < period:
         return None
     window = values[-period:]
     mid = sum(window) / period
     var = sum((x - mid) ** 2 for x in window) / period  # población
-    sd = var ** 0.5
+    sd = var**0.5
     upper = mid + mult * sd
     lower = mid - mult * sd
     bandwidth = (upper - lower) / mid if mid != 0 else None
@@ -97,13 +106,14 @@ def bollinger(values: List[float], period: int = 20, mult: float = 2.0) -> Optio
         "bandwidth": round(bandwidth, 6) if bandwidth is not None else None,
     }
 
+
 # [Codex] nuevo
-def _rsi_series(values: Sequence[float], period: int) -> List[Optional[float]]:
+def _rsi_series(values: Sequence[float], period: int) -> list[float | None]:
     """Devuelve la serie completa de RSI aplicando el cálculo incremental sobre ``values``."""
     if len(values) <= period:
         return [None] * len(values)
 
-    rsis: List[Optional[float]] = [None] * len(values)
+    rsis: list[float | None] = [None] * len(values)
     gains = 0.0
     losses = 0.0
     for i in range(1, period + 1):
@@ -128,19 +138,20 @@ def _rsi_series(values: Sequence[float], period: int) -> List[Optional[float]]:
 
     return rsis
 
+
 # [Codex] nuevo
 def average_true_range(
     highs: Sequence[float],
     lows: Sequence[float],
     closes: Sequence[float],
     period: int = 14,
-) -> Optional[float]:
+) -> float | None:
     """Calcula el ATR (Average True Range) usando máximos, mínimos y cierres."""
     length = min(len(highs), len(lows), len(closes))
     if length <= period:
         return None
 
-    trs: List[float] = []
+    trs: list[float] = []
     prev_close = closes[0]
     for idx in range(1, length):
         high = highs[idx]
@@ -158,13 +169,14 @@ def average_true_range(
 
     return round(atr, 6)
 
+
 # [Codex] nuevo
 def stochastic_rsi(
     closes: Sequence[float],
     period: int = 14,
     smooth_k: int = 3,
     smooth_d: int = 3,
-) -> Optional[Dict[str, float]]:
+) -> dict[str, float] | None:
     """Calcula Stochastic RSI con suavizados %K y %D."""
     if len(closes) <= period + smooth_k + smooth_d:
         return None
@@ -174,13 +186,13 @@ def stochastic_rsi(
     if len(numeric_rsis) < period:
         return None
 
-    stoch_values: List[float] = []
+    stoch_values: list[float] = []
     for idx in range(period, len(rsi_series)):
         current_rsi = rsi_series[idx]
         if current_rsi is None:
             continue
         start = max(period, idx - period + 1)
-        window = [v for v in rsi_series[start: idx + 1] if v is not None]
+        window = [v for v in rsi_series[start : idx + 1] if v is not None]
         if not window:
             continue
         lowest = min(window)
@@ -193,7 +205,7 @@ def stochastic_rsi(
     if len(stoch_values) < smooth_k:
         return None
 
-    def _sma(series: Sequence[float], size: int) -> Optional[float]:
+    def _sma(series: Sequence[float], size: int) -> float | None:
         if len(series) < size:
             return None
         return sum(series[-size:]) / size
@@ -202,7 +214,7 @@ def stochastic_rsi(
     if percent_k is None:
         return None
 
-    percent_d_values = stoch_values[-(smooth_k + smooth_d - 1):]
+    percent_d_values = stoch_values[-(smooth_k + smooth_d - 1) :]
     percent_d = _sma(percent_d_values, smooth_d)
     if percent_d is None:
         return None
@@ -212,6 +224,7 @@ def stochastic_rsi(
         "%D": round(percent_d, 2),
     }
 
+
 # [Codex] nuevo
 def ichimoku_cloud(
     highs: Sequence[float],
@@ -220,7 +233,7 @@ def ichimoku_cloud(
     conversion_period: int = 9,
     base_period: int = 26,
     span_b_period: int = 52,
-) -> Optional[Dict[str, float]]:
+) -> dict[str, float] | None:
     """Calcula líneas principales de Ichimoku Cloud."""
     length = min(len(highs), len(lows), len(closes))
     if length < span_b_period:
@@ -248,13 +261,14 @@ def ichimoku_cloud(
         "chikou_span": round(chikou, 6),
     }
 
+
 # [Codex] nuevo
 def volume_weighted_average_price(
     highs: Sequence[float],
     lows: Sequence[float],
     closes: Sequence[float],
     volumes: Sequence[float],
-) -> Optional[float]:
+) -> float | None:
     """Calcula la VWAP acumulada a partir de precios típicos y volumen."""
     length = min(len(highs), len(lows), len(closes), len(volumes))
     if length == 0:

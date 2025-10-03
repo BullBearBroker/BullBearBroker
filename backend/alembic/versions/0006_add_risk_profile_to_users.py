@@ -1,8 +1,7 @@
 """add risk_profile to users"""
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 revision = "0006_add_user_risk_profile"
 down_revision = "0005_refresh_tokens_expires_at"

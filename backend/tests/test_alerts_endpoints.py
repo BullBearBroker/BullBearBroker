@@ -6,7 +6,8 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
+from unittest.mock import AsyncMock
 
 import jwt
 import pytest
@@ -17,9 +18,8 @@ from backend.tests._dependency_stubs import ensure as ensure_test_dependencies
 
 ensure_test_dependencies()
 
-from backend.main import app
-from backend.routers import alerts as alerts_router
-from backend.routers import auth as auth_router
+from backend.main import app  # noqa: E402
+from backend.routers import alerts as alerts_router, auth as auth_router  # noqa: E402
 
 
 @dataclass
@@ -47,7 +47,9 @@ class DummyUser:
     created_at: datetime = field(default_factory=datetime.utcnow)
     updated_at: datetime = field(default_factory=datetime.utcnow)
 
-    def verify_password(self, password: str) -> bool:  # pragma: no cover - simple helper
+    def verify_password(
+        self, password: str
+    ) -> bool:  # pragma: no cover - simple helper
         return self.password == password
 
 
@@ -67,11 +69,11 @@ class DummyUserService:
         pass
 
     def __init__(self) -> None:
-        self._users_by_email: Dict[str, DummyUser] = {}
-        self._users_by_id: Dict[uuid.UUID, DummyUser] = {}
-        self._alerts: Dict[uuid.UUID, List[DummyAlert]] = {}
-        self._sessions: List[SimpleNamespace] = []
-        self._refresh_tokens: Dict[str, SimpleNamespace] = {}
+        self._users_by_email: dict[str, DummyUser] = {}
+        self._users_by_id: dict[uuid.UUID, DummyUser] = {}
+        self._alerts: dict[uuid.UUID, list[DummyAlert]] = {}
+        self._sessions: list[SimpleNamespace] = []
+        self._refresh_tokens: dict[str, SimpleNamespace] = {}
         self._secret = "test-secret"
         self._algorithm = "HS256"
 
@@ -88,7 +90,7 @@ class DummyUserService:
         self._alerts[user.id] = []
         return user
 
-    def get_user_by_email(self, email: str) -> Optional[DummyUser]:
+    def get_user_by_email(self, email: str) -> DummyUser | None:
         return self._users_by_email.get(email)
 
     def authenticate_user(self, email: str, password: str) -> DummyUser:
@@ -97,7 +99,7 @@ class DummyUserService:
             raise self.InvalidCredentialsError("Credenciales inválidas")
         return user
 
-    def _build_payload(self, user: DummyUser, expires_at: datetime) -> Dict[str, Any]:
+    def _build_payload(self, user: DummyUser, expires_at: datetime) -> dict[str, Any]:
         now = datetime.utcnow()
         return {
             "sub": str(user.id),
@@ -108,25 +110,27 @@ class DummyUserService:
             "exp": expires_at,
         }
 
-    def _decode_token(self, token: str) -> Dict[str, Any]:
+    def _decode_token(self, token: str) -> dict[str, Any]:
         try:
             return jwt.decode(token, self._secret, algorithms=[self._algorithm])
-        except jwt.ExpiredSignatureError as exc:  # pragma: no cover - deterministic expiry
+        except (
+            jwt.ExpiredSignatureError
+        ) as exc:  # pragma: no cover - deterministic expiry
             raise self.InvalidTokenError("Token expirado") from exc
         except jwt.InvalidTokenError as exc:
             raise self.InvalidTokenError("Token inválido") from exc
 
     @staticmethod
-    def _extract_expiration(payload: Dict[str, Any]) -> datetime:
+    def _extract_expiration(payload: dict[str, Any]) -> datetime:
         exp = payload.get("exp")
         if isinstance(exp, datetime):
             return exp
-        if isinstance(exp, (int, float)):
+        if isinstance(exp, int | float):
             return datetime.utcfromtimestamp(exp)
         raise DummyUserService.InvalidTokenError("Token inválido")
 
     @staticmethod
-    def _extract_user_id(payload: Dict[str, Any]) -> uuid.UUID:
+    def _extract_user_id(payload: dict[str, Any]) -> uuid.UUID:
         raw_user_id = payload.get("user_id") or payload.get("sub")
         if not raw_user_id:
             raise DummyUserService.InvalidTokenError("Token inválido")
@@ -136,8 +140,8 @@ class DummyUserService:
             raise DummyUserService.InvalidTokenError("Token inválido") from exc
 
     def create_access_token(
-        self, user: DummyUser, expires_in: Optional[timedelta] = None
-    ) -> Tuple[str, datetime]:
+        self, user: DummyUser, expires_in: timedelta | None = None
+    ) -> tuple[str, datetime]:
         expires_at = datetime.utcnow() + (expires_in or timedelta(minutes=15))
         payload = self._build_payload(user, expires_at)
         token = jwt.encode(payload, self._secret, algorithm=self._algorithm)
@@ -146,9 +150,9 @@ class DummyUserService:
     def create_session(
         self,
         user_id: uuid.UUID,
-        token: Optional[str] = None,
-        expires_in: Optional[timedelta] = None,
-    ) -> Tuple[str, SimpleNamespace]:
+        token: str | None = None,
+        expires_in: timedelta | None = None,
+    ) -> tuple[str, SimpleNamespace]:
         user = self._users_by_id.get(user_id)
         if not user:
             raise self.UserNotFoundError("Usuario no encontrado")
@@ -167,8 +171,8 @@ class DummyUserService:
         return token, session
 
     def create_refresh_token(
-        self, user: DummyUser, expires_in: Optional[timedelta] = None
-    ) -> Tuple[str, datetime]:
+        self, user: DummyUser, expires_in: timedelta | None = None
+    ) -> tuple[str, datetime]:
         refresh_token = jwt.encode(
             {
                 "sub": str(user.id),
@@ -185,7 +189,9 @@ class DummyUserService:
         )
         return refresh_token, expires_at
 
-    def rotate_refresh_token(self, refresh_token: str) -> Tuple[DummyUser, str, datetime]:
+    def rotate_refresh_token(
+        self, refresh_token: str
+    ) -> tuple[DummyUser, str, datetime]:
         stored = self._refresh_tokens.pop(refresh_token, None)
         if not stored or stored.expires_at <= datetime.utcnow():
             raise self.InvalidTokenError("Refresh token inválido")
@@ -195,14 +201,14 @@ class DummyUserService:
         new_refresh, expires_at = self.create_refresh_token(user)
         return user, new_refresh, expires_at
 
-    def issue_token_pair(
-        self, user: DummyUser
-    ) -> Tuple[str, datetime, str, datetime]:
+    def issue_token_pair(self, user: DummyUser) -> tuple[str, datetime, str, datetime]:
         access_token, session = self.create_session(user.id)
         refresh_token, refresh_expires = self.create_refresh_token(user)
         return access_token, session.expires_at, refresh_token, refresh_expires
 
-    def register_session_activity(self, token: str) -> None:  # pragma: no cover - unused
+    def register_session_activity(
+        self, token: str
+    ) -> None:  # pragma: no cover - unused
         return None
 
     def get_current_user(self, token: str) -> DummyUser:
@@ -249,7 +255,7 @@ class DummyUserService:
         self._alerts[user_id].append(alert)
         return alert
 
-    def get_alerts_for_user(self, user_id: uuid.UUID) -> List[DummyAlert]:
+    def get_alerts_for_user(self, user_id: uuid.UUID) -> list[DummyAlert]:
         return list(self._alerts.get(user_id, []))
 
     def delete_alert_for_user(self, user_id: uuid.UUID, alert_id: uuid.UUID) -> bool:
@@ -267,11 +273,11 @@ class DummyUserService:
         user_id: uuid.UUID,
         alert_id: uuid.UUID,
         *,
-        title: Optional[str] = None,
-        asset: Optional[str] = None,
-        value: Optional[float] = None,
-        condition: Optional[str] = None,
-        active: Optional[bool] = None,
+        title: str | None = None,
+        asset: str | None = None,
+        value: float | None = None,
+        condition: str | None = None,
+        active: bool | None = None,
     ) -> DummyAlert:
         alerts = self._alerts.get(user_id)
         if not alerts:
@@ -307,8 +313,12 @@ def dummy_user_service(monkeypatch: pytest.MonkeyPatch) -> DummyUserService:
 
     monkeypatch.setattr(auth_router, "user_service", service)
     monkeypatch.setattr(alerts_router, "user_service", service)
-    monkeypatch.setattr(auth_router, "UserAlreadyExistsError", service.UserAlreadyExistsError)
-    monkeypatch.setattr(auth_router, "InvalidCredentialsError", service.InvalidCredentialsError)
+    monkeypatch.setattr(
+        auth_router, "UserAlreadyExistsError", service.UserAlreadyExistsError
+    )
+    monkeypatch.setattr(
+        auth_router, "InvalidCredentialsError", service.InvalidCredentialsError
+    )
     monkeypatch.setattr(alerts_router, "UserNotFoundError", service.UserNotFoundError)
     monkeypatch.setattr(auth_router, "InvalidTokenError", service.InvalidTokenError)
     monkeypatch.setattr(alerts_router, "InvalidTokenError", service.InvalidTokenError)
@@ -320,7 +330,9 @@ def dummy_user_service(monkeypatch: pytest.MonkeyPatch) -> DummyUserService:
 @pytest_asyncio.fixture()
 async def client() -> AsyncClient:
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as async_client:
+    async with AsyncClient(
+        transport=transport, base_url="http://testserver"
+    ) as async_client:
         yield async_client
 
 
@@ -332,12 +344,14 @@ async def _register_and_login(
     return token
 
 
-def _auth_header(token: str) -> Dict[str, str]:
+def _auth_header(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
 @pytest.mark.asyncio
-async def test_create_alert(client: AsyncClient, dummy_user_service: DummyUserService) -> None:
+async def test_create_alert(
+    client: AsyncClient, dummy_user_service: DummyUserService
+) -> None:
     email = f"user-{uuid.uuid4()}@example.com"
     token = await _register_and_login(dummy_user_service, email, "secret123")
 
@@ -348,7 +362,9 @@ async def test_create_alert(client: AsyncClient, dummy_user_service: DummyUserSe
         "condition": ">",
         "active": True,
     }
-    response = await client.post("/api/alerts", json=payload, headers=_auth_header(token))
+    response = await client.post(
+        "/api/alerts", json=payload, headers=_auth_header(token)
+    )
 
     assert response.status_code == 201
     body = response.json()
@@ -360,7 +376,9 @@ async def test_create_alert(client: AsyncClient, dummy_user_service: DummyUserSe
 
 
 @pytest.mark.asyncio
-async def test_list_alerts(client: AsyncClient, dummy_user_service: DummyUserService) -> None:
+async def test_list_alerts(
+    client: AsyncClient, dummy_user_service: DummyUserService
+) -> None:
     email = f"user-{uuid.uuid4()}@example.com"
     token = await _register_and_login(dummy_user_service, email, "secret123")
 
@@ -384,7 +402,9 @@ async def test_list_alerts(client: AsyncClient, dummy_user_service: DummyUserSer
 
 
 @pytest.mark.asyncio
-async def test_update_alert(client: AsyncClient, dummy_user_service: DummyUserService) -> None:
+async def test_update_alert(
+    client: AsyncClient, dummy_user_service: DummyUserService
+) -> None:
     email = f"user-{uuid.uuid4()}@example.com"
     token = await _register_and_login(dummy_user_service, email, "secret123")
 
@@ -421,7 +441,9 @@ async def test_update_alert(client: AsyncClient, dummy_user_service: DummyUserSe
 
 
 @pytest.mark.asyncio
-async def test_delete_alert(client: AsyncClient, dummy_user_service: DummyUserService) -> None:
+async def test_delete_alert(
+    client: AsyncClient, dummy_user_service: DummyUserService
+) -> None:
     email = f"user-{uuid.uuid4()}@example.com"
     token = await _register_and_login(dummy_user_service, email, "secret123")
 
@@ -437,7 +459,9 @@ async def test_delete_alert(client: AsyncClient, dummy_user_service: DummyUserSe
     )
     alert_id = create_response.json()["id"]
 
-    response = await client.delete(f"/api/alerts/{alert_id}", headers=_auth_header(token))
+    response = await client.delete(
+        f"/api/alerts/{alert_id}", headers=_auth_header(token)
+    )
 
     assert response.status_code == 200
     assert response.json() == {
@@ -451,7 +475,9 @@ async def test_delete_alert(client: AsyncClient, dummy_user_service: DummyUserSe
 
 
 @pytest.mark.asyncio
-async def test_delete_all_alerts(client: AsyncClient, dummy_user_service: DummyUserService) -> None:
+async def test_delete_all_alerts(
+    client: AsyncClient, dummy_user_service: DummyUserService
+) -> None:
     email = f"user-{uuid.uuid4()}@example.com"
     token = await _register_and_login(dummy_user_service, email, "secret123")
 
@@ -474,3 +500,176 @@ async def test_delete_all_alerts(client: AsyncClient, dummy_user_service: DummyU
     list_response = await client.get("/api/alerts", headers=_auth_header(token))
     assert list_response.status_code == 200
     assert list_response.json() == []
+
+
+@pytest.mark.asyncio
+async def test_create_alert_with_invalid_payload_returns_422(
+    client: AsyncClient, dummy_user_service: DummyUserService
+) -> None:
+    email = f"user-{uuid.uuid4()}@example.com"
+    token = await _register_and_login(dummy_user_service, email, "secret123")
+
+    invalid_payload = {
+        "title": "",
+        "asset": "btc",
+        "value": "not-a-number",
+        "condition": ">",
+        "active": True,
+    }
+
+    response = await client.post(
+        "/api/alerts", json=invalid_payload, headers=_auth_header(token)
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_delete_nonexistent_alert_returns_404(
+    client: AsyncClient, dummy_user_service: DummyUserService
+) -> None:
+    email = f"user-{uuid.uuid4()}@example.com"
+    token = await _register_and_login(dummy_user_service, email, "secret123")
+
+    response = await client.delete(
+        f"/api/alerts/{uuid.uuid4()}", headers=_auth_header(token)
+    )
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_list_alerts_empty_returns_empty_list(
+    client: AsyncClient, dummy_user_service: DummyUserService
+) -> None:
+    email = f"user-{uuid.uuid4()}@example.com"
+    token = await _register_and_login(dummy_user_service, email, "secret123")
+
+    response = await client.get("/api/alerts", headers=_auth_header(token))
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+@pytest.mark.asyncio
+async def test_create_alert_missing_asset_returns_400(
+    client: AsyncClient, dummy_user_service: DummyUserService
+) -> None:
+    email = f"user-{uuid.uuid4()}@example.com"
+    token = await _register_and_login(dummy_user_service, email, "secret123")
+
+    payload = {
+        "title": "Alerta sin activo",
+        "asset": "   ",
+        "value": 100.0,
+        "condition": ">",
+    }
+
+    response = await client.post(
+        "/api/alerts", json=payload, headers=_auth_header(token)
+    )
+
+    assert response.status_code == 400
+    assert "asset" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_update_alert_invalid_condition_returns_400(
+    client: AsyncClient,
+    dummy_user_service: DummyUserService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    email = f"user-{uuid.uuid4()}@example.com"
+    token = await _register_and_login(dummy_user_service, email, "secret123")
+
+    create_payload = {
+        "title": "Alerta original",
+        "asset": "btc",
+        "value": 30000.0,
+        "condition": ">",
+    }
+    create_response = await client.post(
+        "/api/alerts", json=create_payload, headers=_auth_header(token)
+    )
+    alert_id = create_response.json()["id"]
+
+    monkeypatch.setattr(
+        alerts_router.alert_service,
+        "validate_condition_expression",
+        lambda *_: (_ for _ in ()).throw(ValueError("condición inválida")),
+    )
+
+    update_payload = {"condition": "<"}
+    response = await client.put(
+        f"/api/alerts/{alert_id}", json=update_payload, headers=_auth_header(token)
+    )
+
+    assert response.status_code == 400
+    assert "condición" in response.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_send_alert_notification_requires_channel(
+    client: AsyncClient,
+    dummy_user_service: DummyUserService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    email = f"user-{uuid.uuid4()}@example.com"
+    token = await _register_and_login(dummy_user_service, email, "secret123")
+
+    monkeypatch.setattr(
+        alerts_router.Config, "TELEGRAM_DEFAULT_CHAT_ID", None, raising=False
+    )
+    send_mock = AsyncMock()
+    monkeypatch.setattr(alerts_router.alert_service, "send_external_alert", send_mock)
+
+    payload = {"message": "Recordatorio"}
+    response = await client.post(
+        "/api/alerts/send", json=payload, headers=_auth_header(token)
+    )
+
+    assert response.status_code == 400
+    assert "canal" in response.json()["detail"].lower()
+    send_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_send_alert_notification_strips_message(
+    client: AsyncClient,
+    dummy_user_service: DummyUserService,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    email = f"user-{uuid.uuid4()}@example.com"
+    token = await _register_and_login(dummy_user_service, email, "secret123")
+
+    send_mock = AsyncMock(return_value={"telegram": {"status": "ok"}})
+    monkeypatch.setattr(alerts_router.alert_service, "send_external_alert", send_mock)
+    monkeypatch.setattr(
+        alerts_router.Config, "TELEGRAM_DEFAULT_CHAT_ID", "12345", raising=False
+    )
+
+    payload = {"message": "   Notifica   "}
+    response = await client.post(
+        "/api/alerts/send", json=payload, headers=_auth_header(token)
+    )
+
+    assert response.status_code == 200
+    send_mock.assert_awaited_once()
+    args, kwargs = send_mock.call_args
+    assert kwargs["message"] == "Notifica"
+
+
+@pytest.mark.asyncio
+async def test_send_alert_rejects_empty_message(
+    client: AsyncClient, dummy_user_service: DummyUserService
+) -> None:
+    email = f"user-{uuid.uuid4()}@example.com"
+    token = await _register_and_login(dummy_user_service, email, "secret123")
+
+    response = await client.post(
+        "/api/alerts/send",
+        json={"message": "   ", "telegram_chat_id": "123"},
+        headers=_auth_header(token),
+    )
+
+    assert response.status_code == 422

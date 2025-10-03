@@ -1,59 +1,93 @@
+import asyncio
 import os
-import os
-import time
-from collections import defaultdict
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
 from fastapi_limiter import FastAPILimiter
-from fastapi_limiter.depends import RateLimiter
+from sqlalchemy import text
+
+from backend import database as database_module
+from backend.core.logging_config import get_logger, log_event
+from backend.core.rate_limit import rate_limit
 
 # No necesitamos poner prefix aquí, ya lo maneja main.py
 router = APIRouter(tags=["health"])
+logger = get_logger(service="health_router")
+_health_rate_limit = rate_limit(
+    times=5,
+    seconds=60,
+    identifier="health_endpoint",
+    detail="Demasiadas consultas al healthcheck. Intenta nuevamente más tarde.",
+)
 
-# Fallback simple en memoria si no hay Redis (5 req/60s por IP)
-_REQUEST_HISTORY = defaultdict(list)
 
+async def _check_redis() -> dict[str, Any]:
+    client = getattr(FastAPILimiter, "redis", None)
+    if client is None:
+        return {"status": "skipped", "detail": "redis_not_configured"}
 
-async def _rate_limit_dependency(request: Request, response: Response):
-    """
-    Aplica rate limit. Si FastAPILimiter tiene Redis inicializado, usa RateLimiter real.
-    Si no, aplica un fallback in-memory por IP (5 req / 60s).
-    """
     try:
-        # Con Redis disponible: usa el RateLimiter oficial
-        if getattr(FastAPILimiter, "redis", None):
-            limiter = RateLimiter(times=5, seconds=60)
-            # ⬇️ Firma correcta: (request, response)
-            return await limiter(request, response)
+        await asyncio.wait_for(client.ping(), timeout=0.5)
+    except Exception as exc:  # pragma: no cover - logging defensive
+        log_event(
+            logger,
+            service="health_router",
+            event="redis_ping_error",
+            level="error",
+            error=str(exc),
+        )
+        return {"status": "error", "detail": str(exc)}
 
-        # Fallback local sin Redis
-        identifier = request.client.host if request.client and request.client.host else "local"
-        window = _REQUEST_HISTORY[identifier]
-        now = time.monotonic()
-        window[:] = [tick for tick in window if now - tick < 60]  # ventana 60s
-        if len(window) >= 5:
-            raise HTTPException(status_code=429, detail="Too Many Requests")
-        window.append(now)
-        return
-    except HTTPException:
-        # Propaga 429 u otros HTTPException
-        raise
-    except Exception as e:
-        # Cualquier error inesperado NO debe romper el endpoint
-        raise HTTPException(status_code=500, detail=f"rate_limit_error: {type(e).__name__}") from e
+    return {"status": "ok"}
 
 
-@router.get("", dependencies=[Depends(_rate_limit_dependency)])
-@router.get("/", dependencies=[Depends(_rate_limit_dependency)])
+async def _check_database() -> dict[str, Any]:
+    engine = getattr(database_module, "engine", None)
+    if engine is None:
+        return {"status": "skipped", "detail": "engine_not_configured"}
+
+    def _ping() -> None:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+
+    try:
+        await asyncio.wait_for(asyncio.to_thread(_ping), timeout=1.0)
+    except Exception as exc:  # pragma: no cover - logging defensive
+        log_event(
+            logger,
+            service="health_router",
+            event="database_ping_error",
+            level="error",
+            error=str(exc),
+        )
+        return {"status": "error", "detail": str(exc)}
+
+    return {"status": "ok"}
+
+
+@router.get("", dependencies=[Depends(_health_rate_limit)])
+@router.get("/", dependencies=[Depends(_health_rate_limit)])
 async def health():
     """
     Endpoint básico de salud para monitoreo.
     Devuelve un 'ok' y el entorno actual.
     """
-    return {
-        "status": "ok",
+    redis_status = await _check_redis()
+    db_status = await _check_database()
+
+    services = {"redis": redis_status, "database": db_status}
+    has_errors = any(service["status"] == "error" for service in services.values())
+    body = {
+        "status": "ok" if not has_errors else "degraded",
         "env": os.getenv("ENV", "unknown"),
+        "services": services,
     }
+
+    if has_errors:
+        return JSONResponse(status_code=503, content=body)
+
+    return body
 
 
 @router.get("/ping")

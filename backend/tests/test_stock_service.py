@@ -1,26 +1,29 @@
 import asyncio
 import os
 import sys
-from typing import Any, Dict
+from typing import Any
+
+import pytest
 
 BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
-import pytest
+from services.stock_service import StockService  # noqa: E402
 
-from services.stock_service import StockService
-from backend.utils.config import Config
+from backend.utils.config import Config  # noqa: E402
 
 
 class DummyCache:
     def __init__(self):
-        self.values: Dict[str, Any] = {}
+        self.values: dict[str, Any] = {}
 
     async def get(self, key: str):
         return self.values.get(key.lower())
 
-    async def set(self, key: str, value: Any, ttl: Any = None):  # noqa: ARG002 - ttl no se usa
+    async def set(
+        self, key: str, value: Any, ttl: Any = None
+    ):  # noqa: ARG002 - ttl no se usa
         self.values[key.lower()] = value
 
 
@@ -31,7 +34,9 @@ class DummySession:
     async def __aexit__(self, exc_type, exc, tb):  # noqa: D401
         return False
 
-    async def get(self, *args, **kwargs):  # pragma: no cover - nunca se llama en los tests
+    async def get(
+        self, *args, **kwargs
+    ):  # pragma: no cover - nunca se llama en los tests
         raise AssertionError("DummySession.get no debería ser llamado")
 
 
@@ -45,7 +50,9 @@ def restore_config():
 
 
 def make_service(monkeypatch, return_map):
-    service = StockService(cache_client=DummyCache(), session_factory=lambda timeout=None: DummySession())
+    service = StockService(
+        cache_client=DummyCache(), session_factory=lambda timeout=None: DummySession()
+    )
 
     async def fake_call(self, handler, session, symbol, source_name):  # noqa: ANN001
         result = return_map.get(source_name)

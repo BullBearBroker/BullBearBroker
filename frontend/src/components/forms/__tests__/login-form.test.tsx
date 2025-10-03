@@ -1,7 +1,14 @@
 // [Codex] nuevo - Ajustes para los placeholders y mock de Auth
-import { customRender, screen, fireEvent, waitFor } from "@/tests/utils/renderWithProviders";
+import {
+  customRender,
+  screen,
+  fireEvent,
+  waitFor,
+} from "@/tests/utils/renderWithProviders";
 import { axe } from "jest-axe";
 import LoginForm from "../login-form";
+import { authMessages } from "@/lib/i18n/auth";
+import { HttpError } from "@/lib/api";
 
 // Mock de useAuth
 jest.mock("@/components/providers/auth-provider", () => {
@@ -14,6 +21,13 @@ jest.mock("@/components/providers/auth-provider", () => {
     }),
   };
 });
+
+jest.mock("@/lib/analytics", () => ({
+  trackEvent: jest.fn(),
+}));
+
+const getTrackEventMock = () =>
+  jest.requireMock("@/lib/analytics").trackEvent as jest.Mock;
 
 jest.mock("next/navigation", () => {
   (global as any).pushMock = jest.fn();
@@ -33,6 +47,7 @@ describe("LoginForm", () => {
   beforeEach(() => {
     (global as any).loginUserMock.mockClear();
     (global as any).pushMock.mockClear();
+    getTrackEventMock().mockClear();
   });
 
   it("muestra mensajes de validación cuando el formulario está vacío", async () => {
@@ -41,7 +56,7 @@ describe("LoginForm", () => {
     fireEvent.click(screen.getByRole("button", { name: /iniciar sesión/i }));
 
     expect(
-      await screen.findByText(/debe ingresar un correo válido/i)
+      await screen.findByText(authMessages.validation.email)
     ).toBeInTheDocument();
     expect((global as any).loginUserMock).not.toHaveBeenCalled();
   });
@@ -59,7 +74,7 @@ describe("LoginForm", () => {
     fireEvent.click(screen.getByRole("button", { name: /iniciar sesión/i }));
 
     expect(
-      await screen.findByText(/la contraseña debe tener al menos 6 caracteres/i)
+      await screen.findByText(authMessages.validation.password)
     ).toBeInTheDocument();
     expect((global as any).loginUserMock).not.toHaveBeenCalled();
   });
@@ -79,7 +94,8 @@ describe("LoginForm", () => {
     await waitFor(() =>
       expect((global as any).loginUserMock).toHaveBeenCalledWith(
         "user@example.com",
-        "secret123"
+        "secret123",
+        expect.objectContaining({ signal: expect.any(AbortSignal) })
       )
     );
     expect((global as any).pushMock).toHaveBeenCalledWith("/");
@@ -92,7 +108,7 @@ describe("LoginForm", () => {
 
   it("muestra mensaje de error cuando la autenticación falla", async () => {
     (global as any).loginUserMock.mockRejectedValueOnce(
-      new Error("Credenciales inválidas")
+      new HttpError(authMessages.errors.invalidCredentials, { status: 401 })
     );
 
     customRender(<LoginForm />);
@@ -107,14 +123,14 @@ describe("LoginForm", () => {
     fireEvent.click(screen.getByRole("button", { name: /iniciar sesión/i }));
 
     expect(
-      await screen.findByText(/credenciales inválidas/i)
+      await screen.findByText(authMessages.errors.invalidCredentials)
     ).toBeInTheDocument();
     expect((global as any).pushMock).not.toHaveBeenCalled();
   });
 
   it("limpia los errores del formulario al corregir los campos", async () => {
     (global as any).loginUserMock.mockRejectedValueOnce(
-      new Error("Credenciales inválidas")
+      new HttpError(authMessages.errors.invalidCredentials, { status: 401 })
     );
 
     customRender(<LoginForm />);
@@ -138,7 +154,7 @@ describe("LoginForm", () => {
 
     await waitFor(() => {
       expect(
-        screen.queryByText(/credenciales inválidas/i)
+        screen.queryByText(authMessages.errors.invalidCredentials)
       ).not.toBeInTheDocument();
     });
   });
@@ -160,12 +176,13 @@ describe("LoginForm", () => {
     await waitFor(() => {
       expect((global as any).loginUserMock).toHaveBeenCalledWith(
         "user@example.com",
-        "secret123"
+        "secret123",
+        expect.objectContaining({ signal: expect.any(Object) })
       );
     });
 
     expect(
-      await screen.findByText(/error al iniciar sesión/i)
+      await screen.findByText(authMessages.errors.generic)
     ).toBeInTheDocument();
   });
 
@@ -188,7 +205,7 @@ describe("LoginForm", () => {
     fireEvent.click(screen.getByRole("button", { name: /iniciar sesión/i }));
 
     expect(
-      screen.getByRole("button", { name: /iniciando/i })
+      screen.getByRole("button", { name: authMessages.actions.submitting })
     ).toBeDisabled();
 
     resolvePromise();
@@ -204,5 +221,72 @@ describe("LoginForm", () => {
     const { container } = customRender(<LoginForm />);
 
     expect(await axe(container)).toHaveNoViolations();
+  });
+
+  it("muestra mensaje de 429 y bloquea reintentos", async () => {
+    const rateError = new HttpError("rate limited", { status: 429, retryAfter: 8 });
+    (global as any).loginUserMock.mockRejectedValueOnce(rateError);
+
+    customRender(<LoginForm />);
+
+    fireEvent.input(screen.getByPlaceholderText(authMessages.placeholders.email), {
+      target: { value: "user@example.com" },
+    });
+    fireEvent.input(
+      screen.getByPlaceholderText(authMessages.placeholders.password),
+      {
+        target: { value: "secret123" },
+      }
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: authMessages.actions.submit }));
+
+    const messages = await screen.findAllByText(
+      authMessages.errors.rateLimited({ seconds: 8 })
+    );
+    expect(messages.length).toBeGreaterThanOrEqual(1);
+
+    expect(
+      screen.getByRole("button", {
+        name: authMessages.errors.rateLimited({ seconds: 8 }),
+      })
+    ).toBeDisabled();
+    const trackEvent = getTrackEventMock();
+    expect(trackEvent).toHaveBeenCalledTimes(1);
+    expect(trackEvent).toHaveBeenCalledWith("login_rate_limited_ui", {
+      reason: "http_429",
+      retry_after_seconds: 8,
+    });
+  });
+
+  it("aplica throttle para evitar envíos repetidos", async () => {
+    let resolvePromise: () => void = () => undefined;
+    const pendingPromise = new Promise<void>((resolve) => {
+      resolvePromise = resolve;
+    });
+    (global as any).loginUserMock.mockReturnValueOnce(pendingPromise);
+
+    customRender(<LoginForm />);
+
+    fireEvent.input(screen.getByPlaceholderText(authMessages.placeholders.email), {
+      target: { value: "user@example.com" },
+    });
+    fireEvent.input(
+      screen.getByPlaceholderText(authMessages.placeholders.password),
+      {
+        target: { value: "secret123" },
+      }
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: authMessages.actions.submit }));
+    fireEvent.click(screen.getByRole("button", { name: authMessages.actions.submitting }));
+
+    expect((global as any).loginUserMock).toHaveBeenCalledTimes(1);
+
+    resolvePromise();
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: authMessages.actions.submit })).toBeEnabled()
+    );
   });
 });

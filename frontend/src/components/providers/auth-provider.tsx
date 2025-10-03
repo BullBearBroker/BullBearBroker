@@ -21,7 +21,11 @@ interface AuthContextProps {
   user: UserProfile | null;
   token: string | null;
   loading: boolean;
-  loginUser: (email: string, password: string) => Promise<void>;
+  loginUser: (
+    email: string,
+    password: string,
+    options?: { signal?: AbortSignal }
+  ) => Promise<void>;
   registerUser: (
     email: string,
     password: string,
@@ -97,10 +101,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const loginUser = useCallback(
-    async (email: string, password: string) => {
+    async (email: string, password: string, options?: { signal?: AbortSignal }) => {
       setLoading(true);
       try {
-        const auth = await login({ email, password });
+        const auth = await login({ email, password }, { signal: options?.signal });
         persistSession(auth);
         const profile = await fetchProfile(auth.access_token);
         setUser(profile);

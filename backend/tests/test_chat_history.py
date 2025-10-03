@@ -1,7 +1,7 @@
 import uuid
 
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
 from backend.database import SessionLocal
 from backend.main import app
@@ -15,11 +15,18 @@ async def test_chat_persists_history(monkeypatch):
     monkeypatch.setattr(Config, "MISTRAL_API_KEY", "test-key", raising=False)
 
     async def fake_process(message: str, context: dict | None) -> AIResponsePayload:
-        return AIResponsePayload(text=f"Respuesta a: {message}", provider="test", used_data=True, sources=["prices"])
+        return AIResponsePayload(
+            text=f"Respuesta a: {message}",
+            provider="test",
+            used_data=True,
+            sources=["prices"],
+        )
 
     monkeypatch.setattr(ai_service, "process_message", fake_process)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         email = f"chat_{uuid.uuid4().hex}@test.com"
         register = await client.post(
             "/api/auth/register",
@@ -87,7 +94,9 @@ async def test_chat_persists_history(monkeypatch):
 async def test_history_requires_valid_session(monkeypatch):
     monkeypatch.setattr(Config, "MISTRAL_API_KEY", "test-key", raising=False)
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         email = f"history_{uuid.uuid4().hex}@test.com"
         await client.post(
             "/api/auth/register",

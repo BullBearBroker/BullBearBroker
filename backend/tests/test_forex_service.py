@@ -1,21 +1,21 @@
 import asyncio
 import os
 import sys
-from typing import Any, Dict
+from typing import Any
+
+import pytest
 
 BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
-import pytest
-
-from backend.services.forex_service import ForexService
-from backend.utils.config import Config
+from backend.services.forex_service import ForexService  # noqa: E402
+from backend.utils.config import Config  # noqa: E402
 
 
 class DummyCache:
     def __init__(self):
-        self.values: Dict[str, Any] = {}
+        self.values: dict[str, Any] = {}
 
     async def get(self, key: str):
         return self.values.get(key.lower())
@@ -75,6 +75,7 @@ def test_forex_service_prefers_twelvedata(monkeypatch):
         "price": 1.2345,
         "change": 0.5,
         "source": "Twelve Data",
+        "sources": ["Twelve Data"],
     }
 
 
@@ -95,6 +96,7 @@ def test_forex_service_fallback_to_yahoo(monkeypatch):
         "price": 1.1,
         "change": None,
         "source": "Yahoo Finance",
+        "sources": ["Yahoo Finance"],
     }
 
 
@@ -138,4 +140,5 @@ def test_forex_service_uses_alpha_vantage(monkeypatch):
         "price": 1.5,
         "change": 0.2,
         "source": "Alpha Vantage",
+        "sources": ["Alpha Vantage"],
     }

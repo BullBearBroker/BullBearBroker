@@ -1,69 +1,34 @@
-COMPOSE ?= docker compose
+SHELL := /bin/bash
 
-.PHONY: validate up up-local up-supabase up-staging down down-v down-staging clean logs logs-local logs-supabase logs-staging migrate test test-backend test-frontend check-all
+.PHONY: setup dev-venv lint format typecheck test cov postman openapi
 
-validate:
-	$(COMPOSE) -f docker-compose.yml config
+setup:
+	python -m pip install -r backend/requirements.txt
+	python -m pip install -r backend/requirements-dev.txt || true
+	pre-commit install || true
 
-# ========================
-# 🚀 UP (Levantar servicios)
-# ========================
-up: up-local
+dev-venv: setup
 
-up-local:
-	$(COMPOSE) --env-file .env.local up -d --build
+lint:
+	@command -v pre-commit >/dev/null 2>&1 || python -m pip install pre-commit -q
+	pre-commit run --all-files || true
+	ruff check .
 
-up-supabase:
-	$(COMPOSE) --env-file .env.supabase up -d --build
+format:
+	black .
+	isort .
 
-up-staging:
-	APP_ENV=staging $(COMPOSE) --env-file .env.local --profile staging up -d --build
+typecheck:
+	mypy backend || true
 
-# ========================
-# 🛑 DOWN (Apagar servicios)
-# ========================
-down:
-	$(COMPOSE) down
+test:
+	pytest backend -q
 
-down-v:
-	$(COMPOSE) down -v
+cov:
+	pytest --cov=backend --cov-report=term-missing backend
 
-down-staging:
-	APP_ENV=staging $(COMPOSE) --profile staging down
+openapi:
+	python scripts/generate_postman.py --export-openapi
 
-clean:
-	$(COMPOSE) down -v --remove-orphans
-
-# ========================
-# 📜 LOGS (separados por entorno)
-# ========================
-logs:
-	$(COMPOSE) logs -f --tail=200
-
-logs-local:
-	$(COMPOSE) --env-file .env.local --profile default logs -f --tail=200
-
-logs-supabase:
-	$(COMPOSE) --env-file .env.supabase --profile default logs -f --tail=200
-
-logs-staging:
-	APP_ENV=staging $(COMPOSE) --env-file .env.supabase --profile staging logs -f --tail=200
-
-# ========================
-# 🛠️ Migraciones
-# ========================
-migrate:
-	$(COMPOSE) exec backend alembic upgrade head
-
-# ========================
-# 🧪 TESTS
-# ========================
-test-backend:
-	$(COMPOSE) exec backend pytest backend/tests -q
-
-test-frontend:
-	NEXT_PUBLIC_API_URL=http://localhost:8000 npm --prefix frontend run test:dev
-
-test: test-backend test-frontend
-
-check-all: migrate test-backend test-frontend
+postman:
+	python scripts/generate_postman.py

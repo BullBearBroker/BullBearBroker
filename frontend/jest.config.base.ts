@@ -15,20 +15,21 @@ const baseConfig: Config = {
     "^.+\\.(css|less|scss|sass)$": "identity-obj-proxy",
     "^@/styles/globals\\.css$": "identity-obj-proxy",
     "^@/(.*)$": "<rootDir>/src/$1",
+    "^recharts$": "<rootDir>/__mocks__/recharts.tsx",
     "^msw/node$": "<rootDir>/node_modules/msw/lib/node/index.js",
     "^@mswjs/interceptors/WebSocket$":
       "<rootDir>/src/tests/msw/websocket-interceptor.ts",
-    "^@mswjs/interceptors/(.*)$":
-      "<rootDir>/node_modules/@mswjs/interceptors/lib/node/interceptors/$1/index.js",
+    "^@mswjs/interceptors/(.*)$": "<rootDir>/src/tests/msw/interceptors/$1.ts",
   },
   transform: {
-    "^.+\\.(js|jsx|ts|tsx)$": [
+    "^.+\\.(ts|tsx|js|jsx)$": [
       "babel-jest",
-      { configFile: path.resolve(__dirname, "babel.config.js") },
+      { configFile: path.resolve(__dirname, "babel.config.js"), babelrc: false },
     ],
   },
   transformIgnorePatterns: [
-    "/node_modules/(?!(recharts|d3-|msw|@mswjs|until-async|strict-event-emitter|outvariant|headers-polyfill)/)",
+    "/node_modules/(?!(\\.pnpm/[^/]+/node_modules/)?(recharts|d3-|msw|@mswjs|until-async|strict-event-emitter|outvariant|headers-polyfill)/)",
+    "node_modules/(?!(\\.pnpm/[^/]+/node_modules/)?(recharts|d3-|msw|@mswjs|until-async|strict-event-emitter|outvariant|headers-polyfill|nanoid|uuid|other-esm-lib)/)",
   ],
   moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json", "node"],
   testMatch: [

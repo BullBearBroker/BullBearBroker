@@ -123,6 +123,12 @@ describe("DashboardPage", () => {
     mockChatPanel.mockClear();
     mockPortfolioPanel.mockClear();
     mockUsePushNotifications.mockClear();
+    mockUsePushNotifications.mockImplementation(() => ({
+      enabled: false,
+      error: null,
+      permission: "default" as NotificationPermission,
+      loading: false,
+    }));
     mockHistoricalRefresh.mockClear();
     mockHistoricalRefresh.mockResolvedValue(undefined);
     mockUseHistoricalData.mockClear();
@@ -198,7 +204,7 @@ describe("DashboardPage", () => {
 
     const modules = screen.getByTestId("dashboard-modules");
     expect(modules.className).toContain("lg:grid-cols-2");
-  
+
     await waitFor(() => {
       expect(mockIndicatorsChart).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -222,6 +228,151 @@ describe("DashboardPage", () => {
       market: "auto",
       limit: 240,
     });
+  });
+
+  it("propaga los insights generados por IA al gráfico", async () => {
+    mockUseAuth.mockReturnValue({ ...baseAuth, loading: false });
+    mockUseRouter.mockReturnValue({ replace: jest.fn() });
+    mockedGetIndicators.mockResolvedValue({
+      symbol: "ETHUSDT",
+      interval: "4h",
+      indicators: { last_close: 45678 },
+      series: { closes: [4, 5, 6] },
+    });
+    mockedSendChatMessage.mockResolvedValue({
+      messages: [
+        { role: "user", content: "Pregunta" },
+        { role: "assistant", content: "Insight generado" },
+      ],
+      sources: ["mock"],
+      used_data: true,
+    });
+
+    await act(async () => {
+      customRender(<DashboardPage />);
+    });
+
+    await waitFor(() => {
+      expect(mockIndicatorsChart).toHaveBeenCalled();
+    });
+
+    const lastCall = mockIndicatorsChart.mock.calls.at(-1)?.[0];
+    expect(lastCall).toEqual(
+      expect.objectContaining({
+        symbol: "ETHUSDT",
+        interval: "4h",
+        insights: "Insight generado",
+      })
+    );
+  });
+
+  it("permite cerrar sesión desde el encabezado", async () => {
+    const logout = jest.fn();
+    mockUseAuth.mockReturnValue({ ...baseAuth, loading: false, logout });
+    mockUseRouter.mockReturnValue({ replace: jest.fn() });
+    mockedGetIndicators.mockResolvedValue({
+      symbol: "BTCUSDT",
+      interval: "1h",
+      indicators: { last_close: 12345 },
+      series: { closes: [1, 2, 3] },
+    });
+    mockedSendChatMessage.mockResolvedValue({
+      messages: [{ role: "assistant", content: "Ok" }],
+      sources: [],
+      used_data: false,
+    });
+
+    const user = userEvent.setup();
+    await act(async () => {
+      customRender(<DashboardPage />);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Cerrar sesión/i })).toBeEnabled();
+    });
+
+    await act(async () => {
+      await user.click(screen.getByRole("button", { name: /Cerrar sesión/i }));
+    });
+
+    expect(logout).toHaveBeenCalled();
+  });
+
+  it("muestra el estado de notificaciones push activas", async () => {
+    mockUsePushNotifications.mockReturnValue({
+      enabled: true,
+      error: null,
+      permission: "granted",
+      loading: false,
+    });
+    mockUseAuth.mockReturnValue({ ...baseAuth, loading: false });
+    mockUseRouter.mockReturnValue({ replace: jest.fn() });
+    mockedGetIndicators.mockResolvedValue({
+      symbol: "BTCUSDT",
+      interval: "1h",
+      indicators: { last_close: 12345 },
+      series: { closes: [1, 2, 3] },
+    });
+    mockedSendChatMessage.mockResolvedValue({
+      messages: [{ role: "assistant", content: "Ok" }],
+      sources: [],
+      used_data: false,
+    });
+
+    await act(async () => {
+      customRender(<DashboardPage />);
+    });
+
+    expect(await screen.findByText(/Push activo/i)).toBeInTheDocument();
+  });
+
+  it("mantiene estable el layout principal", async () => {
+    mockUseAuth.mockReturnValue({ ...baseAuth, loading: false });
+    mockUseRouter.mockReturnValue({ replace: jest.fn() });
+    mockedGetIndicators.mockResolvedValue({
+      symbol: "BTCUSDT",
+      interval: "1h",
+      indicators: { last_close: 12345 },
+      series: { closes: [1, 2, 3] },
+    });
+    mockedSendChatMessage.mockResolvedValue({
+      messages: [{ role: "assistant", content: "Ok" }],
+      sources: [],
+      used_data: false,
+    });
+
+    customRender(<DashboardPage />);
+
+    const shell = await screen.findByTestId("dashboard-shell");
+    const content = screen.getByTestId("dashboard-content");
+    const modules = screen.getByTestId("dashboard-modules");
+    const cards = Array.from(
+      content.querySelectorAll('[data-testid^="dashboard-"]')
+    ).map((node) => node.getAttribute("data-testid"));
+
+    const summary = {
+      shellClass: shell.className,
+      contentClass: content.className,
+      modulesClass: modules.className,
+      cards,
+      hasSidebar: mockMarketSidebar.mock.calls.length > 0,
+      pushStatus: screen.getByText(/Push inactivo/i).textContent,
+    };
+
+    expect(summary).toMatchInlineSnapshot(`
+{
+  "cards": [
+    "dashboard-modules",
+    "dashboard-indicators",
+    "dashboard-chat",
+  ],
+  "contentClass": "flex flex-col gap-6 p-4 lg:p-6",
+  "hasSidebar": true,
+  "modulesClass": "grid flex-1 gap-6 lg:grid-cols-2 xl:grid-cols-[2fr_1fr]",
+  "pushStatus": "Push inactivo",
+  "shellClass": "grid min-h-screen bg-background text-foreground md:grid-cols-[280px_1fr]",
+}
+`);
   });
 
   it("muestra el estado vacío cuando no hay indicadores disponibles", async () => {

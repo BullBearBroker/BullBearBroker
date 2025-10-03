@@ -1,11 +1,12 @@
 from .alert import Alert
 from .base import Base
+from .chat import ChatMessage, ChatSession
+from .portfolio import PortfolioItem
+from .push_preference import PushNotificationPreference
+from .push_subscription import PushSubscription
+from .refresh_token import RefreshToken
 from .session import Session
 from .user import User
-from .refresh_token import RefreshToken
-from .portfolio import PortfolioItem
-from .chat import ChatSession, ChatMessage
-from .push_subscription import PushSubscription
 
 __all__ = [
     "Alert",
@@ -17,4 +18,5 @@ __all__ = [
     "ChatSession",
     "ChatMessage",
     "PushSubscription",
+    "PushNotificationPreference",
 ]

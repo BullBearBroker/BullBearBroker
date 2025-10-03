@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-import asyncio
+import importlib  # Standard library module used for dynamic imports.
 import os
-import uuid
 import sys
+import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from typing import Any, Dict, List, Optional
+from typing import Any
 from unittest.mock import AsyncMock
 
 import jwt
@@ -32,14 +32,15 @@ if BACKEND_DIR not in sys.path:
 os.environ.setdefault("DATABASE_URL", "postgresql+psycopg://user:pass@localhost/testdb")
 
 from backend.main import app  # noqa: E402  (import after path setup)
-from backend.routers import alerts as alerts_router  # noqa: E402
-from backend.routers import auth as auth_router  # noqa: E402
-from backend.routers import markets as markets_router  # noqa: E402
+from backend.routers import (  # noqa: E402
+    alerts as alerts_router,
+    auth as auth_router,
+    markets as markets_router,
+)
 from backend.services.alert_service import alert_service  # noqa: E402
+from backend.services.forex_service import forex_service  # noqa: E402
 from backend.services.market_service import market_service  # noqa: E402
 from backend.services.news_service import news_service  # noqa: E402
-from backend.services.forex_service import forex_service  # noqa: E402
-import importlib
 
 news_service_module = importlib.import_module("services.news_service")
 
@@ -48,12 +49,14 @@ class DummyAsyncCache:
     """Minimal async cache used to avoid hitting Redis during tests."""
 
     def __init__(self) -> None:
-        self._store: Dict[str, Any] = {}
+        self._store: dict[str, Any] = {}
 
-    async def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Any | None:
         return self._store.get(key)
 
-    async def set(self, key: str, value: Any, ttl: Optional[int] = None) -> None:  # noqa: D401
+    async def set(
+        self, key: str, value: Any, ttl: int | None = None
+    ) -> None:  # noqa: D401
         # ``ttl`` is ignored because tests do not need expiration semantics.
         self._store[key] = value
 
@@ -113,12 +116,12 @@ class DummyUserService:
         pass
 
     def __init__(self) -> None:
-        self._users: Dict[str, DummyUser] = {}
-        self._users_by_id: Dict[uuid.UUID, DummyUser] = {}
-        self._sessions: List[SimpleNamespace] = []
-        self._alerts: Dict[uuid.UUID, List[DummyAlert]] = {}
-        self._refresh_tokens: Dict[str, SimpleNamespace] = {}
-        self._access_tokens: Dict[str, datetime] = {}
+        self._users: dict[str, DummyUser] = {}
+        self._users_by_id: dict[uuid.UUID, DummyUser] = {}
+        self._sessions: list[SimpleNamespace] = []
+        self._alerts: dict[uuid.UUID, list[DummyAlert]] = {}
+        self._refresh_tokens: dict[str, SimpleNamespace] = {}
+        self._access_tokens: dict[str, datetime] = {}
         self._secret = "test-secret"
         self._algorithm = "HS256"
 
@@ -126,7 +129,7 @@ class DummyUserService:
     def _as_naive_utc(dt: datetime) -> datetime:
         if dt.tzinfo is None:
             return dt
-        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+        return dt.astimezone(UTC).replace(tzinfo=None)
 
     def create_user(self, email: str, password: str) -> DummyUser:
         if email in self._users:
@@ -138,7 +141,7 @@ class DummyUserService:
         self._alerts[user.id] = []
         return user
 
-    def get_user_by_email(self, email: str) -> Optional[DummyUser]:
+    def get_user_by_email(self, email: str) -> DummyUser | None:
         return self._users.get(email)
 
     def authenticate_user(self, email: str, password: str) -> DummyUser:
@@ -147,7 +150,7 @@ class DummyUserService:
             raise self.InvalidCredentialsError("Credenciales inválidas")
         return user
 
-    def _build_payload(self, user: DummyUser, expires_at: datetime) -> Dict[str, Any]:
+    def _build_payload(self, user: DummyUser, expires_at: datetime) -> dict[str, Any]:
         now = datetime.utcnow()
         return {
             "sub": str(user.id),
@@ -158,25 +161,27 @@ class DummyUserService:
             "exp": expires_at,
         }
 
-    def _decode_token(self, token: str) -> Dict[str, Any]:
+    def _decode_token(self, token: str) -> dict[str, Any]:
         try:
             return jwt.decode(token, self._secret, algorithms=[self._algorithm])
-        except jwt.ExpiredSignatureError as exc:  # pragma: no cover - deterministic tests
+        except (
+            jwt.ExpiredSignatureError
+        ) as exc:  # pragma: no cover - deterministic tests
             raise self.InvalidTokenError("Token expirado") from exc
         except jwt.InvalidTokenError as exc:
             raise self.InvalidTokenError("Token inválido") from exc
 
     @staticmethod
-    def _extract_exp(payload: Dict[str, Any]) -> datetime:
+    def _extract_exp(payload: dict[str, Any]) -> datetime:
         exp = payload.get("exp")
         if isinstance(exp, datetime):
             return exp
-        if isinstance(exp, (int, float)):
+        if isinstance(exp, int | float):
             return datetime.utcfromtimestamp(exp)
         raise DummyUserService.InvalidTokenError("Token inválido")
 
     @staticmethod
-    def _extract_user_id(payload: Dict[str, Any]) -> uuid.UUID:
+    def _extract_user_id(payload: dict[str, Any]) -> uuid.UUID:
         raw_user_id = payload.get("user_id") or payload.get("sub")
         if not raw_user_id:
             raise DummyUserService.InvalidTokenError("Token inválido")
@@ -186,7 +191,7 @@ class DummyUserService:
             raise DummyUserService.InvalidTokenError("Token inválido") from exc
 
     def create_access_token(
-        self, user: DummyUser, expires_in: Optional[timedelta] = None
+        self, user: DummyUser, expires_in: timedelta | None = None
     ) -> tuple[str, datetime]:
         expires_at = datetime.utcnow() + (expires_in or timedelta(minutes=15))
         payload = self._build_payload(user, expires_at)
@@ -196,8 +201,8 @@ class DummyUserService:
     def create_session(
         self,
         user_id: uuid.UUID,
-        token: Optional[str] = None,
-        expires_in: Optional[timedelta] = None,
+        token: str | None = None,
+        expires_in: timedelta | None = None,
     ) -> tuple[str, SimpleNamespace]:
         user = self._users_by_id.get(user_id)
         if not user:
@@ -237,8 +242,7 @@ class DummyUserService:
             (
                 sess
                 for sess in self._sessions
-                if sess.token == token
-                and self._as_naive_utc(sess.expires_at) > now
+                if sess.token == token and self._as_naive_utc(sess.expires_at) > now
             ),
             None,
         )
@@ -276,7 +280,7 @@ class DummyUserService:
         self._refresh_tokens[token] = SimpleNamespace(user_id=user_id)
 
     def create_refresh_token(
-        self, user: DummyUser, expires_in: Optional[timedelta] = None
+        self, user: DummyUser, expires_in: timedelta | None = None
     ) -> tuple[str, datetime]:
         expires_at = datetime.utcnow() + (expires_in or timedelta(days=7))
         token = jwt.encode(
@@ -288,12 +292,19 @@ class DummyUserService:
             self._secret,
             algorithm=self._algorithm,
         )
-        self._refresh_tokens[token] = SimpleNamespace(user_id=user.id, expires_at=expires_at)
+        self._refresh_tokens[token] = SimpleNamespace(
+            user_id=user.id, expires_at=expires_at
+        )
         return token, expires_at
 
-    def rotate_refresh_token(self, refresh_token: str) -> tuple[DummyUser, str, datetime]:
+    def rotate_refresh_token(
+        self, refresh_token: str
+    ) -> tuple[DummyUser, str, datetime]:
         stored = self._refresh_tokens.pop(refresh_token, None)
-        if not stored or getattr(stored, "expires_at", datetime.utcnow()) <= datetime.utcnow():
+        if (
+            not stored
+            or getattr(stored, "expires_at", datetime.utcnow()) <= datetime.utcnow()
+        ):
             raise self.InvalidTokenError("Refresh token inválido")
         user = self._users_by_id.get(stored.user_id)
         if not user:
@@ -301,9 +312,7 @@ class DummyUserService:
         new_refresh, expires_at = self.create_refresh_token(user)
         return user, new_refresh, expires_at
 
-    def issue_token_pair(
-        self, user: DummyUser
-    ) -> tuple[str, datetime, str, datetime]:
+    def issue_token_pair(self, user: DummyUser) -> tuple[str, datetime, str, datetime]:
         access_token, session = self.create_session(user.id)
         refresh_token, refresh_expires = self.create_refresh_token(user)
         return access_token, session.expires_at, refresh_token, refresh_expires
@@ -333,7 +342,7 @@ class DummyUserService:
         self._alerts[user_id].append(alert)
         return alert
 
-    def get_alerts_for_user(self, user_id: uuid.UUID) -> List[DummyAlert]:
+    def get_alerts_for_user(self, user_id: uuid.UUID) -> list[DummyAlert]:
         return list(self._alerts.get(user_id, []))
 
 
@@ -345,9 +354,13 @@ def dummy_user_service(monkeypatch: pytest.MonkeyPatch) -> DummyUserService:
 
     monkeypatch.setattr(auth_router, "user_service", service)
     monkeypatch.setattr(alerts_router, "user_service", service)
-    monkeypatch.setattr(auth_router, "UserAlreadyExistsError", service.UserAlreadyExistsError)
+    monkeypatch.setattr(
+        auth_router, "UserAlreadyExistsError", service.UserAlreadyExistsError
+    )
     monkeypatch.setattr(alerts_router, "UserNotFoundError", service.UserNotFoundError)
-    monkeypatch.setattr(auth_router, "InvalidCredentialsError", service.InvalidCredentialsError)
+    monkeypatch.setattr(
+        auth_router, "InvalidCredentialsError", service.InvalidCredentialsError
+    )
     monkeypatch.setattr(auth_router, "InvalidTokenError", service.InvalidTokenError)
     monkeypatch.setattr(alerts_router, "InvalidTokenError", service.InvalidTokenError)
     monkeypatch.setattr(alerts_router, "USER_SERVICE_ERROR", None)
@@ -367,13 +380,17 @@ async def client(
     async def noop_stop() -> None:
         return None
 
-    monkeypatch.setattr(alert_service, "register_websocket_manager", lambda manager: None)
+    monkeypatch.setattr(
+        alert_service, "register_websocket_manager", lambda manager: None
+    )
     monkeypatch.setattr(alert_service, "start", noop_start)
     monkeypatch.setattr(alert_service, "stop", noop_stop)
     monkeypatch.setattr(alert_service, "is_running", False)
 
     transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as test_client:
+    async with AsyncClient(
+        transport=transport, base_url="http://testserver"
+    ) as test_client:
         yield test_client
 
 
@@ -394,15 +411,21 @@ def _reset_crypto_service(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(alt_crypto_service, "RETRY_ATTEMPTS", 1, raising=False)
 
 
-def _prepare_stock_service(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any]:
+def _prepare_stock_service(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     stock_service = market_service.stock_service
     stock_service.cache = DummyAsyncCache()
     stock_service.apis[0]["api_key"] = "dummy-alpha"
     stock_service.apis[1]["api_key"] = "dummy-twelvedata"
-    monkeypatch.setattr(stock_service, "_session_factory", lambda timeout=None: DummyAsyncSessionContext())
-    call_order: List[str] = []
+    monkeypatch.setattr(
+        stock_service,
+        "_session_factory",
+        lambda timeout=None: DummyAsyncSessionContext(),
+    )
+    call_order: list[str] = []
 
-    async def fake_call_with_retries(handler, session, symbol, source_name):  # noqa: ANN001
+    async def fake_call_with_retries(
+        handler, session, symbol, source_name
+    ):  # noqa: ANN001
         call_order.append(source_name)
         responses = {
             "Alpha Vantage": None,
@@ -425,7 +448,9 @@ def _prepare_stock_service(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any]:
             lambda timeout=None: DummyAsyncSessionContext(),
         )
 
-        async def alt_fake_call_with_retries(handler, session, symbol, source_name):  # noqa: ANN001
+        async def alt_fake_call_with_retries(
+            handler, session, symbol, source_name
+        ):  # noqa: ANN001
             call_order.append(source_name)
             responses = {
                 "Alpha Vantage": None,
@@ -434,18 +459,26 @@ def _prepare_stock_service(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any]:
             }
             return responses.get(source_name)
 
-        monkeypatch.setattr(alt_stock_service, "_call_with_retries", alt_fake_call_with_retries)
+        monkeypatch.setattr(
+            alt_stock_service, "_call_with_retries", alt_fake_call_with_retries
+        )
 
     return {"calls": call_order}
 
 
-def _prepare_forex_service(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any]:
+def _prepare_forex_service(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     forex_service.cache = DummyAsyncCache()
     forex_service.apis[0]["api_key"] = "dummy-twelvedata"
-    monkeypatch.setattr(forex_service, "_session_factory", lambda timeout=None: DummyAsyncSessionContext())
-    call_order: List[str] = []
+    monkeypatch.setattr(
+        forex_service,
+        "_session_factory",
+        lambda timeout=None: DummyAsyncSessionContext(),
+    )
+    call_order: list[str] = []
 
-    async def fake_fx_call_with_retries(handler, session, symbol, source_name):  # noqa: ANN001
+    async def fake_fx_call_with_retries(
+        handler, session, symbol, source_name
+    ):  # noqa: ANN001
         call_order.append(source_name)
         responses = {
             "Twelve Data": None,
@@ -466,7 +499,9 @@ def _prepare_forex_service(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any]:
             lambda timeout=None: DummyAsyncSessionContext(),
         )
 
-        async def alt_fake_fx_call_with_retries(handler, session, symbol, source_name):  # noqa: ANN001
+        async def alt_fake_fx_call_with_retries(
+            handler, session, symbol, source_name
+        ):  # noqa: ANN001
             call_order.append(source_name)
             responses = {
                 "Twelve Data": None,
@@ -474,17 +509,25 @@ def _prepare_forex_service(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any]:
             }
             return responses.get(source_name)
 
-        monkeypatch.setattr(alt_forex_service, "_call_with_retries", alt_fake_fx_call_with_retries)
+        monkeypatch.setattr(
+            alt_forex_service, "_call_with_retries", alt_fake_fx_call_with_retries
+        )
 
     return {"calls": call_order}
 
 
-def _prepare_news_service(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any]:
+def _prepare_news_service(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     news_service.cache = DummyAsyncCache()
-    monkeypatch.setattr(news_service, "_session_factory", lambda timeout=None: DummyAsyncSessionContext())
-    call_order: List[str] = []
+    monkeypatch.setattr(
+        news_service,
+        "_session_factory",
+        lambda timeout=None: DummyAsyncSessionContext(),
+    )
+    call_order: list[str] = []
 
-    async def fake_news_call_with_retries(handler, session, limit, **kwargs):  # noqa: ANN001
+    async def fake_news_call_with_retries(
+        handler, session, limit, **kwargs
+    ):  # noqa: ANN001
         call_order.append(handler.__name__)
         responses = {
             "_fetch_cryptopanic": [],
@@ -521,10 +564,11 @@ def _prepare_news_service(monkeypatch: pytest.MonkeyPatch) -> Dict[str, Any]:
                 "_session_factory",
                 lambda timeout=None: DummyAsyncSessionContext(),
             )
-            monkeypatch.setattr(alt_service, "_call_with_retries", fake_news_call_with_retries)
+            monkeypatch.setattr(
+                alt_service, "_call_with_retries", fake_news_call_with_retries
+            )
 
     return {"calls": call_order}
-
 
 
 @pytest.mark.asyncio
@@ -558,9 +602,12 @@ async def test_login_returns_token_for_valid_credentials(
 
     access_expires = datetime.fromisoformat(payload["access_expires_at"])
     refresh_expires = datetime.fromisoformat(payload["refresh_expires_at"])
-    now = datetime.now(timezone.utc) if access_expires.tzinfo else datetime.utcnow()
+    now = datetime.now(UTC) if access_expires.tzinfo else datetime.utcnow()
     access_delta = (access_expires - now).total_seconds()
-    refresh_delta = (refresh_expires - (datetime.now(timezone.utc) if refresh_expires.tzinfo else datetime.utcnow())).total_seconds()
+    refresh_delta = (
+        refresh_expires
+        - (datetime.now(UTC) if refresh_expires.tzinfo else datetime.utcnow())
+    ).total_seconds()
     assert access_delta > 0
     assert refresh_delta > access_delta
 
@@ -591,9 +638,9 @@ async def test_crypto_endpoint_uses_primary_provider(
 ) -> None:
     _reset_crypto_service(monkeypatch)
     crypto_service = market_service.crypto_service
-    provider_calls: List[str] = []
+    provider_calls: list[str] = []
 
-    async def fake_get_price(symbol: str) -> Optional[float]:
+    async def fake_get_price(symbol: str) -> float | None:
         provider_calls.append("coingecko")
         return 45000.0
 
@@ -603,8 +650,12 @@ async def test_crypto_endpoint_uses_primary_provider(
 
     alt_module = sys.modules.get("services.market_service")
     if alt_module is not None:
-        monkeypatch.setattr(alt_module.market_service.crypto_service, "get_price", fake_get_price)
-        monkeypatch.setattr(alt_module.market_service, "get_binance_price", binance_mock)
+        monkeypatch.setattr(
+            alt_module.market_service.crypto_service, "get_price", fake_get_price
+        )
+        monkeypatch.setattr(
+            alt_module.market_service, "get_binance_price", binance_mock
+        )
 
     response = await client.get("/api/markets/crypto/btc")
     assert response.status_code == 200
@@ -621,9 +672,9 @@ async def test_crypto_endpoint_falls_back_to_coinmarketcap(
 ) -> None:
     _reset_crypto_service(monkeypatch)
     crypto_service = market_service.crypto_service
-    provider_calls: List[str] = []
+    provider_calls: list[str] = []
 
-    async def fake_get_price(symbol: str) -> Optional[float]:
+    async def fake_get_price(symbol: str) -> float | None:
         provider_calls.extend(["coingecko", "binance", "coinmarketcap"])
         return 123.45
 
@@ -636,7 +687,9 @@ async def test_crypto_endpoint_falls_back_to_coinmarketcap(
 
     alt_module = sys.modules.get("services.market_service")
     if alt_module is not None:
-        monkeypatch.setattr(alt_module.market_service.crypto_service, "get_price", fake_get_price)
+        monkeypatch.setattr(
+            alt_module.market_service.crypto_service, "get_price", fake_get_price
+        )
         monkeypatch.setattr(
             alt_module.market_service,
             "get_binance_price",
@@ -658,16 +711,22 @@ async def test_crypto_endpoint_returns_404_when_no_data(
     _reset_crypto_service(monkeypatch)
     crypto_service = market_service.crypto_service
 
-    async def fake_get_price(symbol: str) -> Optional[float]:
+    async def fake_get_price(symbol: str) -> float | None:
         return None
 
     monkeypatch.setattr(crypto_service, "get_price", fake_get_price)
-    monkeypatch.setattr(market_service, "get_binance_price", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        market_service, "get_binance_price", AsyncMock(return_value=None)
+    )
 
     alt_module = sys.modules.get("services.market_service")
     if alt_module is not None:
-        monkeypatch.setattr(alt_module.market_service.crypto_service, "get_price", fake_get_price)
-        monkeypatch.setattr(alt_module.market_service, "get_binance_price", AsyncMock(return_value=None))
+        monkeypatch.setattr(
+            alt_module.market_service.crypto_service, "get_price", fake_get_price
+        )
+        monkeypatch.setattr(
+            alt_module.market_service, "get_binance_price", AsyncMock(return_value=None)
+        )
 
     response = await client.get("/api/markets/crypto/xrp")
     assert response.status_code == 404
@@ -700,6 +759,9 @@ async def test_forex_endpoint_falls_back_to_yahoo(
     assert payload["price"] == pytest.approx(1.2345)
     assert payload["source"] == "Yahoo Finance"
     assert info["calls"] == ["Twelve Data", "Yahoo Finance"]
+    assert [s.strip().lower() for s in payload["sources"]] == [
+        s.strip().lower() for s in ["Twelve Data", "Yahoo Finance"]
+    ]
 
 
 @pytest.mark.asyncio
@@ -768,12 +830,12 @@ async def test_alert_workflow_triggers_notification(
 
     user_id = uuid.UUID(register.json()["id"])
     created_alert = dummy_user_service.get_alerts_for_user(user_id)[0]
-    notifications: List[Dict[str, Any]] = []
+    notifications: list[dict[str, Any]] = []
 
-    def fake_fetch_alerts() -> List[DummyAlert]:  # noqa: D401
+    def fake_fetch_alerts() -> list[DummyAlert]:  # noqa: D401
         return [created_alert]
 
-    async def fake_resolve_price(symbol: str) -> Optional[float]:  # noqa: ANN001
+    async def fake_resolve_price(symbol: str) -> float | None:  # noqa: ANN001
         return 120.0
 
     async def fake_notify(alert, price):  # noqa: ANN001

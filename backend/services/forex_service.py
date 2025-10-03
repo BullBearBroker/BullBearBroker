@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
+from collections.abc import Sequence
+from typing import Any
 
 import aiohttp
 from aiohttp import ClientError, ClientTimeout, ContentTypeError
@@ -25,7 +26,7 @@ class ForexService:
     def __init__(
         self,
         *,
-        cache_client: Optional[CacheClient] = None,
+        cache_client: CacheClient | None = None,
         session_factory=aiohttp.ClientSession,
     ) -> None:
         self.cache = cache_client or CacheClient("forex-quotes", ttl=60)
@@ -53,7 +54,7 @@ class ForexService:
             },
         )
 
-    async def get_quote(self, symbol: str) -> Optional[Dict[str, Any]]:
+    async def get_quote(self, symbol: str) -> dict[str, Any] | None:
         """Devuelve información de precio para ``symbol``."""
 
         normalized = self._normalize_symbol(symbol)
@@ -63,10 +64,12 @@ class ForexService:
             return cached_value
 
         async with self._session_factory(timeout=self._timeout) as session:
+            attempted_sources: list[str] = []
             for api in self.apis:
                 if api["requires_key"] and not api["api_key"]:
                     continue
 
+                attempted_sources.append(api["name"])
                 result = await self._call_with_retries(
                     api["callable"], session, normalized, api["name"]
                 )
@@ -76,16 +79,19 @@ class ForexService:
                         "price": result["price"],
                         "change": result.get("change"),
                         "source": api["name"],
+                        "sources": attempted_sources.copy(),
                     }
                     await self.cache.set(cache_key, payload)
                     return payload
 
         return None
 
-    async def get_quotes(self, symbols: Sequence[str]) -> Dict[str, Optional[Dict[str, Any]]]:
+    async def get_quotes(
+        self, symbols: Sequence[str]
+    ) -> dict[str, dict[str, Any] | None]:
         """Obtiene cotizaciones para múltiples símbolos."""
 
-        results: Dict[str, Optional[Dict[str, Any]]] = {}
+        results: dict[str, dict[str, Any] | None] = {}
         for symbol in symbols:
             results[symbol] = await self.get_quote(symbol)
         return results
@@ -96,13 +102,13 @@ class ForexService:
         session: aiohttp.ClientSession,
         symbol: str,
         source_name: str,
-    ) -> Optional[Dict[str, Any]]:
+    ) -> dict[str, Any] | None:
         backoff = self.RETRY_BACKOFF
         for attempt in range(1, self.RETRY_ATTEMPTS + 1):
             try:
                 return await handler(session, symbol)
             except (
-                asyncio.TimeoutError,
+                TimeoutError,
                 KeyError,
                 ValueError,
                 ClientError,
@@ -110,7 +116,8 @@ class ForexService:
                 TypeError,
             ) as exc:
                 print(
-                    f"ForexService: intento {attempt} fallido con {source_name} para {symbol}: {exc}"
+                    "ForexService: intento "
+                    f"{attempt} fallido con {source_name} para {symbol}: {exc}"
                 )
             except Exception as exc:  # pragma: no cover - errores inesperados
                 print(
@@ -126,10 +133,10 @@ class ForexService:
         session: aiohttp.ClientSession,
         url: str,
         *,
-        params: Optional[Dict[str, Any]] = None,
-        headers: Optional[Dict[str, str]] = None,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
         source_name: str,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         async with session.get(url, params=params, headers=headers) as response:
             if response.status >= 400:
                 raise ClientError(f"{source_name} devolvió estado {response.status}")
@@ -137,7 +144,7 @@ class ForexService:
 
     async def _fetch_twelvedata(
         self, session: aiohttp.ClientSession, symbol: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         if not Config.TWELVEDATA_API_KEY:
             raise KeyError("TWELVEDATA_API_KEY no configurada")
         url = "https://api.twelvedata.com/quote"
@@ -152,12 +159,10 @@ class ForexService:
 
     async def _fetch_yahoo_finance(
         self, session: aiohttp.ClientSession, symbol: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         yahoo_symbol = self._to_yahoo_symbol(symbol)
         url = f"https://query1.finance.yahoo.com/v8/finance/chart/{yahoo_symbol}"
-        data = await self._fetch_json(
-            session, url, source_name="Yahoo Finance"
-        )
+        data = await self._fetch_json(session, url, source_name="Yahoo Finance")
         meta = data["chart"]["result"][0]["meta"]
         price = float(meta["regularMarketPrice"])
         change = meta.get("regularMarketChangePercent")
@@ -166,7 +171,7 @@ class ForexService:
 
     async def _fetch_alpha_vantage(
         self, session: aiohttp.ClientSession, symbol: str
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         if not Config.ALPHA_VANTAGE_API_KEY:
             raise KeyError("ALPHA_VANTAGE_API_KEY no configurada")
 
@@ -207,7 +212,7 @@ class ForexService:
         return symbol
 
     @staticmethod
-    def _split_symbol(symbol: str) -> Tuple[str, str]:
+    def _split_symbol(symbol: str) -> tuple[str, str]:
         normalized = ForexService._normalize_symbol(symbol)
         if "/" in normalized:
             base, quote = normalized.split("/", maxsplit=1)

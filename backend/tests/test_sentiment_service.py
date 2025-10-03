@@ -1,20 +1,18 @@
 import asyncio
 import os
 import sys
-from typing import Any, Dict, List
+from typing import Any
 
 BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
-import pytest
-
-from services.sentiment_service import SentimentService
+from services.sentiment_service import SentimentService  # noqa: E402
 
 
 class DummyCache:
     def __init__(self):
-        self.values: Dict[str, Any] = {}
+        self.values: dict[str, Any] = {}
 
     async def get(self, key: str):
         return self.values.get(key.lower())
@@ -39,7 +37,9 @@ class DummyResponse:
 
 
 class DummySession:
-    def __init__(self, get_responses: List[DummyResponse], post_responses: List[DummyResponse]):
+    def __init__(
+        self, get_responses: list[DummyResponse], post_responses: list[DummyResponse]
+    ):
         self.get_responses = get_responses
         self.post_responses = post_responses
 
@@ -56,18 +56,30 @@ class DummySession:
         return self.post_responses.pop(0)
 
 
-def make_service(get_data: List[DummyResponse], post_data: List[DummyResponse]):
+def make_service(get_data: list[DummyResponse], post_data: list[DummyResponse]):
     return SentimentService(
         market_cache=DummyCache(),
         text_cache=DummyCache(),
-        session_factory=lambda timeout=None: DummySession(list(get_data), list(post_data)),
+        session_factory=lambda timeout=None: DummySession(
+            list(get_data), list(post_data)
+        ),
     )
 
 
 def test_sentiment_service_combines_sources():
     service = make_service(
         [
-            DummyResponse({"data": [{"value": "50", "value_classification": "Neutral", "timestamp": "123"}]}),
+            DummyResponse(
+                {
+                    "data": [
+                        {
+                            "value": "50",
+                            "value_classification": "Neutral",
+                            "timestamp": "123",
+                        }
+                    ]
+                }
+            ),
         ],
         [
             DummyResponse([[{"label": "POSITIVE", "score": 0.9}]]),
@@ -81,9 +93,21 @@ def test_sentiment_service_combines_sources():
 
 def test_sentiment_service_uses_cache_for_market():
     responses = [
-        DummyResponse({"data": [{"value": "20", "value_classification": "Extreme Fear", "timestamp": "1"}]}),
+        DummyResponse(
+            {
+                "data": [
+                    {
+                        "value": "20",
+                        "value_classification": "Extreme Fear",
+                        "timestamp": "1",
+                    }
+                ]
+            }
+        ),
     ]
-    service = make_service(responses, [DummyResponse([[{"label": "NEGATIVE", "score": 0.7}]])])
+    service = make_service(
+        responses, [DummyResponse([[{"label": "NEGATIVE", "score": 0.7}]])]
+    )
 
     first = asyncio.run(service.get_market_sentiment())
     second = asyncio.run(service.get_market_sentiment())

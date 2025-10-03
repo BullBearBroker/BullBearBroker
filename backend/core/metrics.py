@@ -6,7 +6,12 @@ from fastapi import APIRouter
 from fastapi.responses import PlainTextResponse
 
 try:  # pragma: no cover - dependencia opcional
-    from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
+    from prometheus_client import (
+        CONTENT_TYPE_LATEST,
+        Counter,
+        Histogram,
+        generate_latest,
+    )
 except ImportError:  # pragma: no cover - fallback sin cliente de Prometheus
     CONTENT_TYPE_LATEST = "text/plain; charset=utf-8"
 
@@ -31,6 +36,8 @@ except ImportError:  # pragma: no cover - fallback sin cliente de Prometheus
 
     def generate_latest() -> bytes:  # type: ignore[override]
         return b"# prometheus_client not installed\n"
+
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -44,6 +51,34 @@ REQUEST_LATENCY = Histogram(
     "bullbearbroker_request_duration_seconds",
     "HTTP request latency in seconds",
     ["method", "path"],
+)
+
+LOGIN_ATTEMPTS_TOTAL = Counter(
+    "login_attempts_total",
+    "Total login attempts grouped by outcome.",
+    ["outcome"],
+)
+LOGIN_ATTEMPTS = LOGIN_ATTEMPTS_TOTAL
+LOGIN_RATE_LIMITED = Counter(
+    "login_rate_limited_total",
+    "Login requests blocked by rate limiting.",
+    ["dimension"],
+)
+LOGIN_DURATION = Histogram(
+    "login_duration_seconds",
+    "Duration of the login handler in seconds.",
+)
+
+ALERTS_RATE_LIMITED = Counter(
+    "alerts_rate_limited_total",
+    "Alert operations blocked by rate limiting.",
+    ["action"],
+)
+
+AI_PROVIDER_FAILOVER_TOTAL = Counter(
+    "ai_provider_failover_total",
+    "Total AI provider failovers.",
+    ["provider"],
 )
 
 
@@ -63,7 +98,9 @@ class MetricsMiddleware(BaseHTTPMiddleware):
 
         duration = time.perf_counter() - start
         REQUEST_LATENCY.labels(method=method, path=path).observe(duration)
-        REQUEST_COUNT.labels(method=method, path=path, status=str(response.status_code)).inc()
+        REQUEST_COUNT.labels(
+            method=method, path=path, status=str(response.status_code)
+        ).inc()
         return response
 
 

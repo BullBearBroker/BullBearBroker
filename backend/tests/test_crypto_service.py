@@ -1,30 +1,31 @@
 import asyncio
 import os
 import sys
-from typing import Any, Dict, List
-
-import pytest
-import aiohttp
+from typing import Any
 from unittest.mock import AsyncMock
+
+import aiohttp
+import pytest
 
 BACKEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
-from fastapi import HTTPException
+from fastapi import HTTPException  # noqa: E402
+
+from backend.routers.markets import get_crypto  # noqa: E402
 
 # 🔧 Ajuste: imports corregidos
-from backend.services.crypto_service import CryptoService
-from backend.services.market_service import market_service
-from backend.routers.markets import get_crypto
-from backend.utils.config import Config
+from backend.services.crypto_service import CryptoService  # noqa: E402
+from backend.services.market_service import market_service  # noqa: E402
+from backend.utils.config import Config  # noqa: E402
 
 crypto_service = market_service.crypto_service
 
 
 class DummyCache:
     def __init__(self):
-        self.values: Dict[str, Any] = {}
+        self.values: dict[str, Any] = {}
 
     async def get(self, key: str):
         return self.values.get(key.lower())
@@ -36,7 +37,7 @@ class DummyCache:
 def test_coingecko_symbol_resolution(monkeypatch):
     service = CryptoService(cache_client=DummyCache())
 
-    expected_calls: List[Dict[str, Any]] = []
+    expected_calls: list[dict[str, Any]] = []
 
     async def fake_request(self, url: str, *, session=None, **kwargs):
         if not expected_calls:
@@ -218,8 +219,12 @@ def test_crypto_endpoint_success(monkeypatch):
 
     alt_module = sys.modules.get("services.market_service")
     if alt_module is not None:
-        monkeypatch.setattr(alt_module.market_service.crypto_service, "get_price", fake_get_price)
-        monkeypatch.setattr(alt_module.market_service, "get_binance_price", fake_binance)
+        monkeypatch.setattr(
+            alt_module.market_service.crypto_service, "get_price", fake_get_price
+        )
+        monkeypatch.setattr(
+            alt_module.market_service, "get_binance_price", fake_binance
+        )
 
     body = asyncio.run(get_crypto("BTC"))
     assert body["symbol"] == "BTC"
@@ -231,11 +236,15 @@ def test_crypto_endpoint_not_found(monkeypatch):
         return None
 
     monkeypatch.setattr(crypto_service, "get_price", fake_get_price)
-    monkeypatch.setattr(market_service, "get_binance_price", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        market_service, "get_binance_price", AsyncMock(return_value=None)
+    )
 
     alt_module = sys.modules.get("services.market_service")
     if alt_module is not None:
-        monkeypatch.setattr(alt_module.market_service.crypto_service, "get_price", fake_get_price)
+        monkeypatch.setattr(
+            alt_module.market_service.crypto_service, "get_price", fake_get_price
+        )
         monkeypatch.setattr(
             alt_module.market_service,
             "get_binance_price",
@@ -254,11 +263,15 @@ def test_crypto_endpoint_failure(monkeypatch):
         raise RuntimeError("boom")
 
     monkeypatch.setattr(crypto_service, "get_price", fake_get_price)
-    monkeypatch.setattr(market_service, "get_binance_price", AsyncMock(return_value=None))
+    monkeypatch.setattr(
+        market_service, "get_binance_price", AsyncMock(return_value=None)
+    )
 
     alt_module = sys.modules.get("services.market_service")
     if alt_module is not None:
-        monkeypatch.setattr(alt_module.market_service.crypto_service, "get_price", fake_get_price)
+        monkeypatch.setattr(
+            alt_module.market_service.crypto_service, "get_price", fake_get_price
+        )
         monkeypatch.setattr(
             alt_module.market_service,
             "get_binance_price",

@@ -1,5 +1,5 @@
 import pytest
-from httpx import AsyncClient, ASGITransport
+from httpx import ASGITransport, AsyncClient
 
 from backend.main import app
 
@@ -11,7 +11,9 @@ def test_user():
 
 @pytest.mark.asyncio
 async def test_auth_flow(test_user):
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         # 1) LOGIN
         resp = await client.post("/api/auth/login", json=test_user)
         assert resp.status_code == 200, resp.text
@@ -30,7 +32,9 @@ async def test_auth_flow(test_user):
         assert resp.status_code == 401
 
         # 4) /auth/me con ACCESS
-        resp = await client.get("/api/auth/me", headers={"Authorization": f"Bearer {access_token}"})
+        resp = await client.get(
+            "/api/auth/me", headers={"Authorization": f"Bearer {access_token}"}
+        )
         assert resp.status_code == 200, resp.text
         me_data = resp.json()
         assert me_data["email"] == test_user["email"]
