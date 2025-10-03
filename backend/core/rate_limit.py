@@ -23,6 +23,67 @@ LimitCallback = Callable[[Request, str], None]
 LOGGER = get_logger(service="rate_limit")
 
 
+class SimpleRateLimiter:
+    """Minimal rate limiter compatible with the test helpers."""
+
+    def __init__(self) -> None:
+        self._limits: dict[str, tuple[int, int]] = {}
+
+    def configure(self, key: str, *, times: int, seconds: int) -> None:
+        """Persist configuration for a rate limit key."""
+
+        times = max(1, int(times))
+        seconds = max(1, int(seconds))
+        self._limits[key] = (times, seconds)
+
+    async def record_hit(
+        self,
+        *,
+        key: str,
+        client_ip: str,
+        weight: int = 1,
+        limit: int | None = None,
+        window: int | None = None,
+        detail: str = "Too Many Requests",
+    ) -> None:
+        """Record a hit for the given key, raising when the limit is exceeded."""
+
+        configured = self._limits.get(key)
+        max_requests, window_seconds = configured if configured else (
+            limit or 5,
+            window or 60,
+        )
+
+        max_requests = max(1, int(max_requests))
+        window_seconds = max(1, int(window_seconds))
+        step = max(1, int(weight))
+        bucket_key = f"{client_ip}:{key}:{max_requests}:{window_seconds}"
+        bucket = _IN_MEMORY_BUCKETS[bucket_key]
+        now = time.monotonic()
+        bucket[:] = [tick for tick in bucket if now - tick < window_seconds]
+
+        if len(bucket) + step > max_requests:
+            raise HTTPException(status_code=429, detail=detail)
+
+        bucket.extend([now] * step)
+
+
+# Default alert dispatch limit (5 requests per minute unless overridden)
+_ALERT_DISPATCH_LIMIT_TIMES = max(
+    1, int(getattr(Config, "ALERTS_DISPATCH_RATE_LIMIT_TIMES", 5))
+)
+_ALERT_DISPATCH_LIMIT_WINDOW = max(
+    1, int(getattr(Config, "ALERTS_DISPATCH_RATE_LIMIT_WINDOW", 60))
+)
+
+rate_limiter = SimpleRateLimiter()
+rate_limiter.configure(
+    "alerts:dispatch",
+    times=_ALERT_DISPATCH_LIMIT_TIMES,
+    seconds=_ALERT_DISPATCH_LIMIT_WINDOW,
+)
+
+
 async def identifier_login_by_email(request: Request) -> str:
     """Return an identifier for login rate limiting keyed by email when available."""
 
@@ -208,6 +269,8 @@ async def clear_testing_state() -> None:
 
 
 __all__ = [
+    "SimpleRateLimiter",
+    "rate_limiter",
     "identifier_login_by_email",
     "login_rate_limiter",
     "rate_limit",

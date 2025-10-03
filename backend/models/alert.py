@@ -5,7 +5,7 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, Float, ForeignKey, JSON, String
+from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, Float, ForeignKey, JSON, String, event
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -81,3 +81,17 @@ class Alert(Base):
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
         }
+
+
+@event.listens_for(Alert, "before_insert", propagate=True)
+def _ensure_alert_name(mapper, connection, target) -> None:  # pragma: no cover - simple guard
+    del mapper, connection
+    name = (getattr(target, "name", "") or "").strip()
+    if name:
+        target.name = name
+        return
+
+    fallback = (getattr(target, "title", "") or "").strip()
+    if not fallback:
+        fallback = (getattr(target, "asset", "") or "").strip()
+    target.name = fallback or "Alert"
