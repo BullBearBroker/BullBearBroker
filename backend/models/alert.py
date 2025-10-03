@@ -5,7 +5,16 @@ from datetime import datetime
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, Float, ForeignKey, JSON, String, event
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum as SQLEnum,
+    Float,
+    ForeignKey,
+    JSON,
+    String,
+    event,
+)
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -24,6 +33,7 @@ class AlertDeliveryMethod(str, Enum):
     PUSH = "push"
     EMAIL = "email"
     INAPP = "inapp"
+    WEBHOOK = "webhook"
 
 
 class Alert(Base):
@@ -52,7 +62,9 @@ class Alert(Base):
         default=AlertDeliveryMethod.PUSH,
     )
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    pending_delivery: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    pending_delivery: Mapped[bool] = mapped_column(
+        Boolean, default=True, nullable=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False
     )
@@ -63,9 +75,7 @@ class Alert(Base):
     # Campos heredados para compatibilidad con versiones anteriores
     title: Mapped[str | None] = mapped_column(String(255), nullable=True)
     asset: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    condition_expression: Mapped[str | None] = mapped_column(
-        String(255), nullable=True
-    )
+    condition_expression: Mapped[str | None] = mapped_column(String(255), nullable=True)
     value: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     user: Mapped[User] = relationship("User", back_populates="alerts")
@@ -84,7 +94,9 @@ class Alert(Base):
 
 
 @event.listens_for(Alert, "before_insert", propagate=True)
-def _ensure_alert_name(mapper, connection, target) -> None:  # pragma: no cover - simple guard
+def _ensure_alert_name(
+    mapper, connection, target
+) -> None:  # pragma: no cover - simple guard
     del mapper, connection
     name = (getattr(target, "name", "") or "").strip()
     if name:
