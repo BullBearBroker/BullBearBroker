@@ -178,3 +178,7 @@ jest.mock("@radix-ui/react-scroll-area", () => {
     ScrollAreaCorner,
   };
 });
+
+// Mock global para URL APIs usadas en PortfolioPanel
+global.URL.createObjectURL = jest.fn(() => "blob:mock-url");
+global.URL.revokeObjectURL = jest.fn();

@@ -47,6 +47,21 @@ const mockedListPortfolio = listPortfolio as jest.MockedFunction<typeof listPort
 const mockedGetFeatureFlag = getFeatureFlag as jest.MockedFunction<typeof getFeatureFlag>;
 
 describe("PortfolioPanel", () => {
+  beforeAll(() => {
+    jest.spyOn(window, "FileReader").mockImplementation(function () {
+      return {
+        onload: null,
+        readAsText: jest.fn(function () {
+          this.onload?.({ target: { result: "mocked-csv" } } as any);
+        }),
+      } as any;
+    });
+  });
+
+  afterAll(() => {
+    jest.restoreAllMocks();
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     mockedUseSWR.mockReturnValue({
@@ -322,11 +337,35 @@ describe("PortfolioPanel", () => {
 
     mockedExportPortfolioCsv.mockResolvedValue("symbol,amount\nAAPL,1\n");
 
-    const anchor = document.createElement("a");
-    const clickSpy = jest.spyOn(anchor, "click").mockImplementation(() => {});
-    const createSpy = jest.spyOn(document, "createElement").mockReturnValue(anchor as any);
-    const appendSpy = jest.spyOn(document.body, "appendChild");
-    const removeSpy = jest.spyOn(document.body, "removeChild");
+    const originalCreateElement = document.createElement.bind(document);
+    const clickSpy = jest.fn();
+    const anchorClickSpies: jest.SpyInstance[] = [];
+    const createSpy = jest
+      .spyOn(document, "createElement")
+      .mockImplementation(
+        ((tagName: string, options?: any) => {
+          const element = originalCreateElement(tagName, options);
+          if (tagName.toLowerCase() === "a" && typeof element.click === "function") {
+            const anchorClickSpy = jest
+              .spyOn(element, "click")
+              .mockImplementation(() => clickSpy());
+            anchorClickSpies.push(anchorClickSpy);
+          }
+          return element;
+        }) as typeof document.createElement
+      );
+    const originalAppendChild = document.body.appendChild.bind(document.body);
+    const originalRemoveChild = document.body.removeChild.bind(document.body);
+    const appendSpy = jest
+      .spyOn(document.body, "appendChild")
+      .mockImplementation(function (this: typeof document.body, node: any) {
+        return originalAppendChild(node);
+      });
+    const removeSpy = jest
+      .spyOn(document.body, "removeChild")
+      .mockImplementation(function (this: typeof document.body, node: any) {
+        return originalRemoveChild(node);
+      });
     const urlCreateSpy = jest
       .spyOn(URL, "createObjectURL")
       .mockReturnValue("blob:mock-url");
@@ -339,20 +378,20 @@ describe("PortfolioPanel", () => {
       await act(async () => {
         await user.click(screen.getByRole("button", { name: /exportar csv/i }));
       });
+
+      expect(mockedExportPortfolioCsv).toHaveBeenCalledWith("secure");
+      expect(clickSpy).toHaveBeenCalled();
+      expect(appendSpy).toHaveBeenCalled();
+      expect(removeSpy).toHaveBeenCalled();
+      expect(screen.getByText(/Exportación completada/i)).toBeInTheDocument();
     } finally {
+      anchorClickSpies.forEach((spy) => spy.mockRestore());
       createSpy.mockRestore();
       appendSpy.mockRestore();
       removeSpy.mockRestore();
       urlCreateSpy.mockRestore();
       urlRevokeSpy.mockRestore();
-      clickSpy.mockRestore();
     }
-
-    expect(mockedExportPortfolioCsv).toHaveBeenCalledWith("secure");
-    expect(clickSpy).toHaveBeenCalled();
-    expect(appendSpy).toHaveBeenCalled();
-    expect(removeSpy).toHaveBeenCalled();
-    expect(screen.getByText(/Exportación completada/i)).toBeInTheDocument();
   });
 
   it("procesa el CSV importado y muestra errores", async () => {
