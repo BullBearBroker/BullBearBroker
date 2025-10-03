@@ -19,6 +19,96 @@ from backend.services.push_service import push_service
 ComparisonOperator = Callable[[float, float], bool]
 
 
+def _ensure_sequence(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, (list, tuple, set)):
+        return list(value)
+    return [value]
+
+
+def _describe_condition(condition: Any) -> str:
+    if condition is None:
+        return ""
+    if isinstance(condition, dict):
+        if "and" in condition:
+            parts = [
+                _describe_condition(item) for item in _ensure_sequence(condition.get("and"))
+            ]
+            parts = [part for part in parts if part]
+            return " & ".join(parts)
+        if "or" in condition:
+            parts = [
+                _describe_condition(item) for item in _ensure_sequence(condition.get("or"))
+            ]
+            parts = [part for part in parts if part]
+            return " | ".join(parts)
+        if "not" in condition:
+            inner = _describe_condition(condition.get("not"))
+            return f"NOT ({inner})" if inner else "NOT condition"
+
+        segments: list[str] = []
+        for indicator, payload in condition.items():
+            if isinstance(payload, dict):
+                inner_segments = [
+                    f"{indicator} {op} {payload_value!r}" for op, payload_value in sorted(payload.items())
+                ]
+                if inner_segments:
+                    segments.append(" & ".join(inner_segments))
+                else:
+                    segments.append(str(indicator))
+            elif isinstance(payload, (list, tuple, set)):
+                joined = ", ".join(f"{item!r}" for item in payload)
+                segments.append(f"{indicator} in [{joined}]")
+            else:
+                segments.append(f"{indicator} == {payload!r}")
+        return " & ".join(segment for segment in segments if segment)
+
+    if isinstance(condition, (list, tuple, set)):
+        parts = [_describe_condition(item) for item in condition]
+        return " & ".join(part for part in parts if part)
+
+    return str(condition)
+
+
+def _extract_asset_from_condition(condition: Any) -> str:
+    if isinstance(condition, dict):
+        asset_value = condition.get("asset")
+        if isinstance(asset_value, str) and asset_value.strip():
+            return asset_value.strip().upper()
+        for value in condition.values():
+            candidate = _extract_asset_from_condition(value)
+            if candidate:
+                return candidate
+    elif isinstance(condition, (list, tuple, set)):
+        for item in condition:
+            candidate = _extract_asset_from_condition(item)
+            if candidate:
+                return candidate
+    return ""
+
+
+def _default_alert_name(payload: dict[str, Any]) -> str:
+    condition = payload.get("condition") or {}
+    asset = ""
+    for key in ("asset", "symbol", "ticker"):
+        raw_value = payload.get(key)
+        if isinstance(raw_value, str) and raw_value.strip():
+            asset = raw_value.strip().upper()
+            break
+    if not asset:
+        asset = _extract_asset_from_condition(condition)
+
+    condition_text = _describe_condition(condition)
+    if asset and condition_text:
+        return f"{asset}: {condition_text}"
+    if asset:
+        return f"{asset} alert"
+    if condition_text:
+        return f"Alert: {condition_text}"
+    return "Alert"
+
+
 class ConditionEvaluator:
     """Evaluate alert conditions expressed as JSON structures."""
 
@@ -151,7 +241,7 @@ class AlertsService:
 
         name = str(data.get("name") or "").strip()
         if not name:
-            raise ValueError("Alert name is required")
+            name = _default_alert_name(data)
 
         active = bool(data.get("active", True))
 

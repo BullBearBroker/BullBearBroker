@@ -8,6 +8,8 @@ from .refresh_token import RefreshToken
 from .session import Session
 from .user import User
 
+PushPreference = PushNotificationPreference
+
 __all__ = [
     "Alert",
     "AlertDeliveryMethod",
@@ -21,4 +23,5 @@ __all__ = [
     "ChatMessage",
     "PushSubscription",
     "PushNotificationPreference",
+    "PushPreference",
 ]

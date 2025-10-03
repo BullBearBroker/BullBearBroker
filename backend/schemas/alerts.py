@@ -16,18 +16,9 @@ class ConditionModel(BaseModel):
 
 
 class AlertBase(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
     condition: dict[str, Any]
     delivery_method: AlertDeliveryMethod = AlertDeliveryMethod.PUSH
     active: bool = True
-
-    @field_validator("name")
-    @classmethod
-    def _validate_name(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("El nombre de la alerta es obligatorio")
-        return value
 
     @field_validator("condition")
     @classmethod
@@ -38,7 +29,41 @@ class AlertBase(BaseModel):
 
 
 class AlertCreate(AlertBase):
-    pass
+    name: str | None = Field(default=None, max_length=255)
+
+    @field_validator("name")
+    @classmethod
+    def _normalize_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+
+class AlertUpdate(BaseModel):
+    name: str | None = Field(default=None, max_length=255)
+    condition: dict[str, Any] | None = None
+    delivery_method: AlertDeliveryMethod | None = None
+    active: bool | None = None
+
+    @field_validator("name")
+    @classmethod
+    def _normalize_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
+
+    @field_validator("condition")
+    @classmethod
+    def _validate_condition(
+        cls, value: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        if value is None:
+            return None
+        if not isinstance(value, dict) or not value:
+            raise ValueError("La condición debe ser un objeto JSON válido")
+        return value
 
 
 class AlertToggle(BaseModel):
@@ -46,6 +71,7 @@ class AlertToggle(BaseModel):
 
 
 class AlertOut(AlertBase):
+    name: str
     id: UUID
     pending_delivery: bool
     created_at: datetime
@@ -67,4 +93,4 @@ class AlertOut(AlertBase):
         )
 
 
-__all__ = ["AlertCreate", "AlertOut", "AlertToggle"]
+__all__ = ["AlertCreate", "AlertUpdate", "AlertOut", "AlertToggle"]

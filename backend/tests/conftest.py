@@ -5,12 +5,14 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from backend.database import Base, engine
-
 TEST_DB_PATH = Path("/tmp/test_suite.db")
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"  # ensure isolated DB for tests
 if TEST_DB_PATH.exists():
     TEST_DB_PATH.unlink()
+
+import backend.models  # noqa: F401  # ensure all ORM models are registered
+from backend.database import engine
+from backend.models import Base
 
 from backend.main import app
 from backend.routers import alerts as alerts_router, auth as auth_router
