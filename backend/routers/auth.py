@@ -29,6 +29,7 @@ from backend.core.security import (
 )
 from backend.database import get_db
 from backend.models.refresh_token import RefreshToken
+from backend.models.user import User
 from backend.schemas.auth import RefreshRequest, TokenPair
 from backend.services.captcha_service import CaptchaVerificationError, verify_captcha
 from backend.services.password_guard import is_password_compromised
@@ -36,9 +37,12 @@ from backend.services.user_service import (
     InvalidCredentialsError,
     InvalidTokenError,
     UserAlreadyExistsError,
+    generate_mfa_secret,
     user_service,
+    verify_mfa_code,
 )
 from backend.utils.config import Config
+from pyotp import TOTP
 
 try:  # pragma: no cover - tracing opcional
     from opentelemetry import trace
@@ -157,6 +161,7 @@ class UserLogin(BaseModel):
     email: str
     password: str
     captcha_token: str | None = None
+    mfa_code: str | None = None
 
     @field_validator("email")
     @classmethod
@@ -167,6 +172,10 @@ class UserLogin(BaseModel):
 class LogoutRequest(BaseModel):
     refresh_token: str | None = None
     revoke_all: bool = False
+
+
+class MFAVerifyRequest(BaseModel):
+    code: str
 
 
 @router.post("/register", status_code=status.HTTP_201_CREATED)
@@ -457,6 +466,19 @@ async def login(
                 detail="Servicio de usuarios no disponible",
             ) from exc
 
+        if getattr(user, "mfa_enabled", False):
+            secret = getattr(user, "mfa_secret", None)
+            if credentials.mfa_code is None:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="mfa_required",
+                )
+            if not secret or not verify_mfa_code(secret, credentials.mfa_code):
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="mfa_invalid",
+                )
+
         sub = str(user.id)
         jti = str(uuid4())
         refresh_token = create_refresh_token(sub=sub, jti=jti)
@@ -611,6 +633,81 @@ def logout(
         user_service.revoke_refresh_token(req.refresh_token)
 
     return {"detail": "Session revoked"}
+
+
+@router.post("/mfa/setup")
+def setup_mfa(
+    token: Annotated[HTTPAuthorizationCredentials, Depends(security)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, str]:
+    try:
+        user = user_service.get_current_user(token.credentials)
+    except InvalidTokenError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database session not available")
+
+    db_user = db.get(User, user.id)
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    secret = generate_mfa_secret()
+    db_user.mfa_secret = secret
+    db_user.mfa_enabled = False
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+
+    issuer = getattr(Config, "MFA_ISSUER", "BullBearBroker")
+    otpauth_url = TOTP(secret).provisioning_uri(name=user.email, issuer_name=issuer)
+    return {"secret": secret, "otpauth_url": otpauth_url}
+
+
+@router.post("/mfa/verify")
+def verify_mfa(
+    payload: MFAVerifyRequest,
+    token: Annotated[HTTPAuthorizationCredentials, Depends(security)],
+    db: Annotated[Session, Depends(get_db)],
+) -> dict[str, str]:
+    try:
+        user = user_service.get_current_user(token.credentials)
+    except InvalidTokenError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+    if db is None:
+        raise HTTPException(status_code=503, detail="Database session not available")
+
+    db_user = db.get(User, user.id)
+    if db_user is None:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    secret = getattr(db_user, "mfa_secret", None)
+    if not secret:
+        raise HTTPException(status_code=400, detail="mfa_not_configured")
+
+    if not verify_mfa_code(secret, payload.code):
+        raise HTTPException(status_code=400, detail="mfa_invalid")
+
+    db_user.mfa_enabled = True
+    db.add(db_user)
+    db.commit()
+    db.refresh(db_user)
+
+    return {"detail": "MFA enabled"}
+
+
+@router.post("/logout_all")
+def logout_all(
+    token: Annotated[HTTPAuthorizationCredentials, Depends(security)]
+) -> dict[str, str]:
+    try:
+        user = user_service.get_current_user(token.credentials)
+    except InvalidTokenError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+
+    user_service.revoke_all_tokens(user.id)
+    return {"detail": "All sessions revoked"}
 
 
 @router.get("/me")
