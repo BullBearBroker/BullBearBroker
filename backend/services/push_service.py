@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from collections.abc import Iterable
 from typing import Any
 
@@ -36,16 +37,30 @@ class PushService:
         contact_email: str | None = None,
         vapid_claims: dict[str, Any] | str | None = None,
     ) -> None:
+        env_vapid_private_key = os.getenv("VAPID_PRIVATE_KEY")
+        env_vapid_public_key = os.getenv("VAPID_PUBLIC_KEY") or os.getenv(
+            "PUSH_VAPID_PUBLIC_KEY"
+        )
+        try:
+            env_vapid_claims = json.loads(
+                os.getenv("VAPID_CLAIMS", "{}")
+            )  # ✅ Codex fix: cargamos las claims VAPID estandarizadas desde el entorno.
+        except json.JSONDecodeError:
+            LOGGER.warning("Invalid JSON for VAPID_CLAIMS", exc_info=True)
+            env_vapid_claims = None
+
         self._vapid_private_key = (
-            vapid_private_key or Config.VAPID_PRIVATE_KEY
-        )  # ✅ Codex fix: usamos la nueva nomenclatura de variables VAPID.
+            vapid_private_key
+            or env_vapid_private_key
+            or Config.VAPID_PRIVATE_KEY
+        )  # ✅ Codex fix: priorizamos la variable de entorno final VAPID_PRIVATE_KEY.
         self._vapid_public_key = (
-            vapid_public_key or Config.VAPID_PUBLIC_KEY
-        )  # ✅ Codex fix: usamos la nueva nomenclatura de variables VAPID.
+            vapid_public_key or env_vapid_public_key or Config.VAPID_PUBLIC_KEY
+        )  # ✅ Codex fix: priorizamos la variable de entorno final VAPID_PUBLIC_KEY.
         self._contact_email = contact_email or Config.PUSH_CONTACT_EMAIL
         self._vapid_claims = self._parse_claims(
-            vapid_claims or Config.VAPID_CLAIMS
-        )  # ✅ Codex fix: permitimos definir reclamaciones VAPID completas desde el entorno.
+            vapid_claims or env_vapid_claims or Config.VAPID_CLAIMS
+        )  # ✅ Codex fix: compatibilidad con claims definidas tanto en JSON como en Config.
 
     @property
     def is_configured(self) -> bool:
