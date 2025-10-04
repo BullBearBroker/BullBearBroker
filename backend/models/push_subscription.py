@@ -23,6 +23,7 @@ class PushSubscription(Base):
     endpoint = Column(String, nullable=False, unique=True)
     auth = Column(String, nullable=False)
     p256dh = Column(String, nullable=False)
+    expiration_time = Column(DateTime(timezone=True), nullable=True)  # ✅ Codex fix: guardamos la expiración opcional enviada por el navegador.
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="push_subscriptions")

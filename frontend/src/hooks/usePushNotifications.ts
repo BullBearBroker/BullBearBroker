@@ -44,7 +44,7 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
     }
 
     let active = true;
-    const vapidKey = process.env.NEXT_PUBLIC_PUSH_VAPID_PUBLIC_KEY;
+    const vapidKey = process.env.NEXT_PUBLIC_VAPID_KEY;
     if (!vapidKey) {
       setError("Falta configurar la clave pública VAPID.");
       return;
@@ -77,9 +77,15 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
         const auth = json.keys?.auth ?? "";
         const p256dh = json.keys?.p256dh ?? "";
 
+        const expirationTime =
+          typeof subscription.expirationTime === "number"
+            ? new Date(subscription.expirationTime).toISOString()
+            : null; // ✅ Codex fix: normalizamos el timestamp a ISO8601 antes de enviarlo.
+
         await subscribePush(
           {
             endpoint: subscription.endpoint,
+            expirationTime,
             keys: { auth, p256dh },
           },
           token

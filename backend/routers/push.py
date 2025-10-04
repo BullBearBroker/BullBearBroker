@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from typing import Annotated
 from uuid import UUID
 
@@ -34,6 +35,9 @@ class SubscriptionKeys(BaseModel):
 
 class PushSubscriptionPayload(BaseModel):
     endpoint: str = Field(..., min_length=10)
+    expiration_time: datetime | None = Field(
+        default=None, alias="expirationTime"
+    )  # ✅ Codex fix: aceptamos la expiración opcional que envía el cliente.
     keys: SubscriptionKeys
 
     model_config = {
@@ -129,11 +133,13 @@ async def subscribe_push(
         subscription.auth = payload.keys.auth
         subscription.p256dh = payload.keys.p256dh
         subscription.user_id = current_user.id
+        subscription.expiration_time = payload.expiration_time  # ✅ Codex fix: persistimos la expiración sincronizada con el navegador.
     else:
         subscription = PushSubscription(
             endpoint=payload.endpoint,
             auth=payload.keys.auth,
             p256dh=payload.keys.p256dh,
+            expiration_time=payload.expiration_time,  # ✅ Codex fix: registramos la expiración en nuevas suscripciones.
             user_id=current_user.id,
         )
         db.add(subscription)
