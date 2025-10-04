@@ -3,6 +3,34 @@ import { act, renderHook, waitFor } from "@/tests/utils/renderWithProviders";
 import { subscribePush } from "@/lib/api";
 import { usePushNotifications } from "../usePushNotifications";
 
+// ✅ Codex fix: mock global para entorno Push API en Jest
+beforeAll(() => {
+  Object.defineProperty(global, "Notification", {
+    value: { permission: "granted" },
+    configurable: true,
+    writable: true,
+  });
+
+  Object.defineProperty(global.navigator, "serviceWorker", {
+    value: {
+      ready: Promise.resolve({
+        pushManager: {
+          subscribe: jest.fn().mockResolvedValue({
+            endpoint: "mock-endpoint",
+            expirationTime: null,
+            keys: {
+              p256dh: "mock-p256dh",
+              auth: "mock-auth",
+            },
+          }),
+        },
+      }),
+    },
+    configurable: true,
+    writable: true,
+  });
+});
+
 jest.mock("@/lib/api", () => ({
   subscribePush: jest.fn().mockResolvedValue({ id: "sub" }),
 }));
@@ -16,6 +44,7 @@ describe("usePushNotifications", () => {
 
   beforeEach(() => {
     process.env.NEXT_PUBLIC_PUSH_VAPID_PUBLIC_KEY = "dGVzdA==";
+    process.env.NEXT_PUBLIC_VAPID_KEY = "dGVzdA==";
 
     (global as any).atob = (value: string) => Buffer.from(value, "base64").toString("binary");
 
@@ -88,6 +117,7 @@ describe("usePushNotifications", () => {
     expect(mockedSubscribePush).toHaveBeenCalledWith(
       {
         endpoint: "https://example.com/push",
+        expirationTime: null,
         keys: { auth: "auth", p256dh: "p256dh" },
       },
       "token"
@@ -97,6 +127,7 @@ describe("usePushNotifications", () => {
 
   it("reporta error cuando falta la clave VAPID", async () => {
     process.env.NEXT_PUBLIC_PUSH_VAPID_PUBLIC_KEY = "";
+    process.env.NEXT_PUBLIC_VAPID_KEY = "";
 
     const { result } = renderHook(() => usePushNotifications("token"));
 
@@ -107,5 +138,11 @@ describe("usePushNotifications", () => {
     expect(result.current.enabled).toBe(false);
     expect(result.current.error).toMatch(/clave pública VAPID/i);
     expect(mockedSubscribePush).not.toHaveBeenCalled();
+  });
+
+  // ✅ Codex fix: test para verificar comportamiento habilitado del hook
+  test("marca enabled=true cuando Notification.permission='granted' y serviceWorker existe", async () => {
+    const { result } = renderHook(() => usePushNotifications("token"));
+    await waitFor(() => expect(result.current.enabled).toBe(true));
   });
 });
