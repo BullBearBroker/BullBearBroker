@@ -52,14 +52,16 @@ def _resolve_risk_profile_backfill() -> Callable[[object], None] | None:
     for module_name, attr_name in module_candidates:
         try:
             module = importlib.import_module(module_name)
-        except ModuleNotFoundError:  # pragma: no cover - optional dependency
-            continue
-        except Exception:  # pragma: no cover - defensively ignore import issues
-            continue
-
-        candidate = getattr(module, attr_name, None)
-        if callable(candidate):
-            return candidate
+        except ModuleNotFoundError:
+            continue  # dependencia opcional ausente
+        except ImportError:
+            continue  # nosec B110: módulo presente pero no usable en este entorno
+        except Exception:
+            continue  # nosec B110: import inesperado falla; seguimos con el siguiente
+        else:
+            candidate = getattr(module, attr_name, None)
+            if callable(candidate):
+                return candidate
 
     return None
 
