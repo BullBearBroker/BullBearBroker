@@ -242,11 +242,10 @@ app.include_router(auth.router)
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(push.router, prefix="/api/push", tags=["push"])
 app.include_router(
-    push.router,
+    notifications.router,
     prefix="/api/notifications",
     tags=["notifications"],
-)  # ✅ Codex fix: exponemos el nuevo alias definitivo para el flujo de Web Push.
-app.include_router(notifications.router)  # ✅ Codex fix: exposición del endpoint /api/notify/test.
+)
 app.include_router(portfolio.router)
 app.include_router(indicators.router)
 
