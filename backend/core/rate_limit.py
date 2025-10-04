@@ -187,14 +187,6 @@ def rate_limit(
         if state_attribute:
             setattr(request.state, state_attribute, False)
 
-        if (
-            Config.TESTING
-            and request.url.path == "/api/auth/login"
-            and identifier == "auth_login_ip"
-        ):
-            if state_attribute:
-                setattr(request.state, state_attribute, False)
-            return
         redis_client = getattr(FastAPILimiter, "redis", None)
         if redis_client is not None:
             try:

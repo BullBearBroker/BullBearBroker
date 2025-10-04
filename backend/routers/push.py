@@ -9,10 +9,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.models import PushNotificationPreference, PushSubscription, User
+from backend.models import Base, PushNotificationPreference, PushSubscription, User
 from backend.services.push_service import push_service
 
 try:  # pragma: no cover - optional when running tests without user_service
@@ -107,11 +108,22 @@ async def subscribe_push(
             status_code=503, detail="Servicio de usuarios no disponible"
         )
 
-    subscription = (
-        db.query(PushSubscription)
-        .filter(PushSubscription.endpoint == payload.endpoint)
-        .one_or_none()
-    )
+    def _query_subscription() -> PushSubscription | None:
+        return (
+            db.query(PushSubscription)
+            .filter(PushSubscription.endpoint == payload.endpoint)
+            .one_or_none()
+        )
+
+    try:
+        subscription = _query_subscription()
+    except OperationalError as exc:
+        if "no such table" not in str(exc).lower():
+            raise
+        bind = db.get_bind()
+        if bind is not None:
+            Base.metadata.create_all(bind=bind)
+        subscription = _query_subscription()
 
     if subscription:
         subscription.auth = payload.keys.auth
@@ -133,11 +145,22 @@ async def subscribe_push(
 
 
 def _get_preferences(db: Session, user_id: UUID) -> PushNotificationPreference:
-    preferences = (
-        db.query(PushNotificationPreference)
-        .filter(PushNotificationPreference.user_id == user_id)
-        .one_or_none()
-    )
+    def _query_preferences() -> PushNotificationPreference | None:
+        return (
+            db.query(PushNotificationPreference)
+            .filter(PushNotificationPreference.user_id == user_id)
+            .one_or_none()
+        )
+
+    try:
+        preferences = _query_preferences()
+    except OperationalError as exc:
+        if "no such table" not in str(exc).lower():
+            raise
+        bind = db.get_bind()
+        if bind is not None:
+            Base.metadata.create_all(bind=bind)
+        preferences = _query_preferences()
     if preferences is None:
         preferences = PushNotificationPreference(user_id=user_id)
         db.add(preferences)
