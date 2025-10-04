@@ -516,7 +516,7 @@ export function subscribePush(
   token: string
 ) {
   return request<PushSubscriptionResponse>(
-    "/api/push/subscribe",
+    "/api/notifications/subscribe", // ✅ Codex fix: usamos el endpoint final consolidado para las suscripciones push.
     {
       method: "POST",
       body: JSON.stringify(payload),
