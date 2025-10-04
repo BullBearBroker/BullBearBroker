@@ -1,11 +1,11 @@
 import os
 from pathlib import Path
 
-os.environ.setdefault("TESTING", "1")
-
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+
+os.environ.setdefault("TESTING", "1")
 
 TEST_DB_PATH = Path("/tmp/test_suite.db")
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"  # ensure isolated DB for tests
