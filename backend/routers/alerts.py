@@ -31,9 +31,9 @@ except Exception:  # pragma: no cover - tests may inject a stub
     user_service = None  # type: ignore[assignment]
 
 
+logger = get_logger(service="alerts_router")
 router = APIRouter(tags=["alerts"])
 security = HTTPBearer(auto_error=True)
-logger = get_logger(service="alerts_router")
 USER_SERVICE_ERROR: dict[str, str] | None = None
 
 _REVERSE_CONDITION_OP = {
