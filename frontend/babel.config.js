@@ -1,12 +1,17 @@
 const config = {
   presets: [
+    "next/babel",
     [
       "@babel/preset-env",
-      { targets: { node: "current" }, modules: "commonjs" },
+      // Keep modules disabled so that Babel preserves native ESM output for Next.js tooling.
+      { targets: { node: "current" }, modules: false },
+    ],
+    [
+      "@babel/preset-react",
+      // Ensure the automatic JSX runtime so that React imports remain implicit across the app.
+      { runtime: "automatic" },
     ],
     "@babel/preset-typescript",
-    "@babel/preset-react",
-    "next/babel",
   ],
   ignore: [],
 };
