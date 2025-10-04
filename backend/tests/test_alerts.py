@@ -8,8 +8,8 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine
-from sqlalchemy.pool import StaticPool
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from backend.main import app
 from backend.models import Alert, PushSubscription, User
@@ -27,7 +27,9 @@ def session_factory(monkeypatch: pytest.MonkeyPatch) -> Iterator[sessionmaker]:
         poolclass=StaticPool,
     )
     Base.metadata.create_all(bind=engine)
-    test_session_local = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
+    test_session_local = sessionmaker(
+        bind=engine, autoflush=False, autocommit=False, future=True
+    )
 
     original_factory = alerts_service._session_factory
     alerts_service._session_factory = test_session_local
@@ -45,7 +47,9 @@ def db(session_factory: sessionmaker) -> Iterator[Session]:
 
 
 def _create_user(session: Session) -> User:
-    user = User(id=uuid.uuid4(), email=f"user_{uuid.uuid4().hex}@test.com", password_hash="hash")
+    user = User(
+        id=uuid.uuid4(), email=f"user_{uuid.uuid4().hex}@test.com", password_hash="hash"
+    )
     session.add(user)
     session.commit()
     session.refresh(user)
@@ -70,8 +74,7 @@ def _simple_market_payload() -> dict[str, Any]:
     prices = [100, 99, 98, 97, 96, 95, 94, 93, 92, 90, 88, 86, 84, 82, 80]
     volumes = [1000 + i * 10 for i in range(len(prices))]
     candles = [
-        {"high": price + 1, "low": price - 1, "close": price}
-        for price in prices
+        {"high": price + 1, "low": price - 1, "close": price} for price in prices
     ]
     return {
         "prices": prices,
@@ -115,7 +118,9 @@ def test_create_alert_combined_condition(session_factory: sessionmaker) -> None:
     assert alert.condition == condition
 
 
-def test_evaluate_alerts_triggers_and_delivers(monkeypatch: pytest.MonkeyPatch, db: Session) -> None:
+def test_evaluate_alerts_triggers_and_delivers(
+    monkeypatch: pytest.MonkeyPatch, db: Session
+) -> None:
     user = _create_user(db)
     _create_push_subscription(db, user)
 
@@ -133,7 +138,9 @@ def test_evaluate_alerts_triggers_and_delivers(monkeypatch: pytest.MonkeyPatch, 
         deliveries.append({"payload": payload, "category": category})
         return len(list(subscriptions))
 
-    monkeypatch.setattr("backend.services.alerts_service.push_service.broadcast", fake_broadcast)
+    monkeypatch.setattr(
+        "backend.services.alerts_service.push_service.broadcast", fake_broadcast
+    )
 
     triggered = alerts_service.evaluate_alerts(_simple_market_payload())
 
@@ -149,7 +156,9 @@ def test_evaluate_alerts_triggers_and_delivers(monkeypatch: pytest.MonkeyPatch, 
     assert stored.pending_delivery is True
 
 
-def test_evaluate_alerts_not_triggered(monkeypatch: pytest.MonkeyPatch, db: Session) -> None:
+def test_evaluate_alerts_not_triggered(
+    monkeypatch: pytest.MonkeyPatch, db: Session
+) -> None:
     user = _create_user(db)
     _create_push_subscription(db, user)
 
@@ -167,7 +176,9 @@ def test_evaluate_alerts_not_triggered(monkeypatch: pytest.MonkeyPatch, db: Sess
         deliveries.append({"args": args, "kwargs": kwargs})
         return 0
 
-    monkeypatch.setattr("backend.services.alerts_service.push_service.broadcast", fake_broadcast)
+    monkeypatch.setattr(
+        "backend.services.alerts_service.push_service.broadcast", fake_broadcast
+    )
 
     triggered = alerts_service.evaluate_alerts(_simple_market_payload())
 
@@ -204,7 +215,9 @@ async def api_client(session_factory: sessionmaker) -> AsyncIterator[AsyncClient
 
     transport = ASGITransport(app=app)
     try:
-        async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        async with AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as client:
             with session_factory() as session:
                 user_container["user"] = _create_user(session)
             yield client

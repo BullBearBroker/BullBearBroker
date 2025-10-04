@@ -58,6 +58,7 @@ def upgrade() -> None:
         ["session_id", "created_at"],
     )
 
+
 def downgrade() -> None:
     op.drop_index("ix_chat_messages_session_created", table_name="chat_messages")
     op.drop_table("chat_messages")

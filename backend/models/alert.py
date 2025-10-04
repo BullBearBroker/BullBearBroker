@@ -6,12 +6,12 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import (
+    JSON,
     Boolean,
     DateTime,
     Enum as SQLEnum,
     Float,
     ForeignKey,
-    JSON,
     String,
     event,
 )

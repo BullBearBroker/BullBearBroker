@@ -12,7 +12,8 @@ except ImportError:  # pragma: no cover
     from backend.models.base import Base  # type: ignore[no-redef]
 
 if TYPE_CHECKING:
-    from backend.models.user import User
+    pass
+
 
 class PushSubscription(Base):
     __tablename__ = "push_subscriptions"

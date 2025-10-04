@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 # revision identifiers, used by Alembic.
 revision = "create_advanced_alerts_table"
@@ -39,7 +38,12 @@ def upgrade() -> None:
         )
 
         batch_op.add_column(
-            sa.Column("name", sa.String(length=255), nullable=False, server_default="Nueva alerta"),
+            sa.Column(
+                "name",
+                sa.String(length=255),
+                nullable=False,
+                server_default="Nueva alerta",
+            ),
         )
         batch_op.add_column(
             sa.Column(
@@ -65,8 +69,12 @@ def upgrade() -> None:
                 server_default=sa.true(),
             )
         )
-        batch_op.alter_column("title", existing_type=sa.String(length=255), nullable=True)
-        batch_op.alter_column("asset", existing_type=sa.String(length=50), nullable=True)
+        batch_op.alter_column(
+            "title", existing_type=sa.String(length=255), nullable=True
+        )
+        batch_op.alter_column(
+            "asset", existing_type=sa.String(length=50), nullable=True
+        )
         batch_op.alter_column("value", existing_type=sa.Float(), nullable=True)
 
         # Limpiar defaults temporales para nuevos registros
@@ -85,8 +93,12 @@ def downgrade() -> None:
 
     with op.batch_alter_table("alerts", schema=None) as batch_op:
         batch_op.alter_column("value", existing_type=sa.Float(), nullable=False)
-        batch_op.alter_column("asset", existing_type=sa.String(length=50), nullable=False)
-        batch_op.alter_column("title", existing_type=sa.String(length=255), nullable=False)
+        batch_op.alter_column(
+            "asset", existing_type=sa.String(length=50), nullable=False
+        )
+        batch_op.alter_column(
+            "title", existing_type=sa.String(length=255), nullable=False
+        )
         batch_op.drop_column("pending_delivery")
         batch_op.drop_column("delivery_method")
         batch_op.drop_column("condition")

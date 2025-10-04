@@ -4,10 +4,10 @@ import numpy as np
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from backend.tests._dependency_stubs import ensure as ensure_test_dependencies
 from backend.main import app
 from backend.routers import indicators as indicators_router
 from backend.services import indicators_service
+from backend.tests._dependency_stubs import ensure as ensure_test_dependencies
 from backend.utils import indicators
 
 ensure_test_dependencies()

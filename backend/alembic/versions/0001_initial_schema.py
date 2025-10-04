@@ -33,10 +33,16 @@ def upgrade() -> None:
         sa.Column("email", sa.String(), nullable=False),
         sa.Column("password_hash", sa.String(), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(), server_default=timestamp_default, nullable=False
+            "created_at",
+            sa.DateTime(),
+            server_default=timestamp_default,
+            nullable=False,
         ),
         sa.Column(
-            "updated_at", sa.DateTime(), server_default=timestamp_default, nullable=False
+            "updated_at",
+            sa.DateTime(),
+            server_default=timestamp_default,
+            nullable=False,
         ),
     )
     op.create_index(op.f("ix_users_email"), "users", ["email"], unique=True)
@@ -65,10 +71,16 @@ def upgrade() -> None:
         ),
         sa.Column("value", sa.Float(), nullable=False),
         sa.Column(
-            "created_at", sa.DateTime(), server_default=timestamp_default, nullable=False
+            "created_at",
+            sa.DateTime(),
+            server_default=timestamp_default,
+            nullable=False,
         ),
         sa.Column(
-            "updated_at", sa.DateTime(), server_default=timestamp_default, nullable=False
+            "updated_at",
+            sa.DateTime(),
+            server_default=timestamp_default,
+            nullable=False,
         ),
     )
 
@@ -87,7 +99,12 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("token", sa.String(), nullable=False, unique=True),
-        sa.Column("created_at", sa.DateTime(), server_default=timestamp_default, nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(),
+            server_default=timestamp_default,
+            nullable=False,
+        ),
         sa.Column("expires_at", sa.DateTime(), nullable=False),
     )
 

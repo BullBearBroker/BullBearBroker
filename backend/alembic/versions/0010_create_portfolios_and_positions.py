@@ -30,7 +30,9 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("name", sa.String(length=120), nullable=False),
-        sa.Column("base_ccy", sa.String(length=10), nullable=False, server_default="USD"),
+        sa.Column(
+            "base_ccy", sa.String(length=10), nullable=False, server_default="USD"
+        ),
         sa.Column(
             "created_at",
             sa.DateTime(timezone=True),
@@ -79,7 +81,9 @@ def upgrade() -> None:
             onupdate=sa.func.now(),
         ),
     )
-    op.create_index(op.f("ix_positions_portfolio_id"), "positions", ["portfolio_id"], unique=False)
+    op.create_index(
+        op.f("ix_positions_portfolio_id"), "positions", ["portfolio_id"], unique=False
+    )
     op.create_index(op.f("ix_positions_symbol"), "positions", ["symbol"], unique=False)
 
 
