@@ -118,8 +118,13 @@ class Config:
     TELEGRAM_DEFAULT_CHAT_ID = _get_env("TELEGRAM_DEFAULT_CHAT_ID")
     DISCORD_BOT_TOKEN = _get_env("DISCORD_BOT_TOKEN")
     DISCORD_APPLICATION_ID = _get_env("DISCORD_APPLICATION_ID")
-    PUSH_VAPID_PUBLIC_KEY = _get_env("PUSH_VAPID_PUBLIC_KEY")
-    PUSH_VAPID_PRIVATE_KEY = _get_env("PUSH_VAPID_PRIVATE_KEY")
+    _LEGACY_VAPID_PUBLIC_KEY = _get_env("PUSH_VAPID_PUBLIC_KEY")
+    _LEGACY_VAPID_PRIVATE_KEY = _get_env("PUSH_VAPID_PRIVATE_KEY")
+    VAPID_PUBLIC_KEY = _get_env("VAPID_PUBLIC_KEY") or _LEGACY_VAPID_PUBLIC_KEY
+    VAPID_PRIVATE_KEY = _get_env("VAPID_PRIVATE_KEY") or _LEGACY_VAPID_PRIVATE_KEY
+    VAPID_CLAIMS = _get_env("VAPID_CLAIMS")  # ✅ Codex fix: soporte para configuración estandarizada.
+    PUSH_VAPID_PUBLIC_KEY = VAPID_PUBLIC_KEY  # compatibilidad hacia atrás
+    PUSH_VAPID_PRIVATE_KEY = VAPID_PRIVATE_KEY  # compatibilidad hacia atrás
     PUSH_CONTACT_EMAIL = _get_env("PUSH_CONTACT_EMAIL", "support@bullbear.ai")
 
     API_BASE_URL = _get_env(

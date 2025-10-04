@@ -500,6 +500,7 @@ export function updateAlert(
 
 export interface PushSubscriptionPayload {
   endpoint: string;
+  expirationTime: string | null; // ✅ Codex fix: propagamos la expiración del subscription para almacenarla en el backend.
   keys: {
     auth: string;
     p256dh: string;
@@ -530,6 +531,13 @@ export function sendTestPush(token: string) {
     { method: "POST" },
     token
   );
+}
+
+export function triggerGlobalTestNotification() {
+  return request<{ delivered: number }>(
+    "/api/notify/test",
+    { method: "POST" }
+  ); // ✅ Codex fix: nuevo endpoint de verificación global solicitado en la tarea.
 }
 
 export function deleteAlert(token: string, id: string | number) {
