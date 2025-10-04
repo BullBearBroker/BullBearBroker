@@ -1,34 +1,19 @@
-SHELL := /bin/bash
-
-.PHONY: setup dev-venv lint format typecheck test cov postman openapi
-
-setup:
-	python -m pip install -r backend/requirements.txt
-	python -m pip install -r backend/requirements-dev.txt || true
-	pre-commit install || true
-
-dev-venv: setup
-
-lint:
-	@command -v pre-commit >/dev/null 2>&1 || python -m pip install pre-commit -q
-	pre-commit run --all-files || true
-	ruff check .
-
-format:
-	black .
-	isort .
-
-typecheck:
-	mypy backend || true
-
+.PHONY: venv dev test lint fmt migrate up down build run ci
+venv:
+	python -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt
+dev:
+	docker compose up --build
 test:
-	pytest backend -q
-
-cov:
-	pytest --cov=backend --cov-report=term-missing backend
-
-openapi:
-	python scripts/generate_postman.py --export-openapi
-
-postman:
-	python scripts/generate_postman.py
+	pytest -q
+lint:
+	pre-commit run --all-files || true
+fmt:
+	black . && ruff --fix . && isort .
+migrate:
+	alembic upgrade head
+build:
+	docker build -t bullbear:local .
+run:
+	docker run --rm -p 8000:8000 bullbear:local
+ci:
+	pytest -q --maxfail=1 --disable-warnings -q

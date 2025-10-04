@@ -139,7 +139,7 @@ def create_all_if_local(engine) -> None:
         )
 
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./bullbearbroker.db")
+DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("BULLBEAR_DB_URL") or "sqlite:///./bullbearbroker.db"
 
 connect_args = {}
 if DATABASE_URL.startswith("sqlite"):
