@@ -15,7 +15,9 @@ from backend.utils.config import Config
 
 logger = get_logger(service="database")
 
-_TESTING_MODE = bool(getattr(Config, "TESTING", False)) or os.getenv("TESTING", "").lower() in {
+_TESTING_MODE = bool(getattr(Config, "TESTING", False)) or os.getenv(
+    "TESTING", ""
+).lower() in {
     "1",
     "true",
     "on",
@@ -141,7 +143,11 @@ def create_all_if_local(engine) -> None:
         )
 
 
-DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("BULLBEAR_DB_URL") or "sqlite:///./bullbearbroker.db"
+DATABASE_URL = (
+    os.environ.get("DATABASE_URL")
+    or os.environ.get("BULLBEAR_DB_URL")
+    or "sqlite:///./bullbearbroker.db"
+)
 
 connect_args = {}
 if DATABASE_URL.startswith("sqlite"):
@@ -174,10 +180,14 @@ if _TESTING_MODE and getattr(engine, "dialect", None) is not None:
 
 _session_factory = globals().get("SessionLocal")
 if hasattr(_session_factory, "configure"):
-    _session_factory.configure(bind=engine, autocommit=False, autoflush=False, future=True)
+    _session_factory.configure(
+        bind=engine, autocommit=False, autoflush=False, future=True
+    )
     SessionLocal = _session_factory
 else:
-    SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, future=True)
+    SessionLocal = sessionmaker(
+        bind=engine, autocommit=False, autoflush=False, future=True
+    )
 
 
 def get_db() -> Generator:

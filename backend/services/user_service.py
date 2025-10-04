@@ -11,11 +11,11 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import jwt
-import pyotp
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession, selectinload, sessionmaker
 
+import pyotp
 from backend.core.logging_config import log_event
 from backend.core.security import (
     create_access_token as core_create_access_token,
@@ -589,7 +589,9 @@ class UserService:
                 # Mantener compatibilidad básica con la estructura JSON
                 alert.condition = {
                     "operator": cleaned_condition,
-                    "threshold": float(value if value is not None else alert.value or 0.0),
+                    "threshold": float(
+                        value if value is not None else alert.value or 0.0
+                    ),
                     "asset": alert.asset,
                 }
             if active is not None:

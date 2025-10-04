@@ -6,9 +6,9 @@ import pytest
 from httpx import AsyncClient
 from sqlalchemy import delete
 
+import backend.services.portfolio_service as portfolio_service
 from backend.database import SessionLocal
 from backend.models import Portfolio, Position, User
-import backend.services.portfolio_service as portfolio_service
 
 pytestmark = pytest.mark.asyncio
 

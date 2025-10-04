@@ -49,9 +49,13 @@ class SimpleRateLimiter:
         """Record a hit for the given key, raising when the limit is exceeded."""
 
         configured = self._limits.get(key)
-        max_requests, window_seconds = configured if configured else (
-            limit or 5,
-            window or 60,
+        max_requests, window_seconds = (
+            configured
+            if configured
+            else (
+                limit or 5,
+                window or 60,
+            )
         )
 
         max_requests = max(1, int(max_requests))

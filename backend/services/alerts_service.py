@@ -15,7 +15,6 @@ from backend.models import Alert, AlertDeliveryMethod, PushSubscription, User
 from backend.services import indicators_service
 from backend.services.push_service import push_service
 
-
 ComparisonOperator = Callable[[float, float], bool]
 
 

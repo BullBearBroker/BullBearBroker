@@ -23,7 +23,9 @@ def _normalize_candles(prices: Sequence[Mapping[str, Any]]) -> list[dict[str, fl
     normalized: list[dict[str, float]] = []
     for index, candle in enumerate(prices):
         if not isinstance(candle, Mapping):
-            raise ValueError("Cada vela debe ser un mapping con 'high', 'low' y 'close'")
+            raise ValueError(
+                "Cada vela debe ser un mapping con 'high', 'low' y 'close'"
+            )
         try:
             high = float(candle["high"])
             low = float(candle["low"])
@@ -76,7 +78,9 @@ def calculate_rsi(prices: Sequence[float], period: int = 14) -> float:
     if len(price_series) < 2:
         raise ValueError("Se requieren al menos dos precios para calcular el RSI")
 
-    changes = [price_series[i] - price_series[i - 1] for i in range(1, len(price_series))]
+    changes = [
+        price_series[i] - price_series[i - 1] for i in range(1, len(price_series))
+    ]
     effective_period = min(period, len(changes))
 
     gains = [max(change, 0.0) for change in changes[:effective_period]]

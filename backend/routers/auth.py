@@ -699,7 +699,7 @@ def verify_mfa(
 
 @router.post("/logout_all")
 def logout_all(
-    token: Annotated[HTTPAuthorizationCredentials, Depends(security)]
+    token: Annotated[HTTPAuthorizationCredentials, Depends(security)],
 ) -> dict[str, str]:
     try:
         user = user_service.get_current_user(token.credentials)

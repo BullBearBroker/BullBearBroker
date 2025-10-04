@@ -14,9 +14,8 @@ if TEST_DB_PATH.exists():
 
 import backend.models as _models  # noqa: F401  # ensure all ORM models are registered
 from backend.database import engine
-from backend.models import Base
-
 from backend.main import app
+from backend.models import Base
 from backend.routers import alerts as alerts_router, auth as auth_router
 from backend.tests.test_alerts_endpoints import DummyUserService
 

@@ -5,12 +5,12 @@ from datetime import datetime
 from enum import Enum as PyEnum  # [Codex] nuevo
 from typing import TYPE_CHECKING  # [Codex] cambiado - se usa Optional
 
-from sqlalchemy import (
+from sqlalchemy import (  # [Codex] cambiado - se añade Enum
     Boolean,
     DateTime,
     Enum,
     String,
-)  # [Codex] cambiado - se añade Enum
+)
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
