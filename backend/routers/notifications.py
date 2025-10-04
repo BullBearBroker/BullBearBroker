@@ -40,4 +40,4 @@ def send_global_test_notification(db: Session = Depends(get_db)) -> dict[str, in
             detail="No se pudieron enviar notificaciones",
         )
 
-    return {"delivered": delivered}  # ✅ Codex fix: endpoint de diagnóstico solicitado.
+    return {"delivered": delivered}  # ✅ Codex fix: retorno explícito para evitar warning B008.
