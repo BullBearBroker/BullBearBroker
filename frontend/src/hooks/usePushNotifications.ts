@@ -1,5 +1,6 @@
 "use client";
 
+// 🧩 Bloque 8B
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
@@ -29,6 +30,13 @@ export interface NotificationEnvelope {
   receivedAt: string;
 }
 
+interface NotificationHistoryEntry {
+  id: string;
+  title: string;
+  body: string;
+  timestamp: number;
+}
+
 interface PushNotificationsState {
   enabled: boolean;
   error: string | null;
@@ -37,10 +45,12 @@ interface PushNotificationsState {
   testing: boolean;
   events: NotificationEnvelope[];
   logs: string[];
+  notificationHistory: NotificationHistoryEntry[];
   lastEvent: NotificationEnvelope | null;
   sendTestNotification: () => Promise<void>;
   requestPermission: () => Promise<NotificationPermission | "unsupported">;
   dismissEvent: (id: string) => void;
+  clearLogs: () => void;
 }
 
 function makeId() {
@@ -99,6 +109,25 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
   const [testing, setTesting] = useState(false);
   const [events, setEvents] = useState<NotificationEnvelope[]>([]);
   const [logs, setLogs] = useState<string[]>([]);
+  const [notificationHistory, setNotificationHistory] = useState<NotificationHistoryEntry[]>(() => {
+    if (typeof window === "undefined") {
+      return [];
+    }
+    try {
+      const stored = window.localStorage.getItem("notificationHistory");
+      if (!stored) {
+        return [];
+      }
+      const parsed = JSON.parse(stored) as NotificationHistoryEntry[];
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+      return parsed;
+    } catch (err) {
+      console.error("No se pudo hidratar el historial de notificaciones", err);
+      return [];
+    }
+  });
   const [permission, setPermission] = useState<
     NotificationPermission | "unsupported"
   >(() => {
@@ -114,6 +143,41 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
       return next.slice(-25);
     });
   }, []);
+
+  // 🧩 Bloque 8B
+  const appendNotificationHistory = useCallback(
+    (entry: NotificationHistoryEntry) => {
+      setNotificationHistory((prev) => {
+        const next = [...prev, entry];
+        return next.slice(-100);
+      });
+    },
+    []
+  );
+
+  // 🧩 Bloque 8B
+  const clearLogs = useCallback(() => {
+    setLogs([]);
+    setNotificationHistory([]);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem("notificationHistory");
+    }
+  }, []);
+
+  // 🧩 Bloque 8B
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (notificationHistory.length === 0) {
+      window.localStorage.removeItem("notificationHistory");
+      return;
+    }
+    window.localStorage.setItem(
+      "notificationHistory",
+      JSON.stringify(notificationHistory)
+    );
+  }, [notificationHistory]);
 
   const dismissEvent = useCallback((id: string) => {
     setEvents((prev) => prev.filter((item) => item.id !== id));
@@ -282,6 +346,12 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
       };
 
       setEvents((prev) => [...prev, envelope]);
+      appendNotificationHistory({
+        id: envelope.id,
+        title: envelope.title,
+        body: envelope.body,
+        timestamp: Date.parse(envelope.receivedAt) || Date.now(),
+      });
       appendLog(`Evento recibido: ${title}`);
       console.log("Push recibido correctamente", envelope);
     };
@@ -291,11 +361,38 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
     return () => {
       container.removeEventListener("message", handleMessage as EventListener);
     };
-  }, [appendLog]);
+  }, [appendLog, appendNotificationHistory]);
 
+  // 🧩 Bloque 8B
+  const triggerLocalNotification = useCallback((title: string, body: string) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (!("Notification" in window)) {
+      return;
+    }
+    try {
+      if (Notification.permission === "granted") {
+        new Notification(title, { body });
+      }
+    } catch (err) {
+      console.warn("No se pudo mostrar la notificación local", err);
+    }
+  }, []);
+
+  // 🧩 Bloque 8B
   const sendTestNotification = useCallback(async () => {
+    const entry: NotificationHistoryEntry = {
+      id: makeId(),
+      title: "Notificación de prueba",
+      body: "Este es un mensaje de test.",
+      timestamp: Date.now(),
+    };
+
     if (!token) {
-      appendLog("No se puede enviar prueba sin token de autenticación");
+      appendLog("Generando notificación local de prueba");
+      appendNotificationHistory(entry);
+      triggerLocalNotification(entry.title, entry.body);
       return;
     }
 
@@ -303,6 +400,8 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
       setTesting(true);
       await testNotificationDispatcher(token);
       appendLog("Solicitud de notificación de prueba enviada");
+      appendNotificationHistory(entry);
+      triggerLocalNotification(entry.title, entry.body);
     } catch (err) {
       const message =
         err instanceof Error ? err.message : "No se pudo enviar la notificación de prueba";
@@ -311,7 +410,7 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
     } finally {
       setTesting(false);
     }
-  }, [appendLog, token]);
+  }, [appendLog, appendNotificationHistory, token, triggerLocalNotification]);
 
   const lastEvent = useMemo(() => {
     return events.length > 0 ? events[events.length - 1] : null;
@@ -325,9 +424,11 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
     testing,
     events,
     logs,
+    notificationHistory,
     lastEvent,
     sendTestNotification,
     requestPermission,
     dismissEvent,
+    clearLogs,
   };
 }
