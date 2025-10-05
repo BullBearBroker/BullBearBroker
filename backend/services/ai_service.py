@@ -19,10 +19,13 @@ from backend.metrics.ai_metrics import (
     ai_cache_miss_total,  # ✅ Codex fix: métrica caché miss
 )
 from backend.metrics.ai_metrics import (  # ✅ Codex fix: IA Prometheus metrics
+    ai_conversations_active_total,
     ai_failures_total,
     ai_fallbacks_total,
     ai_latency_seconds,
     ai_requests_total,
+    ai_stream_duration_seconds,
+    ai_stream_tokens_total,
 )
 from backend.utils.config import Config
 
@@ -1353,6 +1356,91 @@ Mientras tanto, te sugiero:
             "confidence": 0.7,
             "keywords": ["market", "analysis", "financial"],
         }
+
+
+    async def stream_generate(self, prompt: str):
+        """Simular generación de texto en streaming."""
+
+        start_time = time.perf_counter()
+        ai_conversations_active_total.inc()
+
+        try:
+            if not prompt or not prompt.strip():
+                raise ValueError("El mensaje no puede estar vacío")
+
+            # Simulación sencilla de tokens parciales manteniendo espacios.
+            segments = re.findall(r"\S+\s*", prompt)
+            if not segments:
+                segments = [prompt]
+
+            for token in segments:
+                await asyncio.sleep(0.05)
+                elapsed_ms = (time.perf_counter() - start_time) * 1000.0
+                logger.info(
+                    json.dumps(
+                        {
+                            "ai_event": "stream_chunk",
+                            "length": len(token),
+                            "elapsed_ms": round(elapsed_ms, 2),
+                        }
+                    )
+                )
+                ai_stream_tokens_total.inc(len(token))
+                yield token
+
+            completion_chunk = json.dumps({"error": False, "done": True})
+            ai_stream_tokens_total.inc(len(completion_chunk))
+            logger.info(
+                json.dumps(
+                    {
+                        "ai_event": "stream_chunk",
+                        "length": len(completion_chunk),
+                        "elapsed_ms": round(
+                            (time.perf_counter() - start_time) * 1000.0, 2
+                        ),
+                        "type": "completion",
+                    }
+                )
+            )
+            yield completion_chunk
+
+        except (asyncio.TimeoutError, ValueError) as exc:
+            logger.warning(
+                json.dumps(
+                    {
+                        "ai_event": "stream_error",
+                        "error_type": exc.__class__.__name__,
+                        "message": str(exc),
+                    }
+                )
+            )
+            error_chunk = json.dumps({"error": True, "message": str(exc)})
+            ai_stream_tokens_total.inc(len(error_chunk))
+            yield error_chunk
+            return
+
+        except Exception as exc:  # pragma: no cover - defensivo
+            logger.error(
+                json.dumps(
+                    {
+                        "ai_event": "stream_error",
+                        "error_type": exc.__class__.__name__,
+                        "message": str(exc),
+                    }
+                ),
+                exc_info=True,
+            )
+            error_chunk = json.dumps(
+                {"error": True, "message": "Error inesperado generando respuesta"}
+            )
+            ai_stream_tokens_total.inc(len(error_chunk))
+            yield error_chunk
+            return
+
+        finally:
+            total_duration = time.perf_counter() - start_time
+            ai_conversations_active_total.dec()
+            ai_stream_duration_seconds.observe(total_duration)
 
 
 # Singleton instance
