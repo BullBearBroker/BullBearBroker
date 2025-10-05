@@ -4,14 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import json
+from asyncio import Lock  # 🧩 Bloque 9A
 from collections.abc import Awaitable, Callable, Sequence
 from typing import Any
+from typing import Dict, Optional, Set  # 🧩 Bloque 9A
+
+from fastapi import WebSocket  # 🧩 Bloque 9A
 
 from backend.core.logging_config import get_logger
 from backend.models.push_subscription import PushSubscription
 from backend.services.audit_service import AuditService
 from backend.services.push_service import push_service
 from backend.services.realtime_service import RealtimeService
+from backend.schemas.notifications import NotificationEvent  # 🧩 Bloque 9A
 from backend.utils.config import ENV
 
 try:  # pragma: no cover - database may be optional in some contexts
@@ -195,4 +200,59 @@ notification_dispatcher = NotificationDispatcher(
 )
 
 
-__all__ = ["NotificationDispatcher", "notification_dispatcher"]
+__all__ = [
+    "NotificationDispatcher",
+    "notification_dispatcher",
+    "ConnectionManager",  # 🧩 Bloque 9A
+    "manager",  # 🧩 Bloque 9A
+]
+
+
+# 🧩 Bloque 9A
+class ConnectionManager:
+    def __init__(self) -> None:
+        # user_id -> set de websockets
+        self.active_connections: Dict[str, Set[WebSocket]] = {}
+        self._lock = Lock()
+
+    async def connect(self, user_id: str, websocket: WebSocket) -> None:
+        await websocket.accept()
+        async with self._lock:
+            self.active_connections.setdefault(user_id, set()).add(websocket)
+
+    async def disconnect(self, user_id: str, websocket: WebSocket) -> None:
+        async with self._lock:
+            conns: Optional[Set[WebSocket]] = self.active_connections.get(user_id)  # 🧩 Bloque 9A
+            if not conns:
+                return
+            conns.discard(websocket)
+            if not conns:
+                self.active_connections.pop(user_id, None)
+
+    async def send_personal(self, user_id: str, event: NotificationEvent) -> None:
+        payload = json.dumps(event.model_dump(), default=str)
+        for ws in list(self.active_connections.get(user_id, set())):
+            try:
+                await ws.send_text(payload)
+            except Exception:
+                # Intentar limpiar conexiones muertas
+                await self.disconnect(user_id, ws)
+
+    async def broadcast(self, event: NotificationEvent) -> None:
+        payload = json.dumps(event.model_dump(), default=str)
+        # Copia para evitar mutaciones concurrentes
+        all_conns = []
+        async with self._lock:
+            for conns in self.active_connections.values():
+                all_conns.extend(list(conns))
+        for ws in all_conns:
+            try:
+                await ws.send_text(payload)
+            except Exception:
+                # No conocemos user_id aquí, el WS se limpiará al siguiente intento
+                pass
+
+
+# 🧩 Bloque 9A
+manager = ConnectionManager()
+
