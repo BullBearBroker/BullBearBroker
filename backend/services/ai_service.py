@@ -33,12 +33,21 @@ from backend.metrics.ai_metrics import (  # ✅ Codex fix: IA Prometheus metrics
     ai_stream_duration_seconds,
     ai_stream_tokens_total,
 )
-from backend.metrics.ai_metrics import ai_adaptive_timeouts_total
+from backend.metrics.ai_metrics import (
+    ai_adaptive_timeouts_total,
+    ai_insight_duration_seconds,
+    ai_insight_failures_total,
+    ai_insights_generated_total,
+)
 from backend.utils.config import Config
 
 import backend.services.context_service as context_service
 import backend.services.sentiment_service as sentiment_service
-from .cache_service import AICacheService, cache  # ✅ Codex fix: servicio de caché IA
+from .cache_service import (  # ✅ Codex fix: servicio de caché IA
+    AICacheService,
+    ai_cache_hits_total,
+    cache,
+)
 from .mistral_service import mistral_service
 from .ai_route_context import get_current_route, reset_route, set_route
 
@@ -2113,6 +2122,63 @@ Mientras tanto, te sugiero:
                 if future and not future.done():
                     future.set_result({"chunks": list(chunks_collected)})
                 pending_prompts.pop(pending_key, None)
+
+
+    async def generate_insight(self, symbol: str, timeframe: str, profile: str):
+        """
+        Genera un análisis automatizado del activo solicitado combinando datos de mercado y perfil de usuario.
+        """
+
+        start_time = time.perf_counter()
+        ai_insights_generated_total.inc()
+
+        try:
+            from backend.services.market_service import MarketService
+            from backend.services.sentiment_service import analyze_sentiment
+
+            market = MarketService()
+            ohlc = await market.get_historical(symbol, timeframe=timeframe)
+
+            sentiment = analyze_sentiment(f"Análisis de {symbol} en {timeframe}")
+
+            prompt = (
+                f"Analiza {symbol} ({timeframe}) para un perfil {profile}.\n"
+                f"Datos: {ohlc[:5]}\n"
+                f"Sentimiento: {sentiment}"
+            )
+            response = await self.process_message(prompt)
+
+            ai_cache_hits_total.inc()
+            duration = time.perf_counter() - start_time
+            ai_insight_duration_seconds.observe(duration)
+
+            if isinstance(response, AIResponsePayload):
+                insight_text = response.text
+            elif isinstance(response, dict):
+                insight_text = response.get("message", response)
+            else:
+                insight_text = getattr(response, "message", response)
+
+            return {
+                "symbol": symbol,
+                "profile": profile,
+                "sentiment": sentiment,
+                "insight": insight_text,
+                "elapsed_ms": round(duration * 1000, 2),
+            }
+
+        except Exception as e:  # pragma: no cover - cubierto en tests dedicados
+            ai_insight_failures_total.inc()
+            logger.error(
+                json.dumps(
+                    {
+                        "ai_event": "insight_error",
+                        "symbol": symbol,
+                        "error": str(e),
+                    }
+                )
+            )
+            return {"error": str(e)}
 
 
 # Singleton instance
