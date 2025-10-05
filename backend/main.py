@@ -12,7 +12,7 @@ from fastapi_limiter import FastAPILimiter
 from backend import database as database_module
 from backend.core.http_logging import RequestLogMiddleware
 from backend.core.logging_config import get_logger, log_event
-from backend.core.metrics import MetricsMiddleware, metrics_router
+from backend.core.metrics import MetricsMiddleware
 from backend.core.tracing import configure_tracing
 # ✅ Codex fix: Import structured logging middleware
 from backend.middleware.logging_middleware import LoggingMiddleware
@@ -23,6 +23,8 @@ from backend.models.base import Base
 # Routers de la app
 from backend.routers import health  # nuevo router de salud
 from backend.routers import ai, alerts, auth, indicators, markets, news, portfolio, push
+# ✅ Codex fix: Import Prometheus metrics router
+from backend.routers import metrics
 from backend.services.alert_service import alert_service
 from backend.services.integration_reporter import log_api_integration_report
 from backend.services.websocket_manager import AlertWebSocketManager
@@ -234,7 +236,7 @@ def read_root():
 
 
 # ✅ Routers registrados con prefijo global /api
-app.include_router(metrics_router)
+app.include_router(metrics.router, prefix="/api")
 app.include_router(health.router, prefix="/api/health", tags=["health"])
 app.include_router(alerts.router, prefix="/api/alerts", tags=["alerts"])
 app.include_router(markets.router, prefix="/api/markets", tags=["markets"])
