@@ -14,6 +14,10 @@ from backend.core.http_logging import RequestLogMiddleware
 from backend.core.logging_config import get_logger, log_event
 from backend.core.metrics import MetricsMiddleware, metrics_router
 from backend.core.tracing import configure_tracing
+# ✅ Codex fix: Import structured logging middleware
+from backend.middleware.logging_middleware import LoggingMiddleware
+# ✅ Codex fix: Import global error handlers
+from backend.middleware.error_handler import register_error_handlers
 from backend.models.base import Base
 
 # Routers de la app
@@ -216,6 +220,11 @@ app.add_middleware(
 )
 app.add_middleware(MetricsMiddleware)
 app.add_middleware(RequestLogMiddleware)
+# ✅ Codex fix: Register structured logging middleware
+app.add_middleware(LoggingMiddleware)
+
+# ✅ Codex fix: Enable global error handlers
+register_error_handlers(app)
 
 
 # Endpoint raíz (health básico de la API)
