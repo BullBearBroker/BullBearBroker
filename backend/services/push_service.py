@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from collections.abc import Iterable
 from typing import Any
 
@@ -34,16 +35,54 @@ class PushService:
         vapid_private_key: str | None = None,
         vapid_public_key: str | None = None,
         contact_email: str | None = None,
+        vapid_claims: dict[str, Any] | str | None = None,
     ) -> None:
-        self._vapid_private_key = vapid_private_key or Config.PUSH_VAPID_PRIVATE_KEY
-        self._vapid_public_key = vapid_public_key or Config.PUSH_VAPID_PUBLIC_KEY
+        env_vapid_private_key = os.getenv("VAPID_PRIVATE_KEY")
+        env_vapid_public_key = os.getenv("VAPID_PUBLIC_KEY") or os.getenv(
+            "PUSH_VAPID_PUBLIC_KEY"
+        )
+        try:
+            env_vapid_claims = json.loads(
+                os.getenv("VAPID_CLAIMS", "{}")
+            )  # ✅ Codex fix: cargamos las claims VAPID estandarizadas desde el entorno.
+        except json.JSONDecodeError:
+            LOGGER.warning("Invalid JSON for VAPID_CLAIMS", exc_info=True)
+            env_vapid_claims = None
+
+        self._vapid_private_key = (
+            vapid_private_key or env_vapid_private_key or Config.VAPID_PRIVATE_KEY
+        )  # ✅ Codex fix: priorizamos la variable de entorno final VAPID_PRIVATE_KEY.
+        self._vapid_public_key = (
+            vapid_public_key or env_vapid_public_key or Config.VAPID_PUBLIC_KEY
+        )  # ✅ Codex fix: priorizamos la variable de entorno final VAPID_PUBLIC_KEY.
         self._contact_email = contact_email or Config.PUSH_CONTACT_EMAIL
+        self._vapid_claims = self._parse_claims(
+            vapid_claims or env_vapid_claims or Config.VAPID_CLAIMS
+        )  # ✅ Codex fix: compatibilidad con claims definidas tanto en JSON como en Config.
 
     @property
     def is_configured(self) -> bool:
         return bool(self._vapid_private_key and self._vapid_public_key)
 
-    def _build_claims(self) -> dict[str, str]:
+    def _parse_claims(
+        self, claims: dict[str, Any] | str | None
+    ) -> dict[str, Any] | None:
+        if isinstance(claims, dict):
+            return claims
+        if isinstance(claims, str) and claims:
+            try:
+                parsed = json.loads(claims)
+            except json.JSONDecodeError:
+                LOGGER.warning("Invalid JSON for VAPID_CLAIMS: %s", claims)
+            else:
+                if isinstance(parsed, dict):
+                    return parsed
+                LOGGER.warning("VAPID_CLAIMS must decode to a JSON object: %s", claims)
+        return None
+
+    def _build_claims(self) -> dict[str, Any]:
+        if self._vapid_claims:
+            return self._vapid_claims
         contact = self._contact_email or "support@bullbear.ai"
         if not contact.startswith("mailto:"):
             contact = f"mailto:{contact}"

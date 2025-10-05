@@ -1,5 +1,7 @@
 """AI chat endpoints with persistent history."""
 
+# ruff: noqa: I001
+
 from __future__ import annotations
 
 import asyncio
@@ -10,16 +12,17 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy.orm import Session
 
 from backend.database import get_db
-from backend.models import (
+from backend.utils.config import Config
+
+from backend.models import (  # isort: skip
     ChatMessage as ChatMessageModel,
     ChatSession as ChatSessionModel,
     User,
 )
-from backend.utils.config import Config
 
 try:  # pragma: no cover - allow running from different entrypoints
     from backend.services.ai_service import AIResponsePayload, ai_service
@@ -36,6 +39,7 @@ except Exception:  # pragma: no cover
 LOGGER = logging.getLogger(__name__)
 router = APIRouter(tags=["AI"])
 security = HTTPBearer()
+optional_security = HTTPBearer(auto_error=False)
 
 
 class ChatRequest(BaseModel):
@@ -55,6 +59,27 @@ class ChatResponse(BaseModel):
     used_data: bool = False
     sources: list[str] = Field(default_factory=list)
     session_id: UUID
+
+
+class LegacyChatRequest(ChatRequest):
+    message: str | None = Field(
+        default=None,
+        validation_alias="message",
+        serialization_alias="message",
+        description="Alias legacy para el campo 'prompt'",
+    )
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _ensure_prompt(cls, data: Any) -> Any:
+        if isinstance(data, dict) and not data.get("prompt"):
+            message = data.get("message")
+            if message:
+                data = dict(data)
+                data["prompt"] = message
+        return data
 
 
 class PersistedMessage(BaseModel):
@@ -228,6 +253,26 @@ async def chat_endpoint(
         sources=sources,
         session_id=session.id,
     )
+
+
+@router.post("/message", response_model=ChatResponse)
+async def chat_message_endpoint(
+    payload: LegacyChatRequest,
+    db: Annotated[Session, Depends(get_db)],
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(optional_security)
+    ],
+) -> ChatResponse:
+    """Alias legacy compatible que reutiliza la lógica principal del chat."""
+
+    if credentials is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Servicio de IA no disponible sin autenticación.",
+        )
+
+    current_user = await get_current_user(credentials)
+    return await chat_endpoint(payload=payload, db=db, current_user=current_user)
 
 
 @router.get("/history/{session_id}", response_model=ChatHistoryResponse)

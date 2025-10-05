@@ -26,7 +26,11 @@ if config.config_file_name is not None:
 load_dotenv()
 
 # Obtiene la URL de la DB desde el entorno o desde alembic.ini como fallback
-database_url = os.getenv("DATABASE_URL") or config.get_main_option("sqlalchemy.url")
+database_url = (
+    os.getenv("DATABASE_URL")
+    or os.getenv("BULLBEAR_DB_URL")
+    or config.get_main_option("sqlalchemy.url")
+)
 if not database_url:
     raise RuntimeError("DATABASE_URL debe estar configurada para ejecutar migraciones")
 

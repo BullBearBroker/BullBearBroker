@@ -15,6 +15,15 @@ from backend.utils.config import Config
 
 logger = get_logger(service="database")
 
+_TESTING_MODE = bool(getattr(Config, "TESTING", False)) or os.getenv(
+    "TESTING", ""
+).lower() in {
+    "1",
+    "true",
+    "on",
+    "yes",
+}
+
 
 def _current_env() -> str:
     """Return the active environment name following ENV precedence rules."""
@@ -45,14 +54,14 @@ def _resolve_risk_profile_backfill() -> Callable[[object], None] | None:
     for module_name, attr_name in module_candidates:
         try:
             module = importlib.import_module(module_name)
-        except ModuleNotFoundError:  # pragma: no cover - optional dependency
-            continue
-        except Exception:  # pragma: no cover - defensively ignore import issues
-            continue
-
-        candidate = getattr(module, attr_name, None)
-        if callable(candidate):
-            return candidate
+        except ImportError:
+            continue  # nosec B110: dependencia opcional ausente o no usable
+        except Exception:  # noqa: BLE001
+            continue  # nosec B110: import inesperado falla; seguimos con el siguiente
+        else:
+            candidate = getattr(module, attr_name, None)
+            if callable(candidate):
+                return candidate
 
     return None
 
@@ -132,7 +141,11 @@ def create_all_if_local(engine) -> None:
         )
 
 
-DATABASE_URL = os.environ.get("DATABASE_URL", "sqlite:///./bullbearbroker.db")
+DATABASE_URL = (
+    os.environ.get("DATABASE_URL")
+    or os.environ.get("BULLBEAR_DB_URL")
+    or "sqlite:///./bullbearbroker.db"
+)
 
 connect_args = {}
 if DATABASE_URL.startswith("sqlite"):
@@ -148,7 +161,31 @@ if not DATABASE_URL.startswith("sqlite"):
     )
 engine = create_engine(DATABASE_URL, **engine_kwargs)
 create_all_if_local(engine)
-SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, future=True)
+
+if _TESTING_MODE and getattr(engine, "dialect", None) is not None:
+    try:
+        if str(engine.dialect.name).startswith("sqlite"):
+            Base.metadata.create_all(bind=engine)
+    except Exception as error:  # pragma: no cover - defensive logging for tests
+        logger.warning(
+            {
+                "service": "database",
+                "event": "database_autocreate_testing_failed",
+                "error": str(error),
+                "level": "warning",
+            }
+        )
+
+_session_factory = globals().get("SessionLocal")
+if hasattr(_session_factory, "configure"):
+    _session_factory.configure(
+        bind=engine, autocommit=False, autoflush=False, future=True
+    )
+    SessionLocal = _session_factory
+else:
+    SessionLocal = sessionmaker(
+        bind=engine, autocommit=False, autoflush=False, future=True
+    )
 
 
 def get_db() -> Generator:

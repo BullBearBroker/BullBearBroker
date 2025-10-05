@@ -1,5 +1,7 @@
 """Market-related API routes."""
 
+# ruff: noqa: I001
+
 from __future__ import annotations
 
 import asyncio
@@ -23,8 +25,8 @@ except ImportError:  # pragma: no cover - fallback for package-based imports
     from backend.services.forex_service import forex_service  # type: ignore
     from backend.services.market_service import market_service  # type: ignore
 
-router = APIRouter(tags=["Markets"])
 logger = get_logger(service="markets_router")
+router = APIRouter(tags=["Markets"])
 
 
 def _parse_symbols(raw: Sequence[str] | str) -> list[str]:

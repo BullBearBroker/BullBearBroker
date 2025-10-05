@@ -2,6 +2,7 @@
 
 import React, {
   FormEvent,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -20,6 +21,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { useRealtime } from "@/hooks/useRealtime"; // ✅ Codex fix: escuchar insights realtime
+import { useAIStream, AIInsight } from "@/hooks/useAIStream"; // ✅ Codex fix: integrar stream IA
 
 interface ChatPanelProps {
   token?: string;
@@ -30,6 +33,7 @@ const SOURCE_LABELS: Record<string, string> = {
   indicators: "Indicadores", // [Codex] nuevo
   news: "Noticias", // [Codex] nuevo
   alerts: "Alertas", // [Codex] nuevo
+  insights: "Insights IA", // ✅ Codex fix: etiqueta para insights automatizados
 };
 
 const GREETING_MESSAGE: MessagePayload = {
@@ -48,6 +52,33 @@ export function ChatPanel({ token }: ChatPanelProps) {
   const endRef = useRef<HTMLDivElement>(null);
   const [sources, setSources] = useState<string[]>([]); // [Codex] nuevo - fuentes de datos reales
   const [usedData, setUsedData] = useState(false); // [Codex] nuevo - bandera de datos reales
+  const { data: realtimePayload } = useRealtime(); // ✅ Codex fix: recibir mensajes realtime
+
+  const handleRealtimeInsight = useCallback(
+    (insight: AIInsight) => {
+      setMessages((prev) => {
+        const alreadyPresent = prev.some(
+          (item) => item.role === "assistant" && item.content === insight.message
+        );
+        if (alreadyPresent) {
+          return prev;
+        }
+        return [
+          ...prev,
+          { role: "assistant", content: insight.message },
+        ];
+      });
+      setSources((prev) => (prev.includes("insights") ? prev : [...prev, "insights"]));
+      setUsedData(true);
+    },
+    []
+  ); // ✅ Codex fix: agregar insight IA al historial
+
+  useAIStream({
+    enabled: true,
+    realtimePayload,
+    onInsight: handleRealtimeInsight,
+  }); // ✅ Codex fix: sincronizar insights streaming con la conversación
 
   useEffect(() => {
     if (typeof window === "undefined") return;

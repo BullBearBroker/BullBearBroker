@@ -173,6 +173,39 @@ make test
 > Durante el desarrollo utiliza `npm --prefix frontend run test:dev` para
 > ejecutar suites filtradas sin fallos por cobertura.
 
+### Smoke manual de la API
+
+Cuando necesites validar rápidamente el flujo básico de autenticación y alertas
+sin montar un entorno completo de pruebas, podés ejecutar esta secuencia de
+`curl` desde una shell (`bash`/`zsh`). Asume el backend corriendo en
+`http://127.0.0.1:8000`.
+
+```bash
+# Registrar un usuario
+curl -s -X POST http://127.0.0.1:8000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"demo@test.com","password":"demo1234"}' | jq
+
+# Login y captura del token JWT
+TOKEN=$(curl -s -X POST http://127.0.0.1:8000/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"demo@test.com","password":"demo1234"}' | jq -r .access_token)
+echo "TOKEN=${TOKEN:0:20}..."
+
+# Crear una alerta en el formato nuevo
+curl -s -X POST http://127.0.0.1:8000/api/alerts \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"asset":"AAPL","channel":"push","conditions":[{"field":"price","op":">","value":150}]}' | jq
+
+# Listar las alertas del usuario
+curl -s -H "Authorization: Bearer $TOKEN" http://127.0.0.1:8000/api/alerts | jq
+
+# Simular una suscripción push (endpoint ficticio)
+curl -s -X POST http://127.0.0.1:8000/api/push/subscribe \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"endpoint":"https://example.com/push/cli","keys":{"auth":"auth-key","p256dh":"p256dh-key"}}' | jq
+```
+
 ## Logging estructurado
 
 El backend utiliza utilidades basadas en `structlog` definidas en

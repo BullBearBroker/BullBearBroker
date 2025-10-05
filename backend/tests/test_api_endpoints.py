@@ -31,16 +31,16 @@ if BACKEND_DIR not in sys.path:
 # one so the import does not fail when modules are loaded during the tests.
 os.environ.setdefault("DATABASE_URL", "postgresql+psycopg://user:pass@localhost/testdb")
 
-from backend.main import app  # noqa: E402  (import after path setup)
-from backend.routers import (  # noqa: E402
+from backend.main import app  # noqa: E402  (import after path setup)  # isort: skip
+from backend.routers import (  # noqa: E402  # isort: skip
     alerts as alerts_router,
     auth as auth_router,
     markets as markets_router,
 )
-from backend.services.alert_service import alert_service  # noqa: E402
-from backend.services.forex_service import forex_service  # noqa: E402
-from backend.services.market_service import market_service  # noqa: E402
-from backend.services.news_service import news_service  # noqa: E402
+from backend.services.alert_service import alert_service  # noqa: E402  # isort: skip
+from backend.services.forex_service import forex_service  # noqa: E402  # isort: skip
+from backend.services.market_service import market_service  # noqa: E402  # isort: skip
+from backend.services.news_service import news_service  # noqa: E402  # isort: skip
 
 news_service_module = importlib.import_module("services.news_service")
 

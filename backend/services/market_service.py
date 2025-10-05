@@ -170,6 +170,30 @@ class MarketService:
         await self.history_cache.set(cache_key, data)
         return data
 
+    async def get_historical(
+        self,
+        symbol: str,
+        *,
+        timeframe: str = "1d",
+        limit: int = 120,
+        market: str = "auto",
+    ) -> list[dict[str, Any]]:
+        """Compatibilidad para obtener históricos simplificados."""
+
+        payload = await self.get_historical_ohlc(
+            symbol,
+            interval=timeframe,
+            limit=limit,
+            market=market,
+        )
+        if isinstance(payload, dict):
+            values = payload.get("values", [])
+            if isinstance(values, list):
+                return values
+        if isinstance(payload, list):
+            return payload
+        return []
+
     async def _fetch_binance_history(
         self, symbol: str, interval: str, limit: int
     ) -> dict[str, Any]:

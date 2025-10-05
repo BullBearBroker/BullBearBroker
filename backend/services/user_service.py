@@ -1,3 +1,4 @@
+# ruff: noqa: I001
 from __future__ import annotations
 
 import hashlib
@@ -11,11 +12,11 @@ from typing import Any
 from uuid import UUID, uuid4
 
 import jwt
-import pyotp
 from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session as OrmSession, selectinload, sessionmaker
 
+import pyotp
 from backend.core.logging_config import log_event
 from backend.core.security import (
     create_access_token as core_create_access_token,
@@ -24,7 +25,7 @@ from backend.core.security import (
     decode_refresh,
 )
 from backend.database import SessionLocal
-from backend.models import Alert, Session as SessionModel, User
+from backend.models import Alert, AlertDeliveryMethod, Session as SessionModel, User
 from backend.models.refresh_token import RefreshToken
 from backend.models.user import RiskProfile  # [Codex] nuevo
 from backend.utils.config import Config, password_context
@@ -505,11 +506,18 @@ class UserService:
 
             alert = Alert(
                 user_id=user_id,
+                name=title_clean,
+                condition={
+                    "operator": condition_clean,
+                    "threshold": float(value if value is not None else 0.0),
+                    "asset": asset_clean,
+                },
+                delivery_method=AlertDeliveryMethod.PUSH,
+                active=bool(active),
                 title=title_clean,
                 asset=asset_clean,
                 value=float(value if value is not None else 0.0),
-                condition=condition_clean,
-                active=bool(active),
+                condition_expression=condition_clean,
             )
             session.add(alert)
             return self._detach_entity(session, alert)
@@ -560,18 +568,33 @@ class UserService:
                 if not title_clean:
                     raise ValueError("El título de la alerta es obligatorio")
                 alert.title = title_clean
+                alert.name = title_clean
             if asset is not None:
                 asset_clean = asset.strip().upper()
                 if not asset_clean:
                     raise ValueError("El activo de la alerta es obligatorio")
                 alert.asset = asset_clean
+                condition_payload = dict(alert.condition or {})
+                condition_payload["asset"] = asset_clean
+                alert.condition = condition_payload
             if value is not None:
                 alert.value = float(value)
+                condition_payload = dict(alert.condition or {})
+                condition_payload["threshold"] = float(value)
+                alert.condition = condition_payload
             if condition is not None:
                 cleaned_condition = condition.strip()
                 if not cleaned_condition:
                     raise ValueError("La condición de la alerta no puede estar vacía")
-                alert.condition = cleaned_condition
+                alert.condition_expression = cleaned_condition
+                # Mantener compatibilidad básica con la estructura JSON
+                alert.condition = {
+                    "operator": cleaned_condition,
+                    "threshold": float(
+                        value if value is not None else alert.value or 0.0
+                    ),
+                    "asset": alert.asset,
+                }
             if active is not None:
                 alert.active = bool(active)
 

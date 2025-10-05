@@ -7,19 +7,21 @@ if DEFAULT_DB_PATH.exists():
 
 import pytest
 from httpx import ASGITransport, AsyncClient
-from pyotp import TOTP
 
 from backend.core.security import decode_refresh
 from backend.database import SessionLocal
 from backend.main import app
 from backend.models.refresh_token import RefreshToken
+from pyotp import TOTP
 
 
 @pytest.mark.asyncio
 async def test_login_without_mfa():
     email = f"auth_nomfa_{uuid.uuid4().hex}@test.com"
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         register = await client.post(
             "/api/auth/register",
             json={"email": email, "password": "Password123"},
@@ -40,7 +42,9 @@ async def test_login_without_mfa():
 async def test_login_with_mfa_requires_code():
     email = f"auth_mfa_{uuid.uuid4().hex}@test.com"
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         register = await client.post(
             "/api/auth/register",
             json={"email": email, "password": "Password123"},
@@ -92,7 +96,9 @@ async def test_login_with_mfa_requires_code():
 async def test_logout_all_revokes_tokens():
     email = f"auth_logoutall_{uuid.uuid4().hex}@test.com"
 
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         register = await client.post(
             "/api/auth/register",
             json={"email": email, "password": "Password123"},

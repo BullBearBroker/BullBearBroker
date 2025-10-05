@@ -1,13 +1,13 @@
+import sqlalchemy as sa
+from alembic import op
+from sqlalchemy.dialects import postgresql
+
 """create push_subscriptions table"""
 
 revision = "22e99cea9066"
 down_revision = "0009_chat_push_tables"
 branch_labels = None
 depends_on = None
-
-from alembic import op
-import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 
 def upgrade() -> None:

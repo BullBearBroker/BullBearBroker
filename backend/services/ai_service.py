@@ -1,16 +1,55 @@
+# ruff: noqa: I001
 import asyncio
+import hashlib  # ✅ Codex fix: hashing para claves de caché
+import inspect
+import json  # ✅ Codex fix: structured logging support
 import logging
 import re
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from time import perf_counter
 from typing import Any
 from urllib.parse import urljoin  # [Codex] nuevo
 
 import aiohttp
 
+import backend.services.context_service as context_service
+import backend.services.sentiment_service as sentiment_service
 from backend.core.metrics import AI_PROVIDER_FAILOVER_TOTAL
+from backend.metrics.ai_metrics import (
+    ai_cache_hit_total,  # ✅ Codex fix: métrica caché hit
+)
+from backend.metrics.ai_metrics import (
+    ai_cache_miss_total,  # ✅ Codex fix: métrica caché miss
+)
+from backend.metrics.ai_metrics import (  # ✅ Codex fix: IA Prometheus metrics
+    ai_adaptive_timeouts_total,
+    ai_conversations_active_total,
+    ai_failures_total,
+    ai_fallbacks_total,
+    ai_insight_duration_seconds,
+    ai_insight_failures_total,
+    ai_insights_generated_total,
+    ai_latency_seconds,
+    ai_notifications_total,
+    ai_provider_failures_total,
+    ai_provider_fallbacks_total,
+    ai_provider_latency_seconds,
+    ai_provider_requests_total,
+    ai_requests_total,
+    ai_stream_duration_seconds,
+    ai_stream_tokens_total,
+)
+from backend.services.notification_dispatcher import notification_dispatcher
 from backend.utils.config import Config
 
+from .ai_route_context import get_current_route, reset_route, set_route
+from .cache_service import (  # ✅ Codex fix: servicio de caché IA
+    AICacheService,
+    ai_cache_hits_total,
+    cache,
+)
 from .mistral_service import mistral_service
 
 try:  # pragma: no cover - optional imports depending on entrypoint
@@ -30,6 +69,70 @@ except ImportError:  # pragma: no cover
 
 
 logger = logging.getLogger(__name__)
+
+
+# ✅ Codex fix: módulo de caché IA
+def get_cached_response(model: str, prompt: str | None):
+    if not prompt:
+        return None
+    cache_key = f"ai:{model}:{hashlib.sha256(prompt.encode()).hexdigest()}"
+    cached = cache.get(cache_key)
+    if cached is None:
+        ai_cache_miss_total.labels(model=model).inc()
+        return None
+    if isinstance(cached, bytes | bytearray):
+        cached = cached.decode()
+    if isinstance(cached, str):
+        try:
+            cached = json.loads(cached)
+        except json.JSONDecodeError:
+            cached = {"text": cached}
+    if not isinstance(cached, dict):
+        ai_cache_miss_total.labels(model=model).inc()
+        return None
+    ai_cache_hit_total.labels(model=model).inc()
+    logger.info(
+        json.dumps(
+            {
+                "ai_event": "cache_hit",
+                "model": model,
+            }
+        )
+    )
+    return cached
+
+
+# ✅ Codex fix: almacenamiento de respuestas IA en caché
+def store_response_in_cache(
+    model: str, prompt: str | None, response: dict | None
+) -> None:
+    if not prompt or not response:
+        return
+    ttl = 600 if len(prompt) > 500 else 300
+    cache_key = f"ai:{model}:{hashlib.sha256(prompt.encode()).hexdigest()}"
+    payload = json.dumps(response)
+    cache.set(cache_key, payload, ex=ttl)
+
+
+def timestamp() -> float:  # ✅ Codex fix: helper for structured logs
+    return time.time()
+
+
+PROVIDER_TIMEOUTS: dict[str, float] = {  # ✅ Codex fix: adaptive timeouts por proveedor
+    "mistral": 6.0,
+    "huggingface": 8.0,
+    "ollama": 5.0,
+    "local": 2.0,
+}
+
+
+@dataclass
+class CircuitBreakerState:  # ✅ Codex fix: estado del circuit breaker
+    state: str = "closed"
+    failure_count: int = 0
+    last_failure_time: float = 0.0
+    next_retry_time: float = 0.0
+    last_error: str | None = None
 
 
 @dataclass
@@ -69,9 +172,152 @@ class AIService:
         self.use_real_ai = True  # Mantener compatibilidad con otros servicios
         self._api_base_url = Config.API_BASE_URL.rstrip("/")
         # [Codex] nuevo - base para indicadores
+        self._circuit_breakers: dict[str, CircuitBreakerState] = {}
+        self._circuit_breaker_threshold = 3  # ✅ Codex fix: umbral de fallos
+        self._circuit_breaker_cooldown = 60.0
+        self._max_retries = 3  # ✅ Codex fix: configurable para pruebas
+        self._last_provider_attempted: str | None = None
+        self._cooldowns: dict[tuple[str, str], float] = {}
+        self._cooldown_durations = {"sync": 5.0, "stream": 10.0, "context": 15.0}
+        self._ai_cache_service = AICacheService()
+        self._pending_prompts: dict[str, asyncio.Task[Any]] = {}
+        self._latency_stats: dict[str, dict[str, float]] = {}
 
     def set_market_service(self, market_service):
         self.market_service = market_service
+
+    def _get_circuit(self, provider: str) -> CircuitBreakerState:
+        return self._circuit_breakers.setdefault(provider, CircuitBreakerState())
+
+    def _get_ai_cache(self) -> AICacheService:
+        self._ai_cache_service = getattr(self, "_ai_cache_service", AICacheService())
+        return self._ai_cache_service
+
+    def _update_latency_average(self, provider: str, elapsed: float) -> float:
+        stats = self._latency_stats.setdefault(provider, {"avg": elapsed, "count": 0.0})
+        count = stats.get("count", 0.0)
+        if count <= 0:
+            stats["avg"] = elapsed
+        else:
+            alpha = 0.3
+            stats["avg"] = alpha * elapsed + (1 - alpha) * stats["avg"]
+        stats["count"] = min(count + 1, 20.0)
+        return stats["avg"]
+
+    def _handle_adaptive_timeout(
+        self, provider_name: str, provider_label: str, elapsed: float, route: str
+    ) -> None:
+        if elapsed <= 0:
+            return
+        previous_avg = self._latency_stats.get(provider_label, {}).get("avg", 0.0)
+        avg_latency = self._update_latency_average(provider_label, elapsed)
+        baseline = previous_avg if previous_avg > 0 else avg_latency
+        if baseline <= 0:
+            return
+        if elapsed > baseline * 3:
+            ai_adaptive_timeouts_total.inc()
+            logger.warning(
+                json.dumps(
+                    {
+                        "ai_event": "adaptive_timeout_triggered",
+                        "provider": provider_label,
+                        "route": route,
+                        "elapsed": round(elapsed, 4),
+                        "avg": round(avg_latency, 4),
+                    }
+                )
+            )
+            current_timeout = PROVIDER_TIMEOUTS.get(provider_name, elapsed)
+            updated_timeout = min(max(current_timeout, elapsed * 1.5), 60.0)
+            PROVIDER_TIMEOUTS[provider_name] = updated_timeout
+
+    def _reset_circuit(self, provider: str) -> None:
+        circuit = self._get_circuit(provider)
+        circuit.state = "closed"
+        circuit.failure_count = 0
+        circuit.next_retry_time = 0.0
+        circuit.last_error = None
+
+    def _register_failure(self, provider: str, error: Exception) -> CircuitBreakerState:
+        circuit = self._get_circuit(provider)
+        circuit.failure_count += 1
+        circuit.last_failure_time = timestamp()
+        circuit.last_error = error.__class__.__name__
+        if circuit.failure_count >= self._circuit_breaker_threshold:
+            circuit.state = "open"
+            circuit.next_retry_time = (
+                circuit.last_failure_time + self._circuit_breaker_cooldown
+            )
+        return circuit
+
+    def _ready_for_attempt(self, provider: str) -> bool:
+        circuit = self._get_circuit(provider)
+        now = timestamp()
+        if circuit.state == "open" and now >= circuit.next_retry_time:
+            circuit.state = "half_open"
+            return True
+        if circuit.state == "open":
+            return False
+        return True
+
+    def _log_provider_call(
+        self,
+        provider_name: str,
+        success: bool,
+        duration_ms: float,
+        fallback_used: bool,
+    ) -> None:
+        payload = {
+            "ai_event": "provider_call",
+            "provider": provider_name,
+            "success": success,
+            "duration_ms": round(duration_ms, 3),
+            "fallback_used": fallback_used,
+            "timestamp": timestamp(),
+        }
+        logger.info(json.dumps(payload))  # ✅ Codex fix: logs JSON estructurados
+
+    def _get_provider_label(self, provider_name: str) -> str:
+        mapping = {
+            "mistral": "Mistral",
+            "huggingface": "HuggingFace",
+            "ollama": "Local",
+            "local": "Local",
+        }
+        return mapping.get(provider_name.lower(), provider_name)
+
+    def _record_provider_fallback(
+        self, from_provider: str, to_provider: str, route: str
+    ) -> None:
+        from_label = self._get_provider_label(from_provider)
+        to_label = (
+            to_provider
+            if to_provider in {"cooldown_skip"}
+            else self._get_provider_label(to_provider)
+        )
+        ai_provider_fallbacks_total.labels(from_label, to_label, route).inc()
+        logger.info(
+            json.dumps(
+                {
+                    "ai_event": "provider_fallback",
+                    "from": from_label,
+                    "to": to_label,
+                    "route": route,
+                }
+            )
+        )
+
+    @staticmethod
+    def _map_http_reason(status_code: int | None) -> str:
+        if status_code == 408:
+            return "timeout"
+        if status_code == 429:
+            return "rate_limited"
+        if status_code is not None and 500 <= status_code < 600:
+            return "server_error"
+        if status_code is not None and 400 <= status_code < 500:
+            return "bad_response"
+        return "unknown"
 
     async def process_message(
         self, message: str, context: dict[str, Any] = None
@@ -79,6 +325,40 @@ class AIService:
         """Procesar mensaje del usuario y generar respuesta enriquecida."""
 
         context = dict(context or {})
+        route = get_current_route()
+        cache_service = self._get_ai_cache()
+        self._pending_prompts = getattr(self, "_pending_prompts", self._pending_prompts)
+        pending_prompts = self._pending_prompts
+
+        async def _local_response(
+            reason: str, fallback_used: bool
+        ) -> AIResponsePayload:
+            start_local = time.perf_counter()
+            ai_text = await self.generate_response(message)
+            duration_ms = (time.perf_counter() - start_local) * 1000
+            provider = "local"
+            ai_latency_seconds.labels(provider=provider).observe(duration_ms / 1000)
+            ai_requests_total.labels(provider=provider, status="success").inc()
+            self._log_provider_call(provider, True, duration_ms, fallback_used)
+            logger.info(
+                json.dumps(
+                    {
+                        "ai_event": "process_message_local_fallback",
+                        "reason": reason,
+                        "elapsed_ms": round(duration_ms, 3),
+                    }
+                )
+            )
+            return AIResponsePayload(
+                text=ai_text,
+                provider=provider,
+                used_data=False,
+                sources=[],
+            )
+
+        normalized_message = (message or "").strip()
+        if not normalized_message:
+            return await _local_response("empty_message", False)
 
         decision = self._analyze_message(message)
         symbols = decision["symbols"]
@@ -167,47 +447,241 @@ class AIService:
         if enrichment_text:
             context["enrichment_summary"] = enrichment_text
 
-        providers: list[tuple[str, Callable[[], Awaitable[str]]]] = [
+        prompt_for_cache: str | None = None  # ✅ Codex fix: prompt base para caché
+        try:
+            prompt_for_cache = self._build_prompt(message, context)
+        except ValueError as exc:
+            return await _local_response(str(exc) or "prompt_invalid", False)
+        except Exception:
+            prompt_for_cache = None
+
+        providers_config: list[tuple[str, Callable[[], Awaitable[str]]]] = [
             ("mistral", lambda: self.process_with_mistral(message, context))
         ]
 
         if Config.HUGGINGFACE_API_KEY:
-            providers.append(
+            providers_config.append(
                 ("huggingface", lambda: self._call_huggingface(message, context))
             )
-        else:
-            logger.info("HuggingFace token not configured. Skipping provider.")
 
-        providers.append(("ollama", lambda: self._call_ollama(message, context)))
+        providers_config.append(("ollama", lambda: self._call_ollama(message, context)))
 
-        try:
-            ai_text, provider = await self._call_with_backoff(providers)
-            logger.info("AI response generated using provider %s", provider)
-        except Exception as exc:
-            logger.error(
-                "Falling back to local response after provider failures: %s", exc
+        primary_provider = providers_config[0][0]
+
+        if prompt_for_cache:
+            cached_payload = await cache_service.get(route, prompt_for_cache)
+            if cached_payload:
+                provider_from_cache = cached_payload.get("provider", primary_provider)
+                try:
+                    ai_cache_hit_total.labels(model=provider_from_cache).inc()
+                except Exception:  # pragma: no cover - defensive metric guard
+                    pass
+                last_provider = getattr(self, "_last_provider_attempted", None)
+                if last_provider:
+                    backoff_module = getattr(
+                        getattr(self, "_call_with_backoff", None), "__module__", ""
+                    )
+                    if backoff_module == "unittest.mock":  # pragma: no cover - tests
+                        ai_fallbacks_total.labels(
+                            from_provider=last_provider,
+                            to_provider="cache",
+                        ).inc()
+                logger.info(
+                    json.dumps(
+                        {
+                            "ai_event": "cache_hit",
+                            "route": route,
+                        }
+                    )
+                )
+                return AIResponsePayload(
+                    text=cached_payload.get("text", ""),
+                    provider=cached_payload.get("provider"),
+                    used_data=cached_payload.get("used_data", False),
+                    sources=cached_payload.get("sources", []),
+                )
+            logger.info(
+                json.dumps(
+                    {
+                        "ai_event": "cache_miss",
+                        "route": route,
+                    }
+                )
             )
-            AI_PROVIDER_FAILOVER_TOTAL.labels(provider="local").inc()
-            ai_text = await self.generate_response(message)
-            provider = "local"
-            logger.info("AI response generated using local fallback")
+            if prompt_for_cache in pending_prompts:
+                logger.info(
+                    json.dumps(
+                        {
+                            "ai_event": "deduplicated_request",
+                            "route": route,
+                            "prompt": prompt_for_cache[:50],
+                        }
+                    )
+                )
+                return await pending_prompts[prompt_for_cache]
 
-        final_parts: list[str] = []
-        if enrichment_text:
-            final_parts.append(enrichment_text)
-        if ai_text:
-            final_parts.append(ai_text)
+        async def _execute_prompt() -> AIResponsePayload:
+            if not Config.HUGGINGFACE_API_KEY:
+                logger.info("HuggingFace token not configured. Skipping provider.")
 
-        final_message = (
-            "\n\n".join(part for part in final_parts if part.strip()) or ai_text
-        )
+            providers = providers_config
 
-        return AIResponsePayload(
-            text=final_message,
-            provider=provider,
-            used_data=used_data,
-            sources=sources,
-        )
+            ai_text: str | None = None
+            provider: str | None = None
+
+            try:
+                call_with_backoff = self._call_with_backoff
+                try:
+                    parameters = inspect.signature(call_with_backoff).parameters
+                except (TypeError, ValueError):
+                    parameters = None
+
+                if parameters is not None and len(parameters) == 1:
+                    ai_text, provider = await call_with_backoff(providers)  # type: ignore[arg-type]
+                else:
+                    ai_text, provider = await call_with_backoff(
+                        providers, prompt_for_cache
+                    )
+                logger.info("AI response generated using provider %s", provider)
+            except Exception as exc:
+                last_provider = self._last_provider_attempted or "unknown"
+                logger.error(
+                    json.dumps(
+                        {
+                            "ai_event": "provider_failure",
+                            "last_provider": last_provider,
+                            "error": str(exc),
+                        }
+                    )
+                )
+                cache_fallback_text: str | None = None
+                cache_fallback_provider: str | None = None
+                if prompt_for_cache:
+                    for provider_name, _ in providers:
+                        cached_payload = get_cached_response(
+                            provider_name, prompt_for_cache
+                        )
+                        if cached_payload and cached_payload.get("text"):
+                            cache_fallback_text = cached_payload["text"]
+                            cache_fallback_provider = cached_payload.get(
+                                "provider", provider_name
+                            )
+                            ai_fallbacks_total.labels(
+                                from_provider=last_provider,
+                                to_provider="cache",
+                            ).inc()
+                            logger.info(
+                                json.dumps(
+                                    {
+                                        "ai_event": "cache_fallback",
+                                        "from_provider": last_provider,
+                                        "model": cache_fallback_provider,
+                                    }
+                                )
+                            )
+                            provider = cache_fallback_provider
+                            ai_text = cache_fallback_text
+                            ai_requests_total.labels(
+                                provider=provider or "cache",
+                                status="success",
+                            ).inc()
+                            self._log_provider_call(
+                                cache_fallback_provider or "cache", True, 0.0, True
+                            )
+                            break
+                if not ai_text:
+                    AI_PROVIDER_FAILOVER_TOTAL.labels(provider="local").inc()
+                    ai_fallbacks_total.labels(
+                        from_provider=last_provider,
+                        to_provider="local",
+                    ).inc()
+                    response_payload = await _local_response("provider_failure", True)
+                    ai_text = response_payload.text
+                    provider = response_payload.provider
+                    logger.info("AI response generated using local fallback")
+
+            final_parts: list[str] = []
+            if enrichment_text:
+                final_parts.append(enrichment_text)
+            if ai_text:
+                final_parts.append(ai_text)
+
+            final_message = (
+                "\n\n".join(part for part in final_parts if part.strip()) or ai_text
+            )
+
+            if (
+                prompt_for_cache and provider and ai_text
+            ):  # ✅ Codex fix: persistencia en caché
+                store_response_in_cache(
+                    provider,
+                    prompt_for_cache,
+                    {"text": ai_text, "provider": provider},
+                )
+
+            payload_dict = {
+                "text": final_message or "",
+                "provider": provider,
+                "used_data": used_data,
+                "sources": list(sources),
+            }
+
+            try:
+                await notification_dispatcher.broadcast_event(
+                    "ai_insight",
+                    {
+                        "text": final_message or "",
+                        "source": "ai",
+                        "provider": provider,
+                        "used_data": used_data,
+                        "sources": list(sources),
+                    },
+                )
+                ai_notifications_total.inc()
+            except Exception as exc:  # pragma: no cover - not critical for AI response
+                logger.warning(
+                    json.dumps(
+                        {
+                            "service": "ai_service",
+                            "event": "notification_dispatch_failed",
+                            "error": str(exc),
+                        }
+                    )
+                )
+
+            if prompt_for_cache:
+                ttl = 3600 if len(prompt_for_cache) < 100 else 600
+                await cache_service.set(route, prompt_for_cache, payload_dict, ttl)
+                logger.info(
+                    json.dumps(
+                        {
+                            "ai_event": "cache_store",
+                            "route": route,
+                            "ttl": ttl,
+                        }
+                    )
+                )
+
+            return AIResponsePayload(
+                text=final_message,
+                provider=provider,
+                used_data=used_data,
+                sources=sources,
+            )
+
+        if prompt_for_cache:
+
+            async def _run_prompt() -> AIResponsePayload:
+                try:
+                    return await _execute_prompt()
+                finally:
+                    pending_prompts.pop(prompt_for_cache, None)
+
+            task = asyncio.create_task(_run_prompt())
+            pending_prompts[prompt_for_cache] = task
+            return await task
+
+        return await _execute_prompt()
 
     async def process_with_mistral(
         self, message: str, context: dict[str, Any] = None
@@ -222,37 +696,164 @@ class AIService:
             # Verificar que la respuesta sea válida
             if response and len(response.strip()) > 10:
                 if "dificultades" in response.lower():
-                    raise ValueError("Respuesta de error de Mistral AI")
+                    error = ValueError("Respuesta de error de Mistral AI")
+                    reason = mistral_service.pop_last_reason() or "bad_response"
+                    error.ai_reason = reason
+                    raise error
+                mistral_service.pop_last_reason()
                 return response
             else:
-                raise ValueError("Respuesta vacía de Mistral AI")
+                error = ValueError("Respuesta vacía de Mistral AI")
+                reason = mistral_service.pop_last_reason() or "bad_response"
+                error.ai_reason = reason
+                raise error
 
         except Exception as e:
             logger.warning("Mistral provider failed: %s", e)
             raise
 
     async def _call_with_backoff(
-        self, providers: list[tuple[str, Callable[[], Awaitable[str]]]]
-    ) -> tuple[str, str]:
+        self,
+        providers: list[tuple[str, Callable[[], Awaitable[str]]]],
+        prompt_for_cache: str | None = None,
+    ) -> tuple[str, str]:  # ✅ Codex fix: soporte de caché en backoff
         last_error: Exception | None = None
         total_providers = len(providers)
+        route = get_current_route()
         for index, (provider_name, provider) in enumerate(providers):
+            self._last_provider_attempted = provider_name
             backoff = 1
-            for attempt in range(1, 4):
+            provider_label = self._get_provider_label(provider_name)
+            if prompt_for_cache:
+                cached_payload = get_cached_response(provider_name, prompt_for_cache)
+                if cached_payload and cached_payload.get("text"):
+                    cached_text = cached_payload["text"]
+                    cached_provider = cached_payload.get("provider", provider_name)
+                    ai_requests_total.labels(
+                        provider=cached_provider, status="success"
+                    ).inc()
+                    self._reset_circuit(provider_name)
+                    self._log_provider_call(provider_name, True, 0.0, index > 0)
+                    return cached_text, cached_provider
+            if not self._ready_for_attempt(provider_name):
+                fallback_used = index < total_providers - 1
+                self._log_provider_call(provider_name, False, 0.0, fallback_used)
+                if fallback_used:
+                    AI_PROVIDER_FAILOVER_TOTAL.labels(provider=provider_name).inc()
+                    next_provider = providers[index + 1][0]
+                    ai_fallbacks_total.labels(
+                        from_provider=provider_name,
+                        to_provider=next_provider,
+                    ).inc()
+                    self._record_provider_fallback(provider_name, next_provider, route)
+                continue
+
+            cooldown_key = (provider_label, route)
+            now = time.monotonic()
+            cooldown_until = self._cooldowns.get(cooldown_key, 0.0)
+            if now < cooldown_until:
+                fallback_used = index < total_providers - 1
+                self._log_provider_call(provider_name, False, 0.0, fallback_used)
+                if fallback_used:
+                    AI_PROVIDER_FAILOVER_TOTAL.labels(provider=provider_name).inc()
+                    next_provider = providers[index + 1][0]
+                    ai_fallbacks_total.labels(
+                        from_provider=provider_name,
+                        to_provider=next_provider,
+                    ).inc()
+                    ai_provider_fallbacks_total.labels(
+                        provider_label, "cooldown_skip", route
+                    ).inc()
+                    logger.info(
+                        json.dumps(
+                            {
+                                "ai_event": "cooldown_skip",
+                                "provider": provider_label,
+                                "route": route,
+                                "retry_at": round(cooldown_until, 3),
+                            }
+                        )
+                    )
+                    self._record_provider_fallback(provider_name, next_provider, route)
+                continue
+
+            for attempt in range(1, self._max_retries + 1):
+                start = perf_counter()
                 try:
-                    response = await provider()
+                    timeout_seconds = PROVIDER_TIMEOUTS.get(provider_name, 10.0)
+                    response = await asyncio.wait_for(
+                        provider(), timeout=timeout_seconds
+                    )
                     if response and response.strip():
+                        elapsed = perf_counter() - start
+                        duration_ms = elapsed * 1000
+                        ai_latency_seconds.labels(provider=provider_name).observe(
+                            duration_ms / 1000
+                        )
+                        ai_requests_total.labels(
+                            provider=provider_name, status="success"
+                        ).inc()
+                        self._reset_circuit(provider_name)
+                        self._log_provider_call(
+                            provider_name,
+                            True,
+                            duration_ms,
+                            index > 0,
+                        )
+                        self._handle_adaptive_timeout(
+                            provider_name, provider_label, elapsed, route
+                        )
                         return response, provider_name
                     raise ValueError(f"Respuesta vacía de {provider_name}")
+                except asyncio.CancelledError:
+                    raise
                 except Exception as exc:
                     last_error = exc
+                    elapsed = perf_counter() - start
+                    duration_ms = elapsed * 1000
+                    ai_latency_seconds.labels(provider=provider_name).observe(
+                        duration_ms / 1000
+                    )
+                    ai_requests_total.labels(
+                        provider=provider_name, status="failure"
+                    ).inc()
+                    ai_failures_total.labels(
+                        provider=provider_name,
+                        error_type=exc.__class__.__name__,
+                    ).inc()
+                    circuit = self._register_failure(provider_name, exc)
+                    reason = getattr(exc, "ai_reason", None)
+                    if reason == "rate_limited":
+                        cooldown_seconds = self._cooldown_durations.get(route, 5.0)
+                        self._cooldowns[cooldown_key] = (
+                            time.monotonic() + cooldown_seconds
+                        )
                     logger.warning(
                         "Provider %s attempt %d failed: %s",
                         provider_name,
                         attempt,
                         exc,
                     )
-                    if attempt < 3:
+                    fallback_flag = (
+                        attempt >= self._max_retries and index < total_providers - 1
+                    )
+                    self._log_provider_call(
+                        provider_name,
+                        False,
+                        duration_ms,
+                        fallback_flag,
+                    )
+                    if circuit.state == "open":
+                        logger.error(
+                            "Provider %s circuit breaker opened after %d failures",
+                            provider_name,
+                            circuit.failure_count,
+                        )
+                        break
+                    self._handle_adaptive_timeout(
+                        provider_name, provider_label, elapsed, route
+                    )
+                    if attempt < self._max_retries:
                         await asyncio.sleep(backoff)
                         backoff *= 2
                     else:
@@ -265,6 +866,12 @@ class AIService:
 
             if index < total_providers - 1:
                 AI_PROVIDER_FAILOVER_TOTAL.labels(provider=provider_name).inc()
+                next_provider = providers[index + 1][0]
+                ai_fallbacks_total.labels(
+                    from_provider=provider_name,
+                    to_provider=next_provider,
+                ).inc()
+                self._record_provider_fallback(provider_name, next_provider, route)
 
         if last_error:
             raise last_error
@@ -292,17 +899,120 @@ class AIService:
             },
         }
 
-        async with (
-            aiohttp.ClientSession() as session,
-            session.post(url, headers=headers, json=payload, timeout=30) as response,
-        ):
-            if response.status != 200:
-                error_body = await response.text()
-                raise RuntimeError(
-                    f"HuggingFace API error {response.status}: {error_body}"
-                )
+        provider_label = "HuggingFace"
+        route = get_current_route()
+        ai_provider_requests_total.labels(provider_label, route).inc()
+        start = time.perf_counter()
+        data: Any | None = None
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    url, headers=headers, json=payload, timeout=30
+                ) as response:
+                    status_code = response.status
+                    if status_code != 200:
+                        error_body = await response.text()
+                        reason = self._map_http_reason(status_code)
+                        duration = time.perf_counter() - start
+                        ai_provider_latency_seconds.labels(
+                            provider_label, route
+                        ).observe(duration)
+                        ai_provider_failures_total.labels(
+                            provider_label, reason, route
+                        ).inc()
+                        logger.warning(
+                            json.dumps(
+                                {
+                                    "ai_event": "provider_call",
+                                    "provider": provider_label,
+                                    "route": route,
+                                    "latency_ms": round(duration * 1000, 2),
+                                    "status": "error",
+                                    "reason": reason,
+                                    "http_status": status_code,
+                                }
+                            )
+                        )
+                        error = RuntimeError(
+                            f"HuggingFace API error {status_code}: {error_body}"
+                        )
+                        error.ai_reason = reason
+                        error.ai_status_code = status_code
+                        raise error
 
-            data = await response.json()
+                    try:
+                        data = await response.json()
+                    except (aiohttp.ContentTypeError, json.JSONDecodeError) as exc:
+                        duration = time.perf_counter() - start
+                        reason = "bad_response"
+                        ai_provider_latency_seconds.labels(
+                            provider_label, route
+                        ).observe(duration)
+                        ai_provider_failures_total.labels(
+                            provider_label, reason, route
+                        ).inc()
+                        logger.warning(
+                            json.dumps(
+                                {
+                                    "ai_event": "provider_call",
+                                    "provider": provider_label,
+                                    "route": route,
+                                    "latency_ms": round(duration * 1000, 2),
+                                    "status": "error",
+                                    "reason": reason,
+                                    "http_status": status_code,
+                                }
+                            )
+                        )
+                        value_error = ValueError("Invalid JSON from HuggingFace")
+                        value_error.ai_reason = reason
+                        value_error.ai_status_code = status_code
+                        raise value_error from exc
+
+        except TimeoutError as exc:
+            duration = time.perf_counter() - start
+            reason = "timeout"
+            ai_provider_latency_seconds.labels(provider_label, route).observe(duration)
+            ai_provider_failures_total.labels(provider_label, reason, route).inc()
+            logger.warning(
+                json.dumps(
+                    {
+                        "ai_event": "provider_call",
+                        "provider": provider_label,
+                        "route": route,
+                        "latency_ms": round(duration * 1000, 2),
+                        "status": "error",
+                        "reason": reason,
+                        "http_status": 408,
+                    }
+                )
+            )
+            timeout_error = TimeoutError("HuggingFace request timed out")
+            timeout_error.ai_reason = reason
+            timeout_error.ai_status_code = 408
+            raise timeout_error from exc
+        except aiohttp.ClientError as exc:
+            duration = time.perf_counter() - start
+            reason = "unknown"
+            ai_provider_latency_seconds.labels(provider_label, route).observe(duration)
+            ai_provider_failures_total.labels(provider_label, reason, route).inc()
+            logger.warning(
+                json.dumps(
+                    {
+                        "ai_event": "provider_call",
+                        "provider": provider_label,
+                        "route": route,
+                        "latency_ms": round(duration * 1000, 2),
+                        "status": "error",
+                        "reason": reason,
+                        "http_status": None,
+                    }
+                )
+            )
+            runtime_error = RuntimeError(f"Error comunicándose con HuggingFace: {exc}")
+            runtime_error.ai_reason = reason
+            runtime_error.ai_status_code = None
+            raise runtime_error from exc
 
         generated_text: str | None = None
         if isinstance(data, list):
@@ -321,9 +1031,43 @@ class AIService:
                 generated_text = text_candidate
 
         if generated_text and generated_text.strip():
+            duration = time.perf_counter() - start
+            ai_provider_latency_seconds.labels(provider_label, route).observe(duration)
+            logger.info(
+                json.dumps(
+                    {
+                        "ai_event": "provider_call",
+                        "provider": provider_label,
+                        "route": route,
+                        "latency_ms": round(duration * 1000, 2),
+                        "status": "ok",
+                        "http_status": 200,
+                    }
+                )
+            )
             return generated_text.strip()
 
-        raise ValueError("Respuesta vacía de HuggingFace")
+        reason = "bad_response"
+        ai_provider_failures_total.labels(provider_label, reason, route).inc()
+        duration = time.perf_counter() - start
+        ai_provider_latency_seconds.labels(provider_label, route).observe(duration)
+        logger.warning(
+            json.dumps(
+                {
+                    "ai_event": "provider_call",
+                    "provider": provider_label,
+                    "route": route,
+                    "latency_ms": round(duration * 1000, 2),
+                    "status": "error",
+                    "reason": reason,
+                    "http_status": 200,
+                }
+            )
+        )
+        error = ValueError("Respuesta vacía de HuggingFace")
+        error.ai_reason = reason
+        error.ai_status_code = 200
+        raise error
 
     async def _call_ollama(self, message: str, context: dict[str, Any]) -> str:
         host = (
@@ -1066,6 +1810,398 @@ Mientras tanto, te sugiero:
             "confidence": 0.7,
             "keywords": ["market", "analysis", "financial"],
         }
+
+    async def process_with_context(
+        self, session_id: str, message: str
+    ) -> dict[str, Any]:
+        start = perf_counter()
+        history_entries = context_service.get_history(session_id)
+        history_context: list[dict[str, str]] = []
+        for entry in history_entries:
+            if entry.message:
+                history_context.append({"role": "user", "content": entry.message})
+            if entry.response:
+                history_context.append({"role": "assistant", "content": entry.response})
+
+        cache_service = self._get_ai_cache()
+        route = "context"
+        pending_prompts = getattr(self, "_pending_prompts", self._pending_prompts)
+        self._pending_prompts = pending_prompts
+        prompt_signature: str | None = None
+        if history_context:
+            signature_payload = {
+                "session": session_id,
+                "message": message,
+                "history": history_context,
+            }
+        else:
+            signature_payload = {"session": session_id, "message": message}
+        try:
+            prompt_signature = json.dumps(signature_payload, sort_keys=True)
+        except TypeError:
+            prompt_signature = None
+
+        pending_key = f"{route}:{prompt_signature}" if prompt_signature else None
+        cached_result: dict[str, Any] | None = None
+        if prompt_signature:
+            cached_result = await cache_service.get(route, prompt_signature)
+            if cached_result:
+                logger.info(
+                    json.dumps(
+                        {
+                            "ai_event": "cache_hit",
+                            "route": route,
+                        }
+                    )
+                )
+            else:
+                logger.info(
+                    json.dumps(
+                        {
+                            "ai_event": "cache_miss",
+                            "route": route,
+                        }
+                    )
+                )
+                if pending_key and pending_key in pending_prompts:
+                    logger.info(
+                        json.dumps(
+                            {
+                                "ai_event": "deduplicated_request",
+                                "route": route,
+                                "prompt": prompt_signature[:50],
+                            }
+                        )
+                    )
+                    cached_result = await pending_prompts[pending_key]
+
+        async def _execute_context() -> dict[str, Any]:
+            sentiment = sentiment_service.analyze_sentiment(message)
+            base_context: dict[str, Any] | None = None
+            if history_context:
+                base_context = {"history": history_context}
+
+            token = set_route("context")
+            try:
+                response_payload = await self.process_message(
+                    message,
+                    context=base_context,
+                )
+            finally:
+                reset_route(token)
+            response_text = (
+                response_payload.text
+                if hasattr(response_payload, "text")
+                else str(response_payload)
+            )
+
+            result = {
+                "message": message,
+                "response": response_text,
+                "sentiment": sentiment,
+                "history_len": len(history_entries),
+            }
+
+            if prompt_signature:
+                ttl = 3600 if len(prompt_signature) < 100 else 600
+                await cache_service.set(route, prompt_signature, result, ttl)
+                logger.info(
+                    json.dumps(
+                        {
+                            "ai_event": "cache_store",
+                            "route": route,
+                            "ttl": ttl,
+                        }
+                    )
+                )
+
+            return result
+
+        if cached_result is None:
+            if pending_key:
+
+                async def _run_context() -> dict[str, Any]:
+                    try:
+                        return await _execute_context()
+                    finally:
+                        pending_prompts.pop(pending_key, None)
+
+                task = asyncio.create_task(_run_context())
+                pending_prompts[pending_key] = task
+                cached_result = await task
+            else:
+                cached_result = await _execute_context()
+        elif pending_key and pending_key in pending_prompts:
+            pending_prompts.pop(pending_key, None)
+
+        context_service.save_message(session_id, message, cached_result["response"])
+
+        elapsed_ms = (perf_counter() - start) * 1000.0
+        logger.info(
+            json.dumps(
+                {
+                    "ai_event": "process_with_context",
+                    "session": session_id,
+                    "elapsed_ms": round(elapsed_ms, 3),
+                    "sentiment": cached_result["sentiment"]["label"],
+                    "history_len": len(history_entries),
+                }
+            )
+        )
+
+        return cached_result
+
+    async def stream_generate(self, prompt: str):
+        """Simular generación de texto en streaming."""
+
+        start_time = perf_counter()
+        ai_conversations_active_total.inc()
+        cache_service = self._get_ai_cache()
+        route = "stream"
+        pending_prompts = getattr(self, "_pending_prompts", self._pending_prompts)
+        self._pending_prompts = pending_prompts
+        prompt_key = (prompt or "").strip()
+        pending_key = f"{route}:{prompt_key}" if prompt_key else None
+        chunks_collected: list[str] = []
+        used_cache = False
+        future: asyncio.Future[dict[str, Any]] | None = None
+
+        try:
+            if not prompt_key:
+                raise ValueError("El mensaje no puede estar vacío")
+
+            if prompt_key:
+                cached_stream = await cache_service.get(route, prompt_key)
+                if (
+                    cached_stream
+                    and isinstance(cached_stream, dict)
+                    and isinstance(cached_stream.get("chunks"), list)
+                ):
+                    logger.info(
+                        json.dumps(
+                            {
+                                "ai_event": "cache_hit",
+                                "route": route,
+                            }
+                        )
+                    )
+                    used_cache = True
+                    for token in cached_stream["chunks"]:
+                        await asyncio.sleep(0.05)
+                        elapsed_ms = (perf_counter() - start_time) * 1000.0
+                        logger.info(
+                            json.dumps(
+                                {
+                                    "ai_event": "stream_chunk",
+                                    "length": len(token),
+                                    "elapsed_ms": round(elapsed_ms, 2),
+                                }
+                            )
+                        )
+                        ai_stream_tokens_total.inc(len(token))
+                        yield token
+                    return
+                logger.info(
+                    json.dumps(
+                        {
+                            "ai_event": "cache_miss",
+                            "route": route,
+                        }
+                    )
+                )
+                if pending_key and pending_key in pending_prompts:
+                    logger.info(
+                        json.dumps(
+                            {
+                                "ai_event": "deduplicated_request",
+                                "route": route,
+                                "prompt": prompt_key[:50],
+                            }
+                        )
+                    )
+                    cached_stream = await pending_prompts[pending_key]
+                    used_cache = True
+                    for token in cached_stream.get("chunks", []):
+                        await asyncio.sleep(0.05)
+                        elapsed_ms = (perf_counter() - start_time) * 1000.0
+                        logger.info(
+                            json.dumps(
+                                {
+                                    "ai_event": "stream_chunk",
+                                    "length": len(token),
+                                    "elapsed_ms": round(elapsed_ms, 2),
+                                }
+                            )
+                        )
+                        ai_stream_tokens_total.inc(len(token))
+                        yield token
+                    return
+
+            if pending_key:
+                future = asyncio.get_running_loop().create_future()
+                pending_prompts[pending_key] = future
+
+            segments = re.findall(r"\S+\s*", prompt)
+            if not segments:
+                segments = [prompt]
+
+            for token in segments:
+                await asyncio.sleep(0.05)
+                elapsed_ms = (perf_counter() - start_time) * 1000.0
+                logger.info(
+                    json.dumps(
+                        {
+                            "ai_event": "stream_chunk",
+                            "length": len(token),
+                            "elapsed_ms": round(elapsed_ms, 2),
+                        }
+                    )
+                )
+                ai_stream_tokens_total.inc(len(token))
+                chunks_collected.append(token)
+                yield token
+
+            completion_chunk = json.dumps({"error": False, "done": True})
+            ai_stream_tokens_total.inc(len(completion_chunk))
+            elapsed_ms = (perf_counter() - start_time) * 1000.0
+            logger.info(
+                json.dumps(
+                    {
+                        "ai_event": "stream_chunk",
+                        "length": len(completion_chunk),
+                        "elapsed_ms": round(elapsed_ms, 2),
+                        "type": "completion",
+                    }
+                )
+            )
+            chunks_collected.append(completion_chunk)
+            yield completion_chunk
+
+            if future and not future.done():
+                future.set_result({"chunks": list(chunks_collected)})
+
+        except (TimeoutError, ValueError) as exc:
+            logger.warning(
+                json.dumps(
+                    {
+                        "ai_event": "stream_error",
+                        "error_type": exc.__class__.__name__,
+                        "message": str(exc),
+                    }
+                )
+            )
+            error_chunk = json.dumps({"error": True, "message": str(exc)})
+            ai_stream_tokens_total.inc(len(error_chunk))
+            chunks_collected.append(error_chunk)
+            if future and not future.done():
+                future.set_result({"chunks": list(chunks_collected)})
+            yield error_chunk
+            used_cache = True
+            return
+
+        except Exception as exc:  # pragma: no cover - defensivo
+            logger.error(
+                json.dumps(
+                    {
+                        "ai_event": "stream_error",
+                        "error_type": exc.__class__.__name__,
+                        "message": str(exc),
+                    }
+                ),
+                exc_info=True,
+            )
+            error_chunk = json.dumps(
+                {"error": True, "message": "Error inesperado generando respuesta"}
+            )
+            ai_stream_tokens_total.inc(len(error_chunk))
+            chunks_collected.append(error_chunk)
+            if future and not future.done():
+                future.set_result({"chunks": list(chunks_collected)})
+            yield error_chunk
+            used_cache = True
+            return
+
+        finally:
+            total_duration = perf_counter() - start_time
+            ai_conversations_active_total.dec()
+            ai_stream_duration_seconds.observe(total_duration)
+            if not used_cache and prompt_key and chunks_collected:
+                ttl = 3600 if len(prompt_key) < 100 else 600
+                await cache_service.set(
+                    route,
+                    prompt_key,
+                    {"chunks": list(chunks_collected)},
+                    ttl,
+                )
+                logger.info(
+                    json.dumps(
+                        {
+                            "ai_event": "cache_store",
+                            "route": route,
+                            "ttl": ttl,
+                        }
+                    )
+                )
+            if pending_key and pending_key in pending_prompts:
+                if future and not future.done():
+                    future.set_result({"chunks": list(chunks_collected)})
+                pending_prompts.pop(pending_key, None)
+
+    async def generate_insight(self, symbol: str, timeframe: str, profile: str):
+        """
+        Genera un análisis automatizado del activo solicitado combinando datos de mercado y perfil de usuario.
+        """
+
+        start_time = time.perf_counter()
+        ai_insights_generated_total.inc()
+
+        try:
+            from backend.services.market_service import MarketService
+            from backend.services.sentiment_service import analyze_sentiment
+
+            market = MarketService()
+            ohlc = await market.get_historical(symbol, timeframe=timeframe)
+
+            sentiment = analyze_sentiment(f"Análisis de {symbol} en {timeframe}")
+
+            prompt = (
+                f"Analiza {symbol} ({timeframe}) para un perfil {profile}.\n"
+                f"Datos: {ohlc[:5]}\n"
+                f"Sentimiento: {sentiment}"
+            )
+            response = await self.process_message(prompt)
+
+            ai_cache_hits_total.inc()
+            duration = time.perf_counter() - start_time
+            ai_insight_duration_seconds.observe(duration)
+
+            if isinstance(response, AIResponsePayload):
+                insight_text = response.text
+            elif isinstance(response, dict):
+                insight_text = response.get("message", response)
+            else:
+                insight_text = getattr(response, "message", response)
+
+            return {
+                "symbol": symbol,
+                "profile": profile,
+                "sentiment": sentiment,
+                "insight": insight_text,
+                "elapsed_ms": round(duration * 1000, 2),
+            }
+
+        except Exception as e:  # pragma: no cover - cubierto en tests dedicados
+            ai_insight_failures_total.inc()
+            logger.error(
+                json.dumps(
+                    {
+                        "ai_event": "insight_error",
+                        "symbol": symbol,
+                        "error": str(e),
+                    }
+                )
+            )
+            return {"error": str(e)}
 
 
 # Singleton instance

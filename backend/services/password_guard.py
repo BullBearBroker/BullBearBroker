@@ -76,7 +76,9 @@ class PasswordBreachDetector:
         ):
             return True
 
-        sha1_hash = hashlib.sha1(candidate.encode("utf-8")).hexdigest()
+        sha1_hash = hashlib.sha1(
+            candidate.encode("utf-8")
+        ).hexdigest()  # nosec B324: HIBP lookup only, not for security
         return bool(
             sha1_hash in self._sha1_passwords
             or sha1_hash.upper() in self._sha1_passwords

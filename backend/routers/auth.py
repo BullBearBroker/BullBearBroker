@@ -8,7 +8,7 @@ from contextlib import nullcontext
 from datetime import UTC, datetime, timedelta
 
 # [Codex] cambiado - se añaden tipos para risk profile
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 from uuid import UUID, uuid4
 
 import jwt
@@ -31,6 +31,9 @@ from backend.database import get_db
 from backend.models.refresh_token import RefreshToken
 from backend.models.user import User
 from backend.schemas.auth import RefreshRequest, TokenPair
+
+# ✅ Codex fix: Import audit logging helper
+from backend.services.audit_service import AuditService
 from backend.services.captcha_service import CaptchaVerificationError, verify_captcha
 from backend.services.password_guard import is_password_compromised
 from backend.services.user_service import (
@@ -499,12 +502,17 @@ async def login(
         if span is not None:
             span.set_attribute("outcome", outcome)
 
-        return TokenPair(
+        token_pair = TokenPair(
             access_token=access_token,
             refresh_token=refresh_token,
             access_expires_at=access_expires.isoformat(),
             refresh_expires_at=refresh_expires.isoformat(),
         )
+
+        # ✅ Codex fix: Record successful login event
+        AuditService.log_event(str(getattr(user, "id", None)), "login_success")
+
+        return token_pair
 
 
 @router.post(
@@ -602,16 +610,34 @@ def refresh_token(
 def logout(
     req: LogoutRequest, db: Annotated[Session, Depends(get_db)]
 ) -> dict[str, str]:
+    # ✅ Codex fix: Extract user information for auditing without altering flow
+    refresh_payload: dict[str, Any] | None = None
+    user_id_for_audit: str | None = None
+    if req.refresh_token:
+        try:
+            refresh_payload = decode_refresh(req.refresh_token)
+        except (jwt.PyJWTError, ValueError) as err:
+            if req.revoke_all:
+                raise HTTPException(
+                    status_code=400, detail="refresh_token invalid"
+                ) from err
+        else:
+            sub_value = refresh_payload.get("sub")
+            if sub_value:
+                user_id_for_audit = str(sub_value)
+
     if req.revoke_all:
         if not req.refresh_token:
             raise HTTPException(status_code=400, detail="refresh_token required")
+        if refresh_payload is None:
+            raise HTTPException(status_code=400, detail="refresh_token invalid")
+
+        sub = refresh_payload.get("sub")
+        if not sub:
+            raise HTTPException(status_code=400, detail="refresh_token invalid")
         try:
-            payload = decode_refresh(req.refresh_token)
-            sub = payload.get("sub")
-            if not sub:
-                raise HTTPException(status_code=400, detail="refresh_token invalid")
-            sub_uuid = UUID(sub)
-        except (jwt.PyJWTError, ValueError) as err:
+            sub_uuid = UUID(str(sub))
+        except ValueError as err:
             raise HTTPException(
                 status_code=400, detail="refresh_token invalid"
             ) from err
@@ -621,6 +647,7 @@ def logout(
             db.commit()
         else:
             user_service.revoke_all_refresh_tokens(sub_uuid)
+        AuditService.log_event(user_id_for_audit, "logout")
         return {"detail": "All sessions revoked"}
 
     if not req.refresh_token:
@@ -632,6 +659,7 @@ def logout(
     else:
         user_service.revoke_refresh_token(req.refresh_token)
 
+    AuditService.log_event(user_id_for_audit, "logout")
     return {"detail": "Session revoked"}
 
 
@@ -707,6 +735,8 @@ def logout_all(
         raise HTTPException(status_code=401, detail=str(exc)) from exc
 
     user_service.revoke_all_tokens(user.id)
+    # ✅ Codex fix: Emit logout audit event for mass revocation
+    AuditService.log_event(str(user.id), "logout")
     return {"detail": "All sessions revoked"}
 
 

@@ -12,7 +12,8 @@ except ImportError:  # pragma: no cover
     from backend.models.base import Base  # type: ignore[no-redef]
 
 if TYPE_CHECKING:
-    from backend.models.user import User
+    pass
+
 
 class PushSubscription(Base):
     __tablename__ = "push_subscriptions"
@@ -22,6 +23,9 @@ class PushSubscription(Base):
     endpoint = Column(String, nullable=False, unique=True)
     auth = Column(String, nullable=False)
     p256dh = Column(String, nullable=False)
+    expiration_time = Column(
+        DateTime(timezone=True), nullable=True
+    )  # ✅ Codex fix: guardamos la expiración opcional enviada por el navegador.
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="push_subscriptions")

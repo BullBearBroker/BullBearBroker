@@ -157,7 +157,8 @@ async def test_metrics_endpoint_returns_plain_text() -> None:
         transport=ASGITransport(app=app, client=("metrics-test", 80)),
         base_url="http://testserver",
     ) as client:
-        response = await client.get("/metrics")
+        # ✅ Codex fix: Metrics endpoint now lives under /api/metrics
+        response = await client.get("/api/metrics")
 
     assert response.status_code == 200
     assert response.text.strip() != ""

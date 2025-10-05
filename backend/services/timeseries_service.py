@@ -1,7 +1,6 @@
-# backend/services/timeseries_service.py
-
 from __future__ import annotations
 
+import logging
 import os
 from collections import OrderedDict
 from collections.abc import Mapping, Sequence
@@ -9,6 +8,11 @@ from datetime import UTC, datetime
 from typing import Any
 
 import httpx
+
+# backend/services/timeseries_service.py
+
+
+logger = logging.getLogger(__name__)
 
 _HTTP_TIMEOUT_SECONDS = 15.0
 _HTTP_CONNECT_TIMEOUT_SECONDS = 10.0
@@ -258,7 +262,7 @@ async def get_stock_closes(
                     "volumes": volumes,  # [Codex] nuevo
                 }
         except Exception:
-            pass  # seguimos al fallback
+            pass  # nosec B110: defensive fallback
 
     # Alpha Vantage
     if not ALPHA_VANTAGE_API_KEY:
@@ -396,9 +400,7 @@ async def get_forex_closes(
                     "volumes": volumes,  # [Codex] nuevo
                 }
         except Exception:
-            pass
-
-    # Alpha Vantage
+            pass  # nosec B110: defensive fallback
     if not ALPHA_VANTAGE_API_KEY:
         raise RuntimeError("No hay claves para series históricas de forex")
 

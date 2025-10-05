@@ -18,8 +18,9 @@ from backend.tests._dependency_stubs import ensure as ensure_test_dependencies
 
 ensure_test_dependencies()
 
-from backend.main import app  # noqa: E402
-from backend.routers import alerts as alerts_router, auth as auth_router  # noqa: E402
+from backend.main import app  # noqa: E402  # isort: skip
+from backend.routers import alerts as alerts_router  # noqa: E402  # isort: skip
+from backend.routers import auth as auth_router  # isort: skip
 
 
 @dataclass

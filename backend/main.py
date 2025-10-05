@@ -1,7 +1,10 @@
 import asyncio
 import json
 import os
-from contextlib import asynccontextmanager
+from contextlib import (  # ✅ Codex fix: limpieza segura de tareas realtime
+    asynccontextmanager,
+    suppress,
+)
 
 import redis.asyncio as redis
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
@@ -12,15 +15,39 @@ from fastapi_limiter import FastAPILimiter
 from backend import database as database_module
 from backend.core.http_logging import RequestLogMiddleware
 from backend.core.logging_config import get_logger, log_event
-from backend.core.metrics import MetricsMiddleware, metrics_router
+from backend.core.metrics import MetricsMiddleware
 from backend.core.tracing import configure_tracing
+
+# ✅ Codex fix: Import global error handlers
+from backend.middleware.error_handler import register_error_handlers
+
+# ✅ Codex fix: Import structured logging middleware
+from backend.middleware.logging_middleware import LoggingMiddleware
 from backend.models.base import Base
 
 # Routers de la app
-from backend.routers import health  # nuevo router de salud
-from backend.routers import ai, alerts, auth, indicators, markets, news, portfolio, push
+# ✅ Codex fix: Import Prometheus metrics router
+# nuevo router de salud
+from backend.routers import (  # ✅ Codex fix: registrar gateway WebSocket realtime
+    ai,
+    ai_context,
+    ai_insights,
+    ai_stream,
+    alerts,
+    auth,
+    health,
+    indicators,
+    markets,
+    metrics,
+    news,
+    notifications,
+    portfolio,
+    push,
+    realtime,
+)
 from backend.services.alert_service import alert_service
 from backend.services.integration_reporter import log_api_integration_report
+from backend.services.notification_dispatcher import notification_dispatcher
 from backend.services.websocket_manager import AlertWebSocketManager
 from backend.utils.config import ENV, Config
 
@@ -123,6 +150,17 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # pragma: no cover - logging defensivo
         logger.warning("integration_report_failed", error=str(exc))
 
+    app.state.realtime_service = (
+        notification_dispatcher.realtime
+    )  # ✅ Codex fix: servicio global para WebSocket realtime
+    app.state.notification_dispatcher = notification_dispatcher
+    app.state.realtime_price_task = (
+        None  # ✅ Codex fix: inicializar referencia a tarea de precios
+    )
+    app.state.realtime_insights_task = (
+        None  # ✅ Codex fix: inicializar referencia a tarea de insights
+    )
+
     yield  # ⬅️ Aquí FastAPI empieza a servir requests
 
     if database_setup_failed and database_setup_error_message is not None:
@@ -135,6 +173,23 @@ async def lifespan(app: FastAPI):
 
     # 🔹 Shutdown
     # Si necesitas liberar recursos (ej: cerrar redis) hazlo aquí
+    realtime_service = getattr(app.state, "realtime_service", None)
+    if realtime_service is not None:
+        with suppress(
+            Exception
+        ):  # ✅ Codex fix: tolerar errores al cerrar conexiones realtime
+            await realtime_service.close_all()
+
+    for task_name in ("realtime_price_task", "realtime_insights_task"):
+        task = getattr(app.state, task_name, None)
+        if task is not None:
+            task.cancel()
+            with suppress(
+                asyncio.CancelledError
+            ):  # ✅ Codex fix: cancelar tareas de broadcast en shutdown
+                await task
+            setattr(app.state, task_name, None)
+
     try:
         if "redis_client" in locals() and redis_client:
             await redis_client.aclose()
@@ -216,6 +271,11 @@ app.add_middleware(
 )
 app.add_middleware(MetricsMiddleware)
 app.add_middleware(RequestLogMiddleware)
+# ✅ Codex fix: Register structured logging middleware
+app.add_middleware(LoggingMiddleware)
+
+# ✅ Codex fix: Enable global error handlers
+register_error_handlers(app)
 
 
 # Endpoint raíz (health básico de la API)
@@ -225,13 +285,22 @@ def read_root():
 
 
 # ✅ Routers registrados con prefijo global /api
-app.include_router(metrics_router)
+app.include_router(metrics.router, prefix="/api")
 app.include_router(health.router, prefix="/api/health", tags=["health"])
 app.include_router(alerts.router, prefix="/api/alerts", tags=["alerts"])
 app.include_router(markets.router, prefix="/api/markets", tags=["markets"])
 app.include_router(news.router, prefix="/api/news", tags=["news"])
+app.include_router(
+    realtime.router, prefix="/api/realtime", tags=["realtime"]
+)  # ✅ Codex fix: habilitar gateway WebSocket realtime
 app.include_router(auth.router)
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
+app.include_router(ai_context.router, prefix="/api/ai", tags=["ai"])
+app.include_router(ai_insights.router, prefix="/api/ai", tags=["ai"])
+app.include_router(ai_stream.router, prefix="/api/ai", tags=["ai"])
+app.include_router(
+    notifications.router, prefix="/api/notifications", tags=["notifications"]
+)
 app.include_router(push.router, prefix="/api/push", tags=["push"])
 app.include_router(portfolio.router, prefix="/api/portfolio", tags=["portfolio"])
 app.include_router(indicators.router)
