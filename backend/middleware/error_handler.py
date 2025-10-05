@@ -7,6 +7,7 @@ import logging
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
@@ -29,7 +30,11 @@ def register_error_handlers(app: FastAPI) -> None:
             "detail": exc.detail,
         }
         logging.error(json.dumps(log_data))
-        return JSONResponse({"detail": exc.detail}, status_code=exc.status_code)
+        return JSONResponse(
+            {"detail": exc.detail},
+            status_code=exc.status_code,
+            headers=exc.headers if exc.headers else None,
+        )
 
     # ✅ Codex fix: Provide consistent validation error responses
     @app.exception_handler(RequestValidationError)
@@ -37,15 +42,23 @@ def register_error_handlers(app: FastAPI) -> None:
         request: Request,
         exc: RequestValidationError,
     ) -> JSONResponse:
-        log_data: dict[str, Any] = {
-            "service": "backend",
-            "event": "validation_error",
-            "method": request.method,
-            "path": request.url.path,
-            "status": 422,
-            "errors": exc.errors(),
-        }
-        logging.error(json.dumps(log_data))
+        payload: Any = None
+        if hasattr(request, "json"):
+            try:
+                payload = await request.json()
+            except Exception:  # pragma: no cover - defensive safety
+                payload = None
+
+        logging.error(
+            json.dumps(
+                {
+                    "service": "alerts",
+                    "event": "alert_validation_error",
+                    "detail": str(exc),
+                    "payload": jsonable_encoder(payload),
+                }
+            )
+        )
         return JSONResponse({"error": "Validation Error"}, status_code=422)
 
     # ✅ Codex fix: Capture unexpected exceptions globally
