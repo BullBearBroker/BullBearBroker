@@ -14,6 +14,9 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp
 
+# ✅ Codex fix: Import Prometheus metrics for HTTP instrumentation
+from backend.routers.metrics import http_requests_total, request_latency_seconds
+
 
 class LoggingMiddleware(BaseHTTPMiddleware):
     """Middleware that records structured JSON logs for each HTTP request."""
@@ -43,7 +46,17 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             status_code = 500
             raise
         finally:
-            duration_ms = (time.monotonic() - start_time) * 1000
+            duration_seconds = time.monotonic() - start_time
+            # ✅ Codex fix: Publish request metrics for observability
+            request_latency_seconds.labels(path=request.url.path).observe(
+                duration_seconds
+            )
+            http_requests_total.labels(
+                method=request.method,
+                path=request.url.path,
+                status=str(status_code),
+            ).inc()
+            duration_ms = duration_seconds * 1000
             timestamp = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
             log_data = {
                 "service": "backend",
