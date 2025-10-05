@@ -1,6 +1,8 @@
 import asyncio
+import json  # ✅ Codex fix: structured logging support
 import logging
 import re
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any
@@ -9,6 +11,12 @@ from urllib.parse import urljoin  # [Codex] nuevo
 import aiohttp
 
 from backend.core.metrics import AI_PROVIDER_FAILOVER_TOTAL
+from backend.metrics.ai_metrics import (  # ✅ Codex fix: IA Prometheus metrics
+    ai_failures_total,
+    ai_fallbacks_total,
+    ai_latency_seconds,
+    ai_requests_total,
+)
 from backend.utils.config import Config
 
 from .mistral_service import mistral_service
@@ -30,6 +38,27 @@ except ImportError:  # pragma: no cover
 
 
 logger = logging.getLogger(__name__)
+
+
+def timestamp() -> float:  # ✅ Codex fix: helper for structured logs
+    return time.time()
+
+
+PROVIDER_TIMEOUTS: dict[str, float] = {  # ✅ Codex fix: adaptive timeouts por proveedor
+    "mistral": 6.0,
+    "huggingface": 8.0,
+    "ollama": 5.0,
+    "local": 2.0,
+}
+
+
+@dataclass
+class CircuitBreakerState:  # ✅ Codex fix: estado del circuit breaker
+    state: str = "closed"
+    failure_count: int = 0
+    last_failure_time: float = 0.0
+    next_retry_time: float = 0.0
+    last_error: str | None = None
 
 
 @dataclass
@@ -69,9 +98,61 @@ class AIService:
         self.use_real_ai = True  # Mantener compatibilidad con otros servicios
         self._api_base_url = Config.API_BASE_URL.rstrip("/")
         # [Codex] nuevo - base para indicadores
+        self._circuit_breakers: dict[str, CircuitBreakerState] = {}
+        self._circuit_breaker_threshold = 3  # ✅ Codex fix: umbral de fallos
+        self._circuit_breaker_cooldown = 60.0
+        self._max_retries = 3  # ✅ Codex fix: configurable para pruebas
+        self._last_provider_attempted: str | None = None
 
     def set_market_service(self, market_service):
         self.market_service = market_service
+
+    def _get_circuit(self, provider: str) -> CircuitBreakerState:
+        return self._circuit_breakers.setdefault(provider, CircuitBreakerState())
+
+    def _reset_circuit(self, provider: str) -> None:
+        circuit = self._get_circuit(provider)
+        circuit.state = "closed"
+        circuit.failure_count = 0
+        circuit.next_retry_time = 0.0
+        circuit.last_error = None
+
+    def _register_failure(self, provider: str, error: Exception) -> CircuitBreakerState:
+        circuit = self._get_circuit(provider)
+        circuit.failure_count += 1
+        circuit.last_failure_time = timestamp()
+        circuit.last_error = error.__class__.__name__
+        if circuit.failure_count >= self._circuit_breaker_threshold:
+            circuit.state = "open"
+            circuit.next_retry_time = circuit.last_failure_time + self._circuit_breaker_cooldown
+        return circuit
+
+    def _ready_for_attempt(self, provider: str) -> bool:
+        circuit = self._get_circuit(provider)
+        now = timestamp()
+        if circuit.state == "open" and now >= circuit.next_retry_time:
+            circuit.state = "half_open"
+            return True
+        if circuit.state == "open":
+            return False
+        return True
+
+    def _log_provider_call(
+        self,
+        provider_name: str,
+        success: bool,
+        duration_ms: float,
+        fallback_used: bool,
+    ) -> None:
+        payload = {
+            "ai_event": "provider_call",
+            "provider": provider_name,
+            "success": success,
+            "duration_ms": round(duration_ms, 3),
+            "fallback_used": fallback_used,
+            "timestamp": timestamp(),
+        }
+        logger.info(json.dumps(payload))  # ✅ Codex fix: logs JSON estructurados
 
     async def process_message(
         self, message: str, context: dict[str, Any] = None
@@ -184,12 +265,22 @@ class AIService:
             ai_text, provider = await self._call_with_backoff(providers)
             logger.info("AI response generated using provider %s", provider)
         except Exception as exc:
+            last_provider = self._last_provider_attempted or "unknown"
             logger.error(
                 "Falling back to local response after provider failures: %s", exc
             )
             AI_PROVIDER_FAILOVER_TOTAL.labels(provider="local").inc()
+            ai_fallbacks_total.labels(
+                from_provider=last_provider,
+                to_provider="local",
+            ).inc()
+            start_local = time.perf_counter()
             ai_text = await self.generate_response(message)
+            duration_ms = (time.perf_counter() - start_local) * 1000
             provider = "local"
+            ai_latency_seconds.labels(provider=provider).observe(duration_ms / 1000)
+            ai_requests_total.labels(provider=provider, status="success").inc()
+            self._log_provider_call(provider, True, duration_ms, True)
             logger.info("AI response generated using local fallback")
 
         final_parts: list[str] = []
@@ -237,22 +328,81 @@ class AIService:
         last_error: Exception | None = None
         total_providers = len(providers)
         for index, (provider_name, provider) in enumerate(providers):
+            self._last_provider_attempted = provider_name
             backoff = 1
-            for attempt in range(1, 4):
+            if not self._ready_for_attempt(provider_name):
+                fallback_used = index < total_providers - 1
+                self._log_provider_call(provider_name, False, 0.0, fallback_used)
+                if fallback_used:
+                    AI_PROVIDER_FAILOVER_TOTAL.labels(provider=provider_name).inc()
+                    next_provider = providers[index + 1][0]
+                    ai_fallbacks_total.labels(
+                        from_provider=provider_name,
+                        to_provider=next_provider,
+                    ).inc()
+                continue
+
+            for attempt in range(1, self._max_retries + 1):
+                start = time.perf_counter()
                 try:
-                    response = await provider()
+                    timeout_seconds = PROVIDER_TIMEOUTS.get(provider_name, 10.0)
+                    response = await asyncio.wait_for(provider(), timeout=timeout_seconds)
                     if response and response.strip():
+                        duration_ms = (time.perf_counter() - start) * 1000
+                        ai_latency_seconds.labels(provider=provider_name).observe(
+                            duration_ms / 1000
+                        )
+                        ai_requests_total.labels(
+                            provider=provider_name, status="success"
+                        ).inc()
+                        self._reset_circuit(provider_name)
+                        self._log_provider_call(
+                            provider_name,
+                            True,
+                            duration_ms,
+                            index > 0,
+                        )
                         return response, provider_name
                     raise ValueError(f"Respuesta vacía de {provider_name}")
+                except asyncio.CancelledError:
+                    raise
                 except Exception as exc:
                     last_error = exc
+                    duration_ms = (time.perf_counter() - start) * 1000
+                    ai_latency_seconds.labels(provider=provider_name).observe(
+                        duration_ms / 1000
+                    )
+                    ai_requests_total.labels(
+                        provider=provider_name, status="failure"
+                    ).inc()
+                    ai_failures_total.labels(
+                        provider=provider_name,
+                        error_type=exc.__class__.__name__,
+                    ).inc()
+                    circuit = self._register_failure(provider_name, exc)
                     logger.warning(
                         "Provider %s attempt %d failed: %s",
                         provider_name,
                         attempt,
                         exc,
                     )
-                    if attempt < 3:
+                    fallback_flag = (
+                        attempt >= self._max_retries and index < total_providers - 1
+                    )
+                    self._log_provider_call(
+                        provider_name,
+                        False,
+                        duration_ms,
+                        fallback_flag,
+                    )
+                    if circuit.state == "open":
+                        logger.error(
+                            "Provider %s circuit breaker opened after %d failures",
+                            provider_name,
+                            circuit.failure_count,
+                        )
+                        break
+                    if attempt < self._max_retries:
                         await asyncio.sleep(backoff)
                         backoff *= 2
                     else:
@@ -265,6 +415,11 @@ class AIService:
 
             if index < total_providers - 1:
                 AI_PROVIDER_FAILOVER_TOTAL.labels(provider=provider_name).inc()
+                next_provider = providers[index + 1][0]
+                ai_fallbacks_total.labels(
+                    from_provider=provider_name,
+                    to_provider=next_provider,
+                ).inc()
 
         if last_error:
             raise last_error
