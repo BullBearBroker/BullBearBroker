@@ -1,16 +1,48 @@
 # backend/routers/notifications.py
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
+from typing import List  # 🧩 Bloque 9A
 
 from backend.core.config import VAPID_PUBLIC_KEY
 from backend.database import get_db
 from backend.services.audit_service import AuditService
 from backend.services.notification_dispatcher import NotificationDispatcher
+from backend.services.notification_dispatcher import manager  # 🧩 Bloque 9A
 from backend.services.push_service import PushService
 from backend.services.realtime_service import RealtimeService
+from backend.schemas.notifications import NotificationEvent  # 🧩 Bloque 9A
 
 # 🧩 Bloque 8A
 router = APIRouter(prefix="/api/notifications", tags=["notifications"])
+
+
+# 🧩 Bloque 9A
+_LAST_EVENTS: list[NotificationEvent] = []
+
+
+# 🧩 Bloque 9A
+def _append_event(e: NotificationEvent, *, keep: int = 100) -> None:
+    _LAST_EVENTS.append(e)
+    if len(_LAST_EVENTS) > keep:
+        del _LAST_EVENTS[0 : len(_LAST_EVENTS) - keep]
+
+
+# 🧩 Bloque 9A
+@router.get("/logs", response_model=List[NotificationEvent])
+def get_recent_logs() -> list[NotificationEvent]:
+    # Fallback para polling en el frontend (SWR)
+    return _LAST_EVENTS
+
+
+# 🧩 Bloque 9A
+@router.post("/test/broadcast", response_model=NotificationEvent)
+async def post_test_broadcast() -> NotificationEvent:
+    # Utilidad para QA manual: crea evento y hace broadcast
+    e = NotificationEvent(title="Test broadcast", body="Mensaje de prueba (backend)")
+    _append_event(e)
+    # Como es ruta de prueba, hacemos broadcast directo en el canal WS
+    await manager.broadcast(e)
+    return e
 
 
 @router.get("/vapid-key")
@@ -57,4 +89,12 @@ async def broadcast_test(request: Request):
     )
 
     await dispatcher.broadcast_event("manual", payload)
+    # 🧩 Bloque 9A
+    event = NotificationEvent(
+        title=str(payload.get("title") or "Manual broadcast"),
+        body=str(payload.get("body") or payload.get("message") or ""),
+        meta={"source": "manual-broadcast"},
+    )
+    _append_event(event)
+    await manager.broadcast(event)
     return {"status": "ok", "sent": len(str(payload))}

@@ -41,6 +41,7 @@ from backend.routers import (  # ✅ Codex fix: registrar gateway WebSocket real
     metrics,
     news,
     notifications,
+    notifications_ws,  # 🧩 Bloque 9A
     portfolio,
     push,
     realtime,
@@ -299,6 +300,8 @@ app.include_router(ai_context.router, prefix="/api/ai", tags=["ai"])
 app.include_router(ai_insights.router, prefix="/api/ai", tags=["ai"])
 app.include_router(ai_stream.router, prefix="/api/ai", tags=["ai"])
 app.include_router(notifications.router)
+# 🧩 Bloque 9A
+app.include_router(notifications_ws.router)
 app.include_router(push.router, prefix="/api/push", tags=["push"])
 app.include_router(portfolio.router, prefix="/api/portfolio", tags=["portfolio"])
 app.include_router(indicators.router)
