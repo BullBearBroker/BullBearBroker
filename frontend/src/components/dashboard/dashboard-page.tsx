@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { getIndicators, sendChatMessage } from "@/lib/api"; // [Codex] nuevo
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useHistoricalData } from "@/hooks/useHistoricalData"; // [Codex] nuevo
+import { useRealtime } from "@/hooks/useRealtime"; // ✅ Codex fix: integración realtime en dashboard
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 
 function DashboardPageContent() {
@@ -26,6 +27,8 @@ function DashboardPageContent() {
   const sidebarToken = useMemo(() => token ?? undefined, [token]);
 
   const { enabled: pushEnabled, error: pushError } = usePushNotifications(token ?? undefined);
+
+  const { connected: realtimeConnected, data: realtimeData } = useRealtime(); // ✅ Codex fix: estado de conexión realtime
 
   const [indicatorData, setIndicatorData] = useState<any | null>(null); // [Codex] nuevo
   const [indicatorSymbol, setIndicatorSymbol] = useState("BTCUSDT"); // [Codex] nuevo
@@ -113,6 +116,53 @@ function DashboardPageContent() {
   const historicalInterval = indicatorData?.interval ?? "1h"; // [Codex] nuevo
   const historicalMarket = (indicatorData?.type as "auto" | "crypto" | "stock" | "equity" | "forex" | undefined) ?? "auto"; // [Codex] nuevo
 
+  const realtimeHighlight = useMemo(() => {
+    if (!realtimeData || typeof realtimeData !== "object") {
+      return null;
+    }
+
+    const payload = realtimeData as Record<string, unknown>;
+    const type = typeof payload.type === "string" ? payload.type : null;
+
+    if (type === "price" && typeof payload.symbol === "string") {
+      const rawPrice = payload.price;
+      const numericPrice =
+        typeof rawPrice === "number"
+          ? rawPrice
+          : typeof rawPrice === "string"
+          ? Number(rawPrice)
+          : null;
+
+      if (numericPrice !== null && Number.isFinite(numericPrice)) {
+        return `${payload.symbol} → $${numericPrice.toLocaleString(undefined, {
+          maximumFractionDigits: 2,
+        })}`;
+      }
+    }
+
+    if (type === "insight") {
+      const content =
+        typeof payload.content === "string"
+          ? payload.content
+          : typeof payload.message === "string"
+          ? payload.message
+          : null;
+
+      if (content) {
+        if (typeof payload.symbol === "string") {
+          return `${payload.symbol} → ${content}`;
+        }
+        return content;
+      }
+    }
+
+    if (typeof payload.message === "string") {
+      return payload.message;
+    }
+
+    return null;
+  }, [realtimeData]); // ✅ Codex fix: resumen legible del último evento
+
   const {
     data: historicalData,
     error: historicalError,
@@ -175,6 +225,19 @@ function DashboardPageContent() {
             {pushError}
           </div>
         )}
+        <div className="p-2 text-xs">
+          <span className={realtimeConnected ? "text-green-500" : "text-red-500"}>
+            {realtimeConnected ? "🟢 Conectado a Realtime" : "🔴 Desconectado"}
+          </span>
+          {realtimeHighlight && (
+            <p className="mt-1 text-foreground">{realtimeHighlight}</p>
+          )}
+          {realtimeData && (
+            <pre className="text-gray-400 mt-2">
+              {JSON.stringify(realtimeData, null, 2)}
+            </pre>
+          )}
+        </div>
         <section
           className="grid flex-1 gap-6 lg:grid-cols-2 xl:grid-cols-[2fr_1fr]"
           data-testid="dashboard-modules"
