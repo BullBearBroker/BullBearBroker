@@ -22,7 +22,18 @@ from backend.models.base import Base
 
 # Routers de la app
 from backend.routers import health  # nuevo router de salud
-from backend.routers import ai, ai_stream, alerts, auth, indicators, markets, news, portfolio, push
+from backend.routers import (
+    ai,
+    ai_context,
+    ai_stream,
+    alerts,
+    auth,
+    indicators,
+    markets,
+    news,
+    portfolio,
+    push,
+)
 # ✅ Codex fix: Import Prometheus metrics router
 from backend.routers import metrics
 from backend.services.alert_service import alert_service
@@ -243,6 +254,7 @@ app.include_router(markets.router, prefix="/api/markets", tags=["markets"])
 app.include_router(news.router, prefix="/api/news", tags=["news"])
 app.include_router(auth.router)
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
+app.include_router(ai_context.router, prefix="/api/ai", tags=["ai"])
 app.include_router(ai_stream.router, prefix="/api/ai", tags=["ai"])
 app.include_router(push.router, prefix="/api/push", tags=["push"])
 app.include_router(portfolio.router, prefix="/api/portfolio", tags=["portfolio"])
