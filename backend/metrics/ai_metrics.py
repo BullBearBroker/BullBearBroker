@@ -84,3 +84,15 @@ ai_adaptive_timeouts_total = Counter(
     "ai_adaptive_timeouts_total",
     "Timeouts adaptativos activados",
 )
+
+
+ai_insights_generated_total = Counter(
+    "ai_insights_generated_total", "Número total de insights generados por IA"
+)
+ai_insight_duration_seconds = Histogram(
+    "ai_insight_duration_seconds", "Duración de generación de insights de IA"
+)
+ai_insight_failures_total = Counter(
+    "ai_insight_failures_total",
+    "Errores ocurridos durante la generación de insights IA",
+)

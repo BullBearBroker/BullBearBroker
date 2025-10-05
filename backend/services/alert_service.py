@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 from collections.abc import Awaitable
@@ -81,6 +82,7 @@ class AlertService:
         )
         self._discord_token = Config.DISCORD_BOT_TOKEN
         self._discord_application_id = Config.DISCORD_APPLICATION_ID
+        self.logger = LOGGER
 
     def register_websocket_manager(self, manager) -> None:
         """Permite enviar notificaciones en tiempo real mediante websockets."""
@@ -192,6 +194,38 @@ class AlertService:
                 LOGGER.warning("AlertService: error notificando por WebSocket: %s", exc)
 
         await self._notify_telegram(alert, message)
+
+    async def suggest_alert_from_insight(
+        self, symbol: str, insight: str, threshold: float = 0.05
+    ):
+        """
+        Crea una alerta sugerida automáticamente basada en la información de un insight IA.
+        """
+
+        normalized = (insight or "").lower()
+        if "compra" in normalized:
+            condition = f"price_change > {threshold}"
+        elif "venta" in normalized:
+            condition = f"price_change < -{threshold}"
+        else:
+            condition = f"abs(price_change) > {threshold}"
+
+        alert_data = {
+            "symbol": symbol,
+            "condition": condition,
+            "active": True,
+            "source": "ai_insight",
+        }
+        self.logger.info(
+            json.dumps(
+                {
+                    "alert_event": "suggested_alert",
+                    "symbol": symbol,
+                    "condition": condition,
+                }
+            )
+        )
+        return alert_data
 
     async def _notify_telegram(self, alert: Alert, message: str) -> None:
         chat_id = Config.TELEGRAM_DEFAULT_CHAT_ID
