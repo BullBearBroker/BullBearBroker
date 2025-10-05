@@ -511,6 +511,16 @@ export interface PushSubscriptionResponse {
   id: string;
 }
 
+// 🧩 Bloque 8A
+export async function fetchVapidPublicKey(): Promise<string> {
+  const res = await fetch("/api/notifications/vapid-key");
+  if (!res.ok) {
+    throw new Error("Failed to fetch VAPID public key");
+  }
+  const data = await res.json();
+  return data.vapidPublicKey;
+}
+
 export function subscribePush(
   payload: PushSubscriptionPayload,
   token: string

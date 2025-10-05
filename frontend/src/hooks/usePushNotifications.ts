@@ -2,7 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { subscribePush, testNotificationDispatcher } from "@/lib/api";
+import {
+  fetchVapidPublicKey,
+  subscribePush,
+  testNotificationDispatcher,
+} from "@/lib/api";
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -50,6 +54,44 @@ function nowLabel() {
   return new Date().toLocaleTimeString();
 }
 
+// 🧩 Bloque 8A - Validar coincidencia de claves
+export async function registerPushSubscription(
+  registration?: ServiceWorkerRegistration
+): Promise<PushSubscription> {
+  const serverKey = await fetchVapidPublicKey();
+  const localKey = process.env.NEXT_PUBLIC_VAPID_KEY ?? "";
+
+  if (!serverKey) {
+    throw new Error("Missing VAPID public key from backend.");
+  }
+
+  if (localKey && localKey !== serverKey) {
+    throw new Error("VAPID public key mismatch between frontend and backend.");
+  }
+
+  const swContainer = navigator.serviceWorker;
+  const swReg =
+    registration ??
+    ("ready" in swContainer && swContainer.ready
+      ? await swContainer.ready
+      : undefined);
+
+  if (!swReg) {
+    throw new Error("Service worker registration unavailable.");
+  }
+
+  const existingSubscription = await swReg.pushManager.getSubscription();
+  if (existingSubscription) {
+    return existingSubscription;
+  }
+
+  const applicationServerKey = urlBase64ToUint8Array(serverKey);
+  return swReg.pushManager.subscribe({
+    applicationServerKey,
+    userVisibleOnly: true,
+  });
+}
+
 export function usePushNotifications(token?: string | null): PushNotificationsState {
   const [enabled, setEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -78,7 +120,15 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
   }, []);
 
   const requestPermission = useCallback(async () => {
+    if (permission === "unsupported") {
+      return "unsupported";
+    }
     if (typeof window === "undefined" || !("Notification" in window)) {
+      setPermission("unsupported");
+      return "unsupported";
+    }
+    if (!("PushManager" in window)) {
+      console.warn("🚫 Push notifications not supported in this browser.");
       setPermission("unsupported");
       return "unsupported";
     }
@@ -93,13 +143,20 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
         : "Permiso de notificaciones pendiente"
     );
     return result;
-  }, [appendLog]);
+  }, [appendLog, permission]);
 
   useEffect(() => {
     if (!token) return;
     if (typeof window === "undefined") return;
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    if (!("PushManager" in window)) {
+      console.warn("🚫 Push notifications not supported in this browser.");
+      setPermission("unsupported");
       setError("Las notificaciones push no están soportadas en este navegador.");
+      return;
+    }
+    if (!("serviceWorker" in navigator)) {
+      setPermission("unsupported");
+      setError("Los service workers no están soportados en este navegador.");
       return;
     }
 
@@ -131,13 +188,8 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
           return;
         }
 
-        let subscription = await registration.pushManager.getSubscription();
-        if (!subscription) {
-          subscription = await registration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: urlBase64ToUint8Array(vapidKey),
-          });
-        }
+        const subscription = await registerPushSubscription(registration);
+        appendLog("Clave pública VAPID validada correctamente");
 
         const json = subscription.toJSON();
         const auth = json.keys?.auth ?? "";
@@ -169,6 +221,9 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
           err instanceof Error ? err.message : "No se pudo registrar la suscripción push.";
         setError(message);
         setEnabled(false);
+        if (message.toLowerCase().includes("vapid")) {
+          setPermission("unsupported");
+        }
         appendLog(`Error al registrar push: ${message}`);
       } finally {
         if (active) {
