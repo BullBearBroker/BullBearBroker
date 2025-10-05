@@ -79,3 +79,8 @@ ai_provider_fallbacks_total = Counter(
     "Fallbacks activados por proveedor (desde -> hacia)",
     ["from_provider", "to_provider", "route"],
 )
+
+ai_adaptive_timeouts_total = Counter(
+    "ai_adaptive_timeouts_total",
+    "Timeouts adaptativos activados",
+)

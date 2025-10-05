@@ -1,9 +1,14 @@
+import asyncio
 import logging
 import os
+import time
 from secrets import token_urlsafe
+from typing import Any
 
 from dotenv import load_dotenv
 from passlib.context import CryptContext
+
+import redis.asyncio as redis
 
 load_dotenv()
 
@@ -149,3 +154,53 @@ class Config:
 
 
 password_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+
+class _InMemoryAsyncRedis:
+    """Minimal async-compatible Redis-like client for tests."""
+
+    def __init__(self) -> None:
+        self._store: dict[str, tuple[str, float | None]] = {}
+        self._lock = asyncio.Lock()
+
+    async def get(self, key: str) -> str | None:
+        async with self._lock:
+            payload = self._store.get(key)
+            if not payload:
+                return None
+            value, expires_at = payload
+            if expires_at is not None and expires_at < time.time():
+                self._store.pop(key, None)
+                return None
+            return value
+
+    async def setex(self, key: str, ttl: int, value: str) -> None:
+        async with self._lock:
+            expires_at = time.time() + ttl if ttl else None
+            self._store[key] = (value, expires_at)
+
+
+_redis_instance: redis.Redis | None = None
+_fallback_redis = _InMemoryAsyncRedis()
+
+
+def get_redis() -> Any:
+    """Return a Redis client or a shared in-memory fallback for tests."""
+
+    global _redis_instance
+
+    if _redis_instance is not None:
+        return _redis_instance
+
+    redis_url = Config.REDIS_URL or "redis://localhost:6379"
+    try:
+        _redis_instance = redis.from_url(
+            redis_url,
+            encoding="utf-8",
+            decode_responses=True,
+        )
+        return _redis_instance
+    except Exception as exc:  # pragma: no cover - logged for observability
+        LOGGER.warning("redis_client_init_failed", extra={"error": str(exc)})
+
+    return _fallback_redis

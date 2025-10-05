@@ -6,9 +6,15 @@ try:  # pragma: no cover - redis puede no estar instalado en los tests
 except ImportError:  # pragma: no cover
     redis = None  # type: ignore
 
+import asyncio
+import hashlib
+import json
 import os
 import time
 from typing import Any
+
+from backend.utils.config import get_redis
+from prometheus_client import Counter
 
 
 class CacheService:  # ✅ Codex fix: servicio dual Redis/memoria
@@ -44,3 +50,57 @@ class CacheService:  # ✅ Codex fix: servicio dual Redis/memoria
 
 
 cache = CacheService()  # ✅ Codex fix: instancia compartida
+
+ai_cache_hits_total = Counter(
+    "ai_cache_hits_total", "Respuestas IA servidas desde cache"
+)
+ai_cache_misses_total = Counter(
+    "ai_cache_misses_total", "Respuestas IA sin cache"
+)
+
+
+class AICacheService:
+    def __init__(self):
+        self.redis = get_redis()
+        self._memory_cache: dict[str, tuple[str, float | None]] = {}
+        self._lock = asyncio.Lock()
+
+    def _key(self, route: str, prompt: str):
+        hashed = hashlib.sha256(prompt.encode()).hexdigest()[:16]
+        return f"ai:{route}:{hashed}"
+
+    async def get(self, route: str, prompt: str):
+        key = self._key(route, prompt)
+        data: str | None = None
+        if self.redis is not None:
+            try:
+                data = await self.redis.get(key)
+            except Exception:
+                data = None
+        if data is None:
+            async with self._lock:
+                payload = self._memory_cache.get(key)
+                if payload:
+                    cached_value, expires_at = payload
+                    if expires_at is not None and expires_at < time.time():
+                        self._memory_cache.pop(key, None)
+                    else:
+                        data = cached_value
+        if data:
+            ai_cache_hits_total.inc()
+            return json.loads(data)
+        ai_cache_misses_total.inc()
+        return None
+
+    async def set(self, route: str, prompt: str, response: dict, ttl: int):
+        key = self._key(route, prompt)
+        payload = json.dumps(response)
+        if self.redis is not None:
+            try:
+                await self.redis.setex(key, ttl, payload)
+                return
+            except Exception:
+                pass
+        async with self._lock:
+            expires_at = time.time() + ttl if ttl else None
+            self._memory_cache[key] = (payload, expires_at)
