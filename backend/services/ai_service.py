@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import hashlib  # ✅ Codex fix: hashing para claves de caché
 import json  # ✅ Codex fix: structured logging support
 import logging
@@ -29,6 +30,8 @@ from backend.metrics.ai_metrics import (  # ✅ Codex fix: IA Prometheus metrics
 )
 from backend.utils.config import Config
 
+import backend.services.context_service as context_service
+import backend.services.sentiment_service as sentiment_service
 from .cache_service import cache  # ✅ Codex fix: servicio de caché IA
 from .mistral_service import mistral_service
 
@@ -217,6 +220,34 @@ class AIService:
 
         context = dict(context or {})
 
+        async def _local_response(reason: str, fallback_used: bool) -> AIResponsePayload:
+            start_local = time.perf_counter()
+            ai_text = await self.generate_response(message)
+            duration_ms = (time.perf_counter() - start_local) * 1000
+            provider = "local"
+            ai_latency_seconds.labels(provider=provider).observe(duration_ms / 1000)
+            ai_requests_total.labels(provider=provider, status="success").inc()
+            self._log_provider_call(provider, True, duration_ms, fallback_used)
+            logger.info(
+                json.dumps(
+                    {
+                        "ai_event": "process_message_local_fallback",
+                        "reason": reason,
+                        "elapsed_ms": round(duration_ms, 3),
+                    }
+                )
+            )
+            return AIResponsePayload(
+                text=ai_text,
+                provider=provider,
+                used_data=False,
+                sources=[],
+            )
+
+        normalized_message = (message or "").strip()
+        if not normalized_message:
+            return await _local_response("empty_message", False)
+
         decision = self._analyze_message(message)
         symbols = decision["symbols"]
         interval = decision["interval"] or "1h"
@@ -307,11 +338,10 @@ class AIService:
         prompt_for_cache: str | None = None  # ✅ Codex fix: prompt base para caché
         try:
             prompt_for_cache = self._build_prompt(message, context)
-        except ValueError:
-            raise
+        except ValueError as exc:
+            return await _local_response(str(exc) or "prompt_invalid", False)
         except Exception:
             prompt_for_cache = None
-
         providers: list[tuple[str, Callable[[], Awaitable[str]]]] = [
             ("mistral", lambda: self.process_with_mistral(message, context))
         ]
@@ -329,9 +359,18 @@ class AIService:
         provider: str | None = None
 
         try:
-            ai_text, provider = await self._call_with_backoff(
-                providers, prompt_for_cache
-            )
+            call_with_backoff = self._call_with_backoff
+            try:
+                parameters = inspect.signature(call_with_backoff).parameters
+            except (TypeError, ValueError):
+                parameters = None
+
+            if parameters is not None and len(parameters) == 1:
+                ai_text, provider = await call_with_backoff(providers)  # type: ignore[arg-type]
+            else:
+                ai_text, provider = await call_with_backoff(
+                    providers, prompt_for_cache
+                )
             logger.info("AI response generated using provider %s", provider)
         except Exception as exc:
             last_provider = self._last_provider_attempted or "unknown"
@@ -385,13 +424,9 @@ class AIService:
                     from_provider=last_provider,
                     to_provider="local",
                 ).inc()
-                start_local = time.perf_counter()
-                ai_text = await self.generate_response(message)
-                duration_ms = (time.perf_counter() - start_local) * 1000
-                provider = "local"
-                ai_latency_seconds.labels(provider=provider).observe(duration_ms / 1000)
-                ai_requests_total.labels(provider=provider, status="success").inc()
-                self._log_provider_call(provider, True, duration_ms, True)
+                response_payload = await _local_response("provider_failure", True)
+                ai_text = response_payload.text
+                provider = response_payload.provider
                 logger.info("AI response generated using local fallback")
 
         final_parts: list[str] = []
@@ -1355,6 +1390,54 @@ Mientras tanto, te sugiero:
             "sentiment_score": 0.0,
             "confidence": 0.7,
             "keywords": ["market", "analysis", "financial"],
+        }
+
+
+    async def process_with_context(self, session_id: str, message: str) -> dict[str, Any]:
+        start = time.perf_counter()
+        history_entries = context_service.get_history(session_id)
+        history_context: list[dict[str, str]] = []
+        for entry in history_entries:
+            if entry.message:
+                history_context.append({"role": "user", "content": entry.message})
+            if entry.response:
+                history_context.append({"role": "assistant", "content": entry.response})
+
+        sentiment = sentiment_service.analyze_sentiment(message)
+        base_context: dict[str, Any] | None = None
+        if history_context:
+            base_context = {"history": history_context}
+
+        response_payload = await self.process_message(
+            message,
+            context=base_context,
+        )
+        response_text = (
+            response_payload.text
+            if hasattr(response_payload, "text")
+            else str(response_payload)
+        )
+
+        context_service.save_message(session_id, message, response_text)
+
+        elapsed_ms = (time.perf_counter() - start) * 1000.0
+        logger.info(
+            json.dumps(
+                {
+                    "ai_event": "process_with_context",
+                    "session": session_id,
+                    "elapsed_ms": round(elapsed_ms, 3),
+                    "sentiment": sentiment["label"],
+                    "history_len": len(history_entries),
+                }
+            )
+        )
+
+        return {
+            "message": message,
+            "response": response_text,
+            "sentiment": sentiment,
+            "history_len": len(history_entries),
         }
 
 

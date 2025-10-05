@@ -7,6 +7,13 @@ from typing import Any
 
 import aiohttp
 
+from backend.core.logging_config import get_logger
+
+try:  # pragma: no cover - optional dependency for lightweight tests
+    from transformers import pipeline
+except ImportError:  # pragma: no cover
+    pipeline = None  # type: ignore[assignment]
+
 try:  # pragma: no cover - compatibilidad con distintos puntos de entrada
     from backend.utils.cache import CacheClient
     from backend.utils.config import Config
@@ -15,6 +22,16 @@ except ImportError:  # pragma: no cover
     from backend.utils.config import Config  # type: ignore[no-redef]
 
 FNG_API_URL = "https://api.alternative.me/fng/"
+
+logger = get_logger(service="sentiment_service")
+
+if pipeline is not None:
+    try:  # pragma: no cover - carga de modelo externa
+        _sentiment_analyzer = pipeline("sentiment-analysis")
+    except OSError:  # pragma: no cover - modelo no disponible
+        _sentiment_analyzer = None
+else:  # pragma: no cover - transformers no instalado
+    _sentiment_analyzer = None
 
 
 class SentimentService:
@@ -119,3 +136,18 @@ class SentimentService:
 
 
 sentiment_service = SentimentService()
+
+
+def analyze_sentiment(text: str) -> dict[str, Any]:
+    """Analyze sentiment for arbitrary text using the Transformers pipeline."""
+
+    try:
+        if not _sentiment_analyzer:
+            raise OSError("sentiment model unavailable")
+        result = _sentiment_analyzer(text[:500])
+        label, score = result[0]["label"], result[0]["score"]
+    except Exception:  # pragma: no cover - defensive fallback
+        label, score = "unknown", 0.0
+
+    logger.info({"ai_event": "sentiment_analysis", "label": label, "score": score})
+    return {"label": label, "score": score}
