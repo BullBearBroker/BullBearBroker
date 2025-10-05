@@ -96,3 +96,14 @@ ai_insight_failures_total = Counter(
     "ai_insight_failures_total",
     "Errores ocurridos durante la generación de insights IA",
 )
+
+
+ai_notifications_total = Counter(
+    "ai_notifications_total",
+    "Notificaciones emitidas por IA",
+)
+
+alert_notifications_total = Counter(
+    "alert_notifications_total",
+    "Alertas enviadas al usuario",
+)

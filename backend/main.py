@@ -32,6 +32,7 @@ from backend.routers import (
     indicators,
     markets,
     news,
+    notifications,
     portfolio,
     push,
 )
@@ -41,7 +42,7 @@ from backend.routers import realtime  # ✅ Codex fix: registrar gateway WebSock
 from backend.services.alert_service import alert_service
 from backend.services.integration_reporter import log_api_integration_report
 from backend.services.websocket_manager import AlertWebSocketManager
-from backend.services.realtime_service import RealtimeService  # ✅ Codex fix: servicio compartido para WebSocket realtime
+from backend.services.notification_dispatcher import notification_dispatcher
 from backend.utils.config import ENV, Config
 
 try:  # pragma: no cover - user service puede no estar disponible en algunos tests
@@ -143,7 +144,8 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # pragma: no cover - logging defensivo
         logger.warning("integration_report_failed", error=str(exc))
 
-    app.state.realtime_service = RealtimeService()  # ✅ Codex fix: servicio global para WebSocket realtime
+    app.state.realtime_service = notification_dispatcher.realtime  # ✅ Codex fix: servicio global para WebSocket realtime
+    app.state.notification_dispatcher = notification_dispatcher
     app.state.realtime_price_task = None  # ✅ Codex fix: inicializar referencia a tarea de precios
     app.state.realtime_insights_task = None  # ✅ Codex fix: inicializar referencia a tarea de insights
 
@@ -278,6 +280,9 @@ app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(ai_context.router, prefix="/api/ai", tags=["ai"])
 app.include_router(ai_insights.router, prefix="/api/ai", tags=["ai"])
 app.include_router(ai_stream.router, prefix="/api/ai", tags=["ai"])
+app.include_router(
+    notifications.router, prefix="/api/notifications", tags=["notifications"]
+)
 app.include_router(push.router, prefix="/api/push", tags=["push"])
 app.include_router(portfolio.router, prefix="/api/portfolio", tags=["portfolio"])
 app.include_router(indicators.router)

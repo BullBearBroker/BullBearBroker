@@ -38,11 +38,13 @@ from backend.metrics.ai_metrics import (
     ai_insight_duration_seconds,
     ai_insight_failures_total,
     ai_insights_generated_total,
+    ai_notifications_total,
 )
 from backend.utils.config import Config
 
 import backend.services.context_service as context_service
 import backend.services.sentiment_service as sentiment_service
+from backend.services.notification_dispatcher import notification_dispatcher
 from .cache_service import (  # ✅ Codex fix: servicio de caché IA
     AICacheService,
     ai_cache_hits_total,
@@ -622,6 +624,29 @@ class AIService:
                 "used_data": used_data,
                 "sources": list(sources),
             }
+
+            try:
+                await notification_dispatcher.broadcast_event(
+                    "ai_insight",
+                    {
+                        "text": final_message or "",
+                        "source": "ai",
+                        "provider": provider,
+                        "used_data": used_data,
+                        "sources": list(sources),
+                    },
+                )
+                ai_notifications_total.inc()
+            except Exception as exc:  # pragma: no cover - not critical for AI response
+                logger.warning(
+                    json.dumps(
+                        {
+                            "service": "ai_service",
+                            "event": "notification_dispatch_failed",
+                            "error": str(exc),
+                        }
+                    )
+                )
 
             if prompt_for_cache:
                 ttl = 3600 if len(prompt_for_cache) < 100 else 600

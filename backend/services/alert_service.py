@@ -27,6 +27,8 @@ except ImportError:
     from backend.models import Alert  # type: ignore[no-redef]
     from backend.utils.config import Config  # type: ignore[no-redef]
 
+from backend.metrics.ai_metrics import alert_notifications_total
+from backend.services.notification_dispatcher import notification_dispatcher
 from .forex_service import forex_service
 from .market_service import market_service
 
@@ -187,6 +189,27 @@ class AlertService:
             "comparison": alert.condition,
             "message": message,
         }
+        try:
+            await notification_dispatcher.broadcast_event(
+                "alert",
+                {
+                    "title": getattr(alert, "title", alert.asset),
+                    "price": price,
+                    "target": alert.value,
+                    "message": message,
+                    "symbol": alert.asset,
+                },
+            )
+            alert_notifications_total.inc()
+        except Exception as exc:  # pragma: no cover - avoid breaking alert flow
+            self.logger.warning(
+                {
+                    "service": "alert_service",
+                    "event": "notification_dispatch_failed",
+                    "error": str(exc),
+                }
+            )
+
         if self._websocket_manager is not None:
             try:
                 await self._websocket_manager.broadcast(payload)
@@ -355,6 +378,27 @@ class AlertService:
                 "status": "sent" if outcome is None else "error",
                 **({"error": outcome} if outcome else {}),
             }
+
+        notification_targets = [target for _, target in targets]
+        try:
+            await notification_dispatcher.broadcast_event(
+                "alert",
+                {
+                    "title": message.split(":", 1)[0] if ":" in message else message,
+                    "message": message,
+                    "targets": notification_targets,
+                    "category": "alerts",
+                },
+            )
+            alert_notifications_total.inc()
+        except Exception as exc:  # pragma: no cover - keep external alert reporting resilient
+            self.logger.warning(
+                {
+                    "service": "alert_service",
+                    "event": "external_notification_dispatch_failed",
+                    "error": str(exc),
+                }
+            )
 
         return results
 
