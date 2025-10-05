@@ -27,3 +27,15 @@ ai_failures_total = Counter(
     ["provider", "error_type"],
 )
 
+# ✅ Codex fix: métricas de caché IA
+ai_cache_hit_total = Counter(
+    "ai_cache_hit_total",
+    "Aciertos de caché IA",
+    ["model"],
+)
+
+ai_cache_miss_total = Counter(
+    "ai_cache_miss_total",
+    "Fallos de caché IA",
+    ["model"],
+)

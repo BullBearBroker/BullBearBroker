@@ -1,4 +1,5 @@
 import asyncio
+import hashlib  # ✅ Codex fix: hashing para claves de caché
 import json  # ✅ Codex fix: structured logging support
 import logging
 import re
@@ -11,6 +12,12 @@ from urllib.parse import urljoin  # [Codex] nuevo
 import aiohttp
 
 from backend.core.metrics import AI_PROVIDER_FAILOVER_TOTAL
+from backend.metrics.ai_metrics import (
+    ai_cache_hit_total,  # ✅ Codex fix: métrica caché hit
+)
+from backend.metrics.ai_metrics import (
+    ai_cache_miss_total,  # ✅ Codex fix: métrica caché miss
+)
 from backend.metrics.ai_metrics import (  # ✅ Codex fix: IA Prometheus metrics
     ai_failures_total,
     ai_fallbacks_total,
@@ -19,6 +26,7 @@ from backend.metrics.ai_metrics import (  # ✅ Codex fix: IA Prometheus metrics
 )
 from backend.utils.config import Config
 
+from .cache_service import cache  # ✅ Codex fix: servicio de caché IA
 from .mistral_service import mistral_service
 
 try:  # pragma: no cover - optional imports depending on entrypoint
@@ -38,6 +46,49 @@ except ImportError:  # pragma: no cover
 
 
 logger = logging.getLogger(__name__)
+
+
+# ✅ Codex fix: módulo de caché IA
+def get_cached_response(model: str, prompt: str | None):
+    if not prompt:
+        return None
+    cache_key = f"ai:{model}:{hashlib.sha256(prompt.encode()).hexdigest()}"
+    cached = cache.get(cache_key)
+    if cached is None:
+        ai_cache_miss_total.labels(model=model).inc()
+        return None
+    if isinstance(cached, (bytes, bytearray)):
+        cached = cached.decode()
+    if isinstance(cached, str):
+        try:
+            cached = json.loads(cached)
+        except json.JSONDecodeError:
+            cached = {"text": cached}
+    if not isinstance(cached, dict):
+        ai_cache_miss_total.labels(model=model).inc()
+        return None
+    ai_cache_hit_total.labels(model=model).inc()
+    logger.info(
+        json.dumps(
+            {
+                "ai_event": "cache_hit",
+                "model": model,
+            }
+        )
+    )
+    return cached
+
+
+# ✅ Codex fix: almacenamiento de respuestas IA en caché
+def store_response_in_cache(
+    model: str, prompt: str | None, response: dict | None
+) -> None:
+    if not prompt or not response:
+        return
+    ttl = 600 if len(prompt) > 500 else 300
+    cache_key = f"ai:{model}:{hashlib.sha256(prompt.encode()).hexdigest()}"
+    payload = json.dumps(response)
+    cache.set(cache_key, payload, ex=ttl)
 
 
 def timestamp() -> float:  # ✅ Codex fix: helper for structured logs
@@ -124,7 +175,9 @@ class AIService:
         circuit.last_error = error.__class__.__name__
         if circuit.failure_count >= self._circuit_breaker_threshold:
             circuit.state = "open"
-            circuit.next_retry_time = circuit.last_failure_time + self._circuit_breaker_cooldown
+            circuit.next_retry_time = (
+                circuit.last_failure_time + self._circuit_breaker_cooldown
+            )
         return circuit
 
     def _ready_for_attempt(self, provider: str) -> bool:
@@ -248,6 +301,14 @@ class AIService:
         if enrichment_text:
             context["enrichment_summary"] = enrichment_text
 
+        prompt_for_cache: str | None = None  # ✅ Codex fix: prompt base para caché
+        try:
+            prompt_for_cache = self._build_prompt(message, context)
+        except ValueError:
+            raise
+        except Exception:
+            prompt_for_cache = None
+
         providers: list[tuple[str, Callable[[], Awaitable[str]]]] = [
             ("mistral", lambda: self.process_with_mistral(message, context))
         ]
@@ -261,27 +322,74 @@ class AIService:
 
         providers.append(("ollama", lambda: self._call_ollama(message, context)))
 
+        ai_text: str | None = None  # ✅ Codex fix: inicialización para fallback caché
+        provider: str | None = None
+
         try:
-            ai_text, provider = await self._call_with_backoff(providers)
+            ai_text, provider = await self._call_with_backoff(
+                providers, prompt_for_cache
+            )
             logger.info("AI response generated using provider %s", provider)
         except Exception as exc:
             last_provider = self._last_provider_attempted or "unknown"
             logger.error(
-                "Falling back to local response after provider failures: %s", exc
-            )
-            AI_PROVIDER_FAILOVER_TOTAL.labels(provider="local").inc()
-            ai_fallbacks_total.labels(
-                from_provider=last_provider,
-                to_provider="local",
-            ).inc()
-            start_local = time.perf_counter()
-            ai_text = await self.generate_response(message)
-            duration_ms = (time.perf_counter() - start_local) * 1000
-            provider = "local"
-            ai_latency_seconds.labels(provider=provider).observe(duration_ms / 1000)
-            ai_requests_total.labels(provider=provider, status="success").inc()
-            self._log_provider_call(provider, True, duration_ms, True)
-            logger.info("AI response generated using local fallback")
+                json.dumps(
+                    {
+                        "ai_event": "provider_failure",
+                        "last_provider": last_provider,
+                        "error": str(exc),
+                    }
+                )
+            )  # ✅ Codex fix: mensaje unificado
+            cache_fallback_text: str | None = None
+            cache_fallback_provider: str | None = None
+            if prompt_for_cache:
+                for provider_name, _ in providers:
+                    cached_payload = get_cached_response(
+                        provider_name, prompt_for_cache
+                    )
+                    if cached_payload and cached_payload.get("text"):
+                        cache_fallback_text = cached_payload["text"]
+                        cache_fallback_provider = cached_payload.get(
+                            "provider", provider_name
+                        )
+                        ai_fallbacks_total.labels(
+                            from_provider=last_provider,
+                            to_provider="cache",
+                        ).inc()
+                        logger.info(
+                            json.dumps(
+                                {
+                                    "ai_event": "cache_fallback",
+                                    "from_provider": last_provider,
+                                    "model": cache_fallback_provider,
+                                }
+                            )
+                        )
+                        provider = cache_fallback_provider
+                        ai_text = cache_fallback_text
+                        ai_requests_total.labels(
+                            provider=provider or "cache",
+                            status="success",
+                        ).inc()
+                        self._log_provider_call(
+                            cache_fallback_provider or "cache", True, 0.0, True
+                        )
+                        break
+            if not ai_text:
+                AI_PROVIDER_FAILOVER_TOTAL.labels(provider="local").inc()
+                ai_fallbacks_total.labels(
+                    from_provider=last_provider,
+                    to_provider="local",
+                ).inc()
+                start_local = time.perf_counter()
+                ai_text = await self.generate_response(message)
+                duration_ms = (time.perf_counter() - start_local) * 1000
+                provider = "local"
+                ai_latency_seconds.labels(provider=provider).observe(duration_ms / 1000)
+                ai_requests_total.labels(provider=provider, status="success").inc()
+                self._log_provider_call(provider, True, duration_ms, True)
+                logger.info("AI response generated using local fallback")
 
         final_parts: list[str] = []
         if enrichment_text:
@@ -292,6 +400,15 @@ class AIService:
         final_message = (
             "\n\n".join(part for part in final_parts if part.strip()) or ai_text
         )
+
+        if (
+            prompt_for_cache and provider and ai_text
+        ):  # ✅ Codex fix: persistencia en caché
+            store_response_in_cache(
+                provider,
+                prompt_for_cache,
+                {"text": ai_text, "provider": provider},
+            )
 
         return AIResponsePayload(
             text=final_message,
@@ -323,13 +440,26 @@ class AIService:
             raise
 
     async def _call_with_backoff(
-        self, providers: list[tuple[str, Callable[[], Awaitable[str]]]]
-    ) -> tuple[str, str]:
+        self,
+        providers: list[tuple[str, Callable[[], Awaitable[str]]]],
+        prompt_for_cache: str | None = None,
+    ) -> tuple[str, str]:  # ✅ Codex fix: soporte de caché en backoff
         last_error: Exception | None = None
         total_providers = len(providers)
         for index, (provider_name, provider) in enumerate(providers):
             self._last_provider_attempted = provider_name
             backoff = 1
+            if prompt_for_cache:
+                cached_payload = get_cached_response(provider_name, prompt_for_cache)
+                if cached_payload and cached_payload.get("text"):
+                    cached_text = cached_payload["text"]
+                    cached_provider = cached_payload.get("provider", provider_name)
+                    ai_requests_total.labels(
+                        provider=cached_provider, status="success"
+                    ).inc()
+                    self._reset_circuit(provider_name)
+                    self._log_provider_call(provider_name, True, 0.0, index > 0)
+                    return cached_text, cached_provider
             if not self._ready_for_attempt(provider_name):
                 fallback_used = index < total_providers - 1
                 self._log_provider_call(provider_name, False, 0.0, fallback_used)
@@ -346,7 +476,9 @@ class AIService:
                 start = time.perf_counter()
                 try:
                     timeout_seconds = PROVIDER_TIMEOUTS.get(provider_name, 10.0)
-                    response = await asyncio.wait_for(provider(), timeout=timeout_seconds)
+                    response = await asyncio.wait_for(
+                        provider(), timeout=timeout_seconds
+                    )
                     if response and response.strip():
                         duration_ms = (time.perf_counter() - start) * 1000
                         ai_latency_seconds.labels(provider=provider_name).observe(
