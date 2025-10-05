@@ -298,9 +298,7 @@ app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(ai_context.router, prefix="/api/ai", tags=["ai"])
 app.include_router(ai_insights.router, prefix="/api/ai", tags=["ai"])
 app.include_router(ai_stream.router, prefix="/api/ai", tags=["ai"])
-app.include_router(
-    notifications.router, prefix="/api/notifications", tags=["notifications"]
-)
+app.include_router(notifications.router)
 app.include_router(push.router, prefix="/api/push", tags=["push"])
 app.include_router(portfolio.router, prefix="/api/portfolio", tags=["portfolio"])
 app.include_router(indicators.router)

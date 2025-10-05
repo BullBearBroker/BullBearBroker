@@ -2,13 +2,21 @@
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 
+from backend.core.config import VAPID_PUBLIC_KEY
 from backend.database import get_db
 from backend.services.audit_service import AuditService
 from backend.services.notification_dispatcher import NotificationDispatcher
 from backend.services.push_service import PushService
 from backend.services.realtime_service import RealtimeService
 
-router = APIRouter()
+# 🧩 Bloque 8A
+router = APIRouter(prefix="/api/notifications", tags=["notifications"])
+
+
+@router.get("/vapid-key")
+def get_vapid_public_key() -> dict[str, str]:
+    """Devuelve la clave pública VAPID para el cliente."""
+    return {"vapidPublicKey": VAPID_PUBLIC_KEY}
 
 
 # ✅ Servicio de prueba (ya existente)

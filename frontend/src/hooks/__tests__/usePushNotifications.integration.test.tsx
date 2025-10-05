@@ -1,11 +1,23 @@
 import userEvent from "@testing-library/user-event";
 
-import { act, customRender, screen, waitFor, within } from "@/tests/utils/renderWithProviders";
+import {
+  act,
+  customRender,
+  renderHook,
+  screen,
+  waitFor,
+  within,
+} from "@/tests/utils/renderWithProviders";
 
 import { usePushNotifications } from "../usePushNotifications";
-import { subscribePush, testNotificationDispatcher } from "@/lib/api";
+import {
+  fetchVapidPublicKey,
+  subscribePush,
+  testNotificationDispatcher,
+} from "@/lib/api";
 
 jest.mock("@/lib/api", () => ({
+  fetchVapidPublicKey: jest.fn(),
   subscribePush: jest.fn(),
   testNotificationDispatcher: jest.fn(),
 }));
@@ -13,6 +25,8 @@ jest.mock("@/lib/api", () => ({
 const mockedSubscribePush = subscribePush as jest.MockedFunction<typeof subscribePush>;
 const mockedTestNotificationDispatcher =
   testNotificationDispatcher as jest.MockedFunction<typeof testNotificationDispatcher>;
+const mockedFetchVapidPublicKey =
+  fetchVapidPublicKey as jest.MockedFunction<typeof fetchVapidPublicKey>;
 
 describe("usePushNotifications integration", () => {
   const originalNotification = window.Notification;
@@ -26,7 +40,7 @@ describe("usePushNotifications integration", () => {
     process.env.NEXT_PUBLIC_VAPID_KEY = "dGVzdA==";
     mockedSubscribePush.mockResolvedValue({ id: "subscription" });
     mockedTestNotificationDispatcher.mockResolvedValue({ status: "ok", sent: 1 });
-    (global as any).fetch = jest.fn();
+    mockedFetchVapidPublicKey.mockResolvedValue(process.env.NEXT_PUBLIC_VAPID_KEY ?? "");
     (global as any).atob = (value: string) => Buffer.from(value, "base64").toString("binary");
 
     class MockNotification {
@@ -99,6 +113,7 @@ describe("usePushNotifications integration", () => {
     consoleLogSpy.mockClear();
     mockedSubscribePush.mockReset();
     mockedTestNotificationDispatcher.mockReset();
+    mockedFetchVapidPublicKey.mockReset();
   });
 
   afterAll(() => {
@@ -179,5 +194,20 @@ describe("usePushNotifications integration", () => {
     await waitFor(() => expect(screen.getByTestId("enabled")).toHaveTextContent("false"));
     expect(mockedSubscribePush).not.toHaveBeenCalled();
     expect(mockedTestNotificationDispatcher).not.toHaveBeenCalled();
+  });
+
+  // 🧩 Bloque 8A
+  test("should fail gracefully if VAPID key mismatches or missing", async () => {
+    mockedFetchVapidPublicKey.mockResolvedValueOnce("");
+
+    const { result } = renderHook(() => usePushNotifications("secure-token"));
+
+    await act(async () => {
+      await result.current.requestPermission();
+    });
+
+    await waitFor(() => expect(result.current.permission).toBe("unsupported"));
+
+    expect(result.current.permission).toBe("unsupported");
   });
 });
