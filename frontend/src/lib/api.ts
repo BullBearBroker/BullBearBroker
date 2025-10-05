@@ -525,6 +525,14 @@ export function subscribePush(
   );
 }
 
+export function testNotificationDispatcher(token: string) {
+  return request<{ sent?: number; status?: string }>(
+    "/api/notifications/test",
+    { method: "POST" },
+    token
+  );
+}
+
 export function sendTestPush(token: string) {
   return request<{ delivered: number }>(
     "/api/push/send-test",

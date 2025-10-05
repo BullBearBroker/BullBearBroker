@@ -33,6 +33,7 @@ beforeAll(() => {
 
 jest.mock("@/lib/api", () => ({
   subscribePush: jest.fn().mockResolvedValue({ id: "sub" }),
+  testNotificationDispatcher: jest.fn().mockResolvedValue({ status: "ok" }),
 }));
 
 describe("usePushNotifications", () => {
