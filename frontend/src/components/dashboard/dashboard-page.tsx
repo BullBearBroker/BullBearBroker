@@ -19,6 +19,7 @@ import { usePushNotifications } from "@/hooks/usePushNotifications";
 import { useHistoricalData } from "@/hooks/useHistoricalData"; // [Codex] nuevo
 import { useRealtime } from "@/hooks/useRealtime"; // ✅ Codex fix: integración realtime en dashboard
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 function DashboardPageContent() {
   const { user, loading, token, logout } = useAuth();
@@ -26,7 +27,18 @@ function DashboardPageContent() {
 
   const sidebarToken = useMemo(() => token ?? undefined, [token]);
 
-  const { enabled: pushEnabled, error: pushError } = usePushNotifications(token ?? undefined);
+  const {
+    enabled: pushEnabled,
+    error: pushError,
+    permission: pushPermission,
+    loading: pushLoading,
+    testing: pushTesting,
+    events: pushEvents,
+    logs: pushLogs,
+    sendTestNotification,
+    requestPermission: requestPushPermission,
+    dismissEvent: dismissPushEvent,
+  } = usePushNotifications(token ?? undefined);
 
   const { connected: realtimeConnected, data: realtimeData } = useRealtime(); // ✅ Codex fix: estado de conexión realtime
 
@@ -220,11 +232,102 @@ function DashboardPageContent() {
             </Button>
           </div>
         </header>
-        {pushError && (
-          <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
-            {pushError}
-          </div>
-        )}
+        <div className="flex flex-col gap-3">
+          {pushError && (
+            <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+              {pushError}
+            </div>
+          )}
+          <Card data-testid="notification-center" className="border-dashed">
+            <CardHeader className="flex flex-col gap-1 pb-3">
+              <CardTitle className="text-base font-semibold">Centro de notificaciones</CardTitle>
+              <CardDescription>
+                Gestiona las alertas en tiempo real provenientes del dispatcher.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant={pushEnabled ? "default" : "secondary"}>
+                  {pushEnabled ? "Suscripción activa" : pushLoading ? "Sincronizando..." : "Suscripción inactiva"}
+                </Badge>
+                {pushPermission !== "unsupported" && pushPermission !== "granted" && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => void requestPushPermission()}
+                    disabled={pushLoading}
+                  >
+                    Activar notificaciones
+                  </Button>
+                )}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => void sendTestNotification()}
+                  disabled={!pushEnabled || pushTesting}
+                >
+                  {pushTesting ? "Enviando prueba..." : "Enviar prueba"}
+                </Button>
+              </div>
+              <div className="space-y-2" aria-live="polite">
+                {pushEvents.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    Aún no se reciben notificaciones. Envía una prueba para verificar el canal.
+                  </p>
+                ) : (
+                  pushEvents
+                    .slice()
+                    .reverse()
+                    .map((event) => (
+                      <div
+                        key={event.id}
+                        className="flex items-start justify-between gap-3 rounded-md border border-border/60 bg-muted/40 p-3"
+                      >
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-foreground">{event.title}</p>
+                          {event.body && (
+                            <p className="text-sm text-muted-foreground">{event.body}</p>
+                          )}
+                          <p className="text-xs text-muted-foreground">
+                            {new Date(event.receivedAt).toLocaleString()}
+                          </p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="-mr-1"
+                          onClick={() => dismissPushEvent(event.id)}
+                        >
+                          Cerrar
+                        </Button>
+                      </div>
+                    ))
+                )}
+              </div>
+              <div>
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Registro de eventos
+                </p>
+                <ScrollArea className="h-32 rounded-md border border-border/60 bg-muted/20 p-2">
+                  {pushLogs.length === 0 ? (
+                    <p className="text-xs text-muted-foreground">
+                      Esperando eventos auditables del dispatcher...
+                    </p>
+                  ) : (
+                    <ul className="space-y-1 text-xs text-foreground">
+                      {pushLogs
+                        .slice()
+                        .reverse()
+                        .map((log, index) => (
+                          <li key={`${log}-${index}`}>{log}</li>
+                        ))}
+                    </ul>
+                  )}
+                </ScrollArea>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
         <div className="p-2 text-xs">
           <span className={realtimeConnected ? "text-green-500" : "text-red-500"}>
             {realtimeConnected ? "🟢 Conectado a Realtime" : "🔴 Desconectado"}
