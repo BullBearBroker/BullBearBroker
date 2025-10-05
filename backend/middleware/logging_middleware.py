@@ -15,6 +15,7 @@ from starlette.responses import Response
 from starlette.types import ASGIApp
 
 # ✅ Codex fix: Import Prometheus metrics for HTTP instrumentation
+from backend.metrics.ai_metrics import ai_requests_total
 from backend.routers.metrics import http_requests_total, request_latency_seconds
 
 
@@ -69,6 +70,12 @@ class LoggingMiddleware(BaseHTTPMiddleware):
                 "timestamp": timestamp,
             }
             logging.info(json.dumps(log_data))
+            # ✅ Codex fix: registrar métrica genérica HTTP→IA
+            if "/api/ai" in request.url.path:
+                ai_requests_total.labels(
+                    provider="unknown",
+                    status=str(status_code),
+                ).inc()
 
         if response is None:
             # ✅ Codex fix: Defensive guard for unexpected middleware behavior
