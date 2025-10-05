@@ -1,7 +1,7 @@
 import asyncio
 import json
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress  # ✅ Codex fix: limpieza segura de tareas realtime
 
 import redis.asyncio as redis
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
@@ -37,9 +37,11 @@ from backend.routers import (
 )
 # ✅ Codex fix: Import Prometheus metrics router
 from backend.routers import metrics
+from backend.routers import realtime  # ✅ Codex fix: registrar gateway WebSocket realtime
 from backend.services.alert_service import alert_service
 from backend.services.integration_reporter import log_api_integration_report
 from backend.services.websocket_manager import AlertWebSocketManager
+from backend.services.realtime_service import RealtimeService  # ✅ Codex fix: servicio compartido para WebSocket realtime
 from backend.utils.config import ENV, Config
 
 try:  # pragma: no cover - user service puede no estar disponible en algunos tests
@@ -141,6 +143,10 @@ async def lifespan(app: FastAPI):
     except Exception as exc:  # pragma: no cover - logging defensivo
         logger.warning("integration_report_failed", error=str(exc))
 
+    app.state.realtime_service = RealtimeService()  # ✅ Codex fix: servicio global para WebSocket realtime
+    app.state.realtime_price_task = None  # ✅ Codex fix: inicializar referencia a tarea de precios
+    app.state.realtime_insights_task = None  # ✅ Codex fix: inicializar referencia a tarea de insights
+
     yield  # ⬅️ Aquí FastAPI empieza a servir requests
 
     if database_setup_failed and database_setup_error_message is not None:
@@ -153,6 +159,19 @@ async def lifespan(app: FastAPI):
 
     # 🔹 Shutdown
     # Si necesitas liberar recursos (ej: cerrar redis) hazlo aquí
+    realtime_service = getattr(app.state, "realtime_service", None)
+    if realtime_service is not None:
+        with suppress(Exception):  # ✅ Codex fix: tolerar errores al cerrar conexiones realtime
+            await realtime_service.close_all()
+
+    for task_name in ("realtime_price_task", "realtime_insights_task"):
+        task = getattr(app.state, task_name, None)
+        if task is not None:
+            task.cancel()
+            with suppress(asyncio.CancelledError):  # ✅ Codex fix: cancelar tareas de broadcast en shutdown
+                await task
+            setattr(app.state, task_name, None)
+
     try:
         if "redis_client" in locals() and redis_client:
             await redis_client.aclose()
@@ -253,6 +272,7 @@ app.include_router(health.router, prefix="/api/health", tags=["health"])
 app.include_router(alerts.router, prefix="/api/alerts", tags=["alerts"])
 app.include_router(markets.router, prefix="/api/markets", tags=["markets"])
 app.include_router(news.router, prefix="/api/news", tags=["news"])
+app.include_router(realtime.router, prefix="/api/realtime", tags=["realtime"])  # ✅ Codex fix: habilitar gateway WebSocket realtime
 app.include_router(auth.router)
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(ai_context.router, prefix="/api/ai", tags=["ai"])
