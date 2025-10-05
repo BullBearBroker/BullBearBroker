@@ -54,3 +54,28 @@ ai_conversations_active_total = Gauge(
     "ai_conversations_active_total",
     "Conversaciones IA activas",
 )
+
+
+ai_provider_latency_seconds = Histogram(
+    "ai_provider_latency_seconds",
+    "Latencia por proveedor IA",
+    ["provider", "route"],
+)
+
+ai_provider_failures_total = Counter(
+    "ai_provider_failures_total",
+    "Fallos por proveedor IA (con código o razón)",
+    ["provider", "reason", "route"],
+)
+
+ai_provider_requests_total = Counter(
+    "ai_provider_requests_total",
+    "Llamadas a proveedor IA",
+    ["provider", "route"],
+)
+
+ai_provider_fallbacks_total = Counter(
+    "ai_provider_fallbacks_total",
+    "Fallbacks activados por proveedor (desde -> hacia)",
+    ["from_provider", "to_provider", "route"],
+)

@@ -2,16 +2,27 @@ import asyncio
 import json
 import logging
 import os
+import time
 from collections import defaultdict
 from typing import Any
 
 import aiohttp
 from dotenv import load_dotenv
 
+from backend.metrics.ai_metrics import (
+    ai_provider_failures_total,
+    ai_provider_latency_seconds,
+    ai_provider_requests_total,
+)
+from backend.services.ai_route_context import get_current_route
+
 load_dotenv()
 
 
 logger = logging.getLogger(__name__)
+
+
+PROVIDER_LABEL = "Mistral"
 
 
 class MistralAPIError(Exception):
@@ -38,6 +49,7 @@ class MistralService:
         self.initial_backoff = 1
         self.retryable_statuses = {429} | set(range(500, 600))
         self.metrics = {"attempts": 0, "model_attempts": defaultdict(int)}
+        self._last_reason: str | None = None
 
     async def chat_completion(
         self, messages: list, model: str = "medium"
@@ -138,20 +150,124 @@ class MistralService:
         headers: dict[str, str],
         payload: dict[str, Any],
     ) -> dict[str, Any]:
-        async with session.post(
-            f"{self.base_url}/chat/completions",
-            headers=headers,
-            json=payload,
-            timeout=30,
-        ) as response:
-            if response.status == 200:
-                return await response.json()
+        route = get_current_route()
+        ai_provider_requests_total.labels(PROVIDER_LABEL, route).inc()
+        start = time.perf_counter()
+        try:
+            async with session.post(
+                f"{self.base_url}/chat/completions",
+                headers=headers,
+                json=payload,
+                timeout=30,
+            ) as response:
+                status_code = response.status
+                if status_code == 200:
+                    data = await response.json()
+                    duration = time.perf_counter() - start
+                    ai_provider_latency_seconds.labels(PROVIDER_LABEL, route).observe(duration)
+                    self._last_reason = None
+                    logger.info(
+                        json.dumps(
+                            {
+                                "ai_event": "provider_call",
+                                "provider": PROVIDER_LABEL,
+                                "route": route,
+                                "latency_ms": round(duration * 1000, 2),
+                                "status": "ok",
+                                "http_status": status_code,
+                            }
+                        )
+                    )
+                    return data
 
-            error_body = await response.text()
-            if 400 <= response.status < 600:
-                raise MistralAPIError(response.status, error_body, payload["model"])
+                error_body = await response.text()
+                reason = self._map_reason(status_code)
+                duration = time.perf_counter() - start
+                ai_provider_latency_seconds.labels(PROVIDER_LABEL, route).observe(duration)
+                ai_provider_failures_total.labels(
+                    PROVIDER_LABEL, reason, route
+                ).inc()
+                self._last_reason = reason
+                logger.warning(
+                    json.dumps(
+                        {
+                            "ai_event": "provider_call",
+                            "provider": PROVIDER_LABEL,
+                            "route": route,
+                            "latency_ms": round(duration * 1000, 2),
+                            "status": "error",
+                            "reason": reason,
+                            "http_status": status_code,
+                        }
+                    )
+                )
+                error = MistralAPIError(status_code, error_body, payload["model"])
+                setattr(error, "ai_reason", reason)
+                setattr(error, "ai_status_code", status_code)
+                raise error
+        except asyncio.TimeoutError as exc:
+            duration = time.perf_counter() - start
+            reason = "timeout"
+            ai_provider_latency_seconds.labels(PROVIDER_LABEL, route).observe(duration)
+            ai_provider_failures_total.labels(PROVIDER_LABEL, reason, route).inc()
+            self._last_reason = reason
+            logger.warning(
+                json.dumps(
+                    {
+                        "ai_event": "provider_call",
+                        "provider": PROVIDER_LABEL,
+                        "route": route,
+                        "latency_ms": round(duration * 1000, 2),
+                        "status": "error",
+                        "reason": reason,
+                        "http_status": 408,
+                    }
+                )
+            )
+            timeout_error = TimeoutError("Mistral request timed out")
+            setattr(timeout_error, "ai_reason", reason)
+            setattr(timeout_error, "ai_status_code", 408)
+            raise timeout_error from exc
+        except aiohttp.ClientError as exc:
+            duration = time.perf_counter() - start
+            reason = "unknown"
+            ai_provider_latency_seconds.labels(PROVIDER_LABEL, route).observe(duration)
+            ai_provider_failures_total.labels(PROVIDER_LABEL, reason, route).inc()
+            self._last_reason = reason
+            logger.warning(
+                json.dumps(
+                    {
+                        "ai_event": "provider_call",
+                        "provider": PROVIDER_LABEL,
+                        "route": route,
+                        "latency_ms": round(duration * 1000, 2),
+                        "status": "error",
+                        "reason": reason,
+                        "http_status": None,
+                    }
+                )
+            )
+            runtime_error = RuntimeError(f"Error comunicándose con Mistral: {exc}")
+            setattr(runtime_error, "ai_reason", reason)
+            setattr(runtime_error, "ai_status_code", None)
+            raise runtime_error from exc
 
-            raise MistralAPIError(response.status, error_body, payload["model"])
+    @staticmethod
+    def _map_reason(status_code: int | None) -> str:
+        if status_code == 408:
+            return "timeout"
+        if status_code == 429:
+            return "rate_limited"
+        if status_code is not None and 500 <= status_code < 600:
+            return "server_error"
+        if status_code is not None and 400 <= status_code < 500:
+            return "bad_response"
+        return "unknown"
+
+    def pop_last_reason(self) -> str | None:
+        reason = self._last_reason
+        self._last_reason = None
+        return reason
 
     def get_metrics(self) -> dict[str, Any]:
         return {
@@ -175,14 +291,21 @@ class MistralService:
 
         try:
             response = await self.chat_completion(messages, model="medium")
+            self._last_reason = None
         except (TimeoutError, MistralAPIError) as exc:
             logger.error("Error generating financial response: %s", exc)
+            reason = getattr(exc, "ai_reason", None)
+            if reason is None and isinstance(exc, MistralAPIError):
+                reason = self._map_reason(getattr(exc, "status", None))
+            self._last_reason = reason or "unknown"
             return (
                 "Lo siento, estoy teniendo dificultades para procesar tu solicitud. "
                 "Por favor intenta nuevamente."
             )
 
         if not response:
+            if not self._last_reason:
+                self._last_reason = "bad_response"
             return (
                 "Lo siento, estoy teniendo dificultades para procesar tu solicitud. "
                 "Por favor intenta nuevamente."
