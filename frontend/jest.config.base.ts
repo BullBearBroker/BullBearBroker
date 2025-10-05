@@ -20,6 +20,7 @@ const baseConfig: Config = {
     "^@mswjs/interceptors/WebSocket$":
       "<rootDir>/src/tests/msw/websocket-interceptor.ts",
     "^@mswjs/interceptors/(.*)$": "<rootDir>/src/tests/msw/interceptors/$1.ts",
+    "^jest-websocket-mock$": "<rootDir>/src/tests/mocks/jest-websocket-mock.ts", // ✅ Codex fix: mock consistente para WebSocket
   },
   transform: {
     "^.+\\.(ts|tsx|js|jsx)$": [
