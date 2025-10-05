@@ -1,6 +1,27 @@
 // 🧩 Bloque 8B
 import { render, screen, fireEvent } from "@testing-library/react";
 
+// 🧩 Bloque 9B
+jest.mock("@/components/providers/auth-provider", () => ({
+  useAuth: jest.fn(() => ({ token: null })),
+}));
+// 🧩 Bloque 9B
+const { useAuth: mockUseAuth } = jest.requireMock(
+  "@/components/providers/auth-provider"
+) as {
+  useAuth: jest.Mock;
+};
+// 🧩 Bloque 9B
+jest.mock("@/hooks/useLiveNotifications", () => ({
+  useLiveNotifications: jest.fn(() => ({ events: [], status: "fallback" })),
+}));
+// 🧩 Bloque 9B
+const { useLiveNotifications: mockUseLiveNotifications } = jest.requireMock(
+  "@/hooks/useLiveNotifications"
+) as {
+  useLiveNotifications: jest.Mock;
+};
+
 import NotificationCenterCard from "../notification-center-card";
 
 describe("NotificationCenterCard", () => {
@@ -8,6 +29,8 @@ describe("NotificationCenterCard", () => {
 
   beforeEach(() => {
     localStorage.clear();
+    mockUseAuth.mockReturnValue({ token: null });
+    mockUseLiveNotifications.mockReturnValue({ events: [], status: "fallback" });
     class MockNotification {
       static permission: NotificationPermission = "granted";
       static async requestPermission() {
@@ -32,5 +55,11 @@ describe("NotificationCenterCard", () => {
 
     fireEvent.click(screen.getByText("🧹 Limpiar"));
     expect(screen.getByText(/Sin notificaciones aún/i)).toBeInTheDocument();
+  });
+
+  // 🧩 Bloque 9B
+  it("shows live connection state indicator", () => {
+    render(<NotificationCenterCard />);
+    expect(screen.getByText(/🟡 Fallback \(Polling\)/i)).toBeInTheDocument();
   });
 });

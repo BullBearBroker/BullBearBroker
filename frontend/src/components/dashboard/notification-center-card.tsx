@@ -6,6 +6,10 @@ import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
+// 🧩 Bloque 9B
+import { useLiveNotifications } from "@/hooks/useLiveNotifications";
+// 🧩 Bloque 9B
+import { useAuth } from "@/components/providers/auth-provider";
 
 export interface NotificationLog {
   id: string;
@@ -24,7 +28,10 @@ export default function NotificationCenterCard() {
     notificationHistory,
     clearLogs,
   } = usePushNotifications();
-
+  // 🧩 Bloque 9B
+  const { token } = useAuth();
+  // 🧩 Bloque 9B
+  const { events, status } = useLiveNotifications(token ?? undefined);
   const [history, setHistory] = useState<NotificationLog[]>(() => {
     if (typeof window === "undefined") {
       return notificationHistory;
@@ -89,6 +96,52 @@ export default function NotificationCenterCard() {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
   }, [history]);
 
+  // 🧩 Bloque 9B
+  useEffect(() => {
+    if (!events.length) {
+      return;
+    }
+    setHistory((prev) => {
+      const map = new Map(prev.map((item) => [item.id, item]));
+      let changed = false;
+
+      for (const event of events) {
+        const rawTimestamp = event.timestamp;
+        const numericTimestamp = (
+          typeof rawTimestamp === "number"
+            ? rawTimestamp
+            : Number.isFinite(Date.parse(rawTimestamp))
+            ? Date.parse(rawTimestamp)
+            : Date.now()
+        );
+
+        const entry: NotificationLog = {
+          id: event.id,
+          title: event.title,
+          body: event.body,
+          timestamp: numericTimestamp,
+        };
+
+        const existing = map.get(entry.id);
+        if (
+          !existing ||
+          existing.timestamp !== entry.timestamp ||
+          existing.body !== entry.body ||
+          existing.title !== entry.title
+        ) {
+          map.set(entry.id, entry);
+          changed = true;
+        }
+      }
+
+      if (!changed && map.size === prev.length) {
+        return prev;
+      }
+
+      return Array.from(map.values()).sort((a, b) => a.timestamp - b.timestamp);
+    });
+  }, [events]);
+
   return (
     <Card className="p-4 shadow-md rounded-2xl">
       <CardHeader>
@@ -131,6 +184,14 @@ export default function NotificationCenterCard() {
 
         <p className="text-xs text-muted-foreground">
           Estado: <strong>{permission}</strong>
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Estado:{" "}
+          <strong>
+            {status === "connected"
+              ? "🟢 Conectado (Tiempo real)"
+              : "🟡 Fallback (Polling)"}
+          </strong>
         </p>
       </CardContent>
     </Card>
