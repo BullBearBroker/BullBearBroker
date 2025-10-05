@@ -1,6 +1,6 @@
 """Métricas Prometheus para el servicio de IA."""
 
-from prometheus_client import Counter, Histogram
+from prometheus_client import Counter, Gauge, Histogram
 
 # ✅ Codex fix: métricas IA estructuradas
 ai_requests_total = Counter(
@@ -38,4 +38,19 @@ ai_cache_miss_total = Counter(
     "ai_cache_miss_total",
     "Fallos de caché IA",
     ["model"],
+)
+
+ai_stream_tokens_total = Counter(
+    "ai_stream_tokens_total",
+    "Tokens enviados por streaming",
+)
+
+ai_stream_duration_seconds = Histogram(
+    "ai_stream_duration_seconds",
+    "Duración del streaming IA",
+)
+
+ai_conversations_active_total = Gauge(
+    "ai_conversations_active_total",
+    "Conversaciones IA activas",
 )
