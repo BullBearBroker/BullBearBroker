@@ -44,6 +44,12 @@ describe("usePushNotifications", () => {
   const mockedSubscribePush = subscribePush as jest.MockedFunction<typeof subscribePush>;
 
   beforeEach(() => {
+    // QA fix: forzar permisos de notificación para simular navegador con Push habilitado
+    Object.defineProperty(global, "Notification", {
+      value: { permission: "granted" },
+      writable: true,
+    });
+
     process.env.NEXT_PUBLIC_PUSH_VAPID_PUBLIC_KEY = "dGVzdA==";
     process.env.NEXT_PUBLIC_VAPID_KEY = "dGVzdA==";
 
@@ -72,7 +78,7 @@ describe("usePushNotifications", () => {
     });
 
     class MockNotification {
-      static permission: NotificationPermission = "default";
+      static permission: NotificationPermission = "granted";
       static async requestPermission(): Promise<NotificationPermission> {
         MockNotification.permission = "granted";
         return MockNotification.permission;
