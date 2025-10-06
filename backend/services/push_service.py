@@ -19,6 +19,8 @@ except ImportError:  # pragma: no cover - provide graceful fallback for tests
         raise WebPushException("pywebpush package is not installed")
 
 
+# 🧩 Codex fix
+from backend.core import config as core_config
 from backend.models.push_preference import PushNotificationPreference
 from backend.models.push_subscription import PushSubscription
 from backend.utils.config import Config
@@ -49,15 +51,27 @@ class PushService:
             LOGGER.warning("Invalid JSON for VAPID_CLAIMS", exc_info=True)
             env_vapid_claims = None
 
+        config_private_key = (
+            getattr(Config, "PUSH_VAPID_PRIVATE_KEY", None)
+            or getattr(Config, "VAPID_PRIVATE_KEY", None)
+            or getattr(core_config, "VAPID_PRIVATE_KEY", None)
+        )  # 🧩 Codex fix: normalizamos la clave privada entre Config y core.config
+        config_public_key = (
+            getattr(Config, "PUSH_VAPID_PUBLIC_KEY", None)
+            or getattr(Config, "VAPID_PUBLIC_KEY", None)
+            or getattr(core_config, "VAPID_PUBLIC_KEY", None)
+        )  # 🧩 Codex fix: normalizamos la clave pública entre Config y core.config
+        config_claims = getattr(Config, "PUSH_VAPID_CLAIMS", None)  # 🧩 Codex fix
+
         self._vapid_private_key = (
-            vapid_private_key or env_vapid_private_key or Config.VAPID_PRIVATE_KEY
+            vapid_private_key or env_vapid_private_key or config_private_key
         )  # ✅ Codex fix: priorizamos la variable de entorno final VAPID_PRIVATE_KEY.
         self._vapid_public_key = (
-            vapid_public_key or env_vapid_public_key or Config.VAPID_PUBLIC_KEY
+            vapid_public_key or env_vapid_public_key or config_public_key
         )  # ✅ Codex fix: priorizamos la variable de entorno final VAPID_PUBLIC_KEY.
         self._contact_email = contact_email or Config.PUSH_CONTACT_EMAIL
         self._vapid_claims = self._parse_claims(
-            vapid_claims or env_vapid_claims or Config.VAPID_CLAIMS
+            vapid_claims or env_vapid_claims or config_claims
         )  # ✅ Codex fix: compatibilidad con claims definidas tanto en JSON como en Config.
 
     @property

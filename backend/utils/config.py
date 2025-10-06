@@ -104,8 +104,10 @@ class Config:
     )
     LOGIN_BACKOFF_START_AFTER = _get_int_env("LOGIN_BACKOFF_START_AFTER", 3)
     if TESTING:
-        LOGIN_IP_LIMIT_REQUESTS = 10_000
-        LOGIN_IP_LIMIT_WINDOW_SECONDS = 1
+        LOGIN_IP_LIMIT_REQUESTS = (
+            20  # 🧩 Codex fix: mantener límites realistas en tests
+        )
+        LOGIN_IP_LIMIT_WINDOW_SECONDS = 60
     LOGIN_IP_LIMIT_TIMES = LOGIN_IP_LIMIT_REQUESTS
     LOGIN_IP_LIMIT_SECONDS = LOGIN_IP_LIMIT_WINDOW_SECONDS
 

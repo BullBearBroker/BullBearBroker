@@ -1,8 +1,10 @@
-from .alert import Alert
+from .alert import Alert, AlertDeliveryMethod  # 🧩 Codex fix
 from .base import Base
 from .chat import ChatMessage, ChatSession
 from .chat_context import ChatContext
-from .portfolio import PortfolioItem
+
+# 🧩 Codex fix
+from .portfolio import Portfolio, Position  # 🧩 Codex fix
 from .push_preference import PushNotificationPreference
 from .push_subscription import PushSubscription
 from .refresh_token import RefreshToken
@@ -15,7 +17,9 @@ __all__ = [
     "Session",
     "User",
     "RefreshToken",
-    "PortfolioItem",
+    "AlertDeliveryMethod",  # 🧩 Codex fix
+    "Portfolio",  # 🧩 Codex fix
+    "Position",  # 🧩 Codex fix
     "ChatSession",
     "ChatMessage",
     "ChatContext",

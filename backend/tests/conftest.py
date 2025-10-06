@@ -2,23 +2,24 @@ import os
 import shutil
 from pathlib import Path
 
+# 🧩 Codex fix: configure isolated test database before loading backend modules
+TEST_DB_PATH = Path("/tmp/test_suite.db")
+os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"
+if TEST_DB_PATH.exists():
+    TEST_DB_PATH.unlink()
+os.environ.setdefault("TESTING", "1")
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
 from backend.core.rate_limit import reset_rate_limiter_cache
 from backend.database import Base, engine
-
-TEST_DB_PATH = Path("/tmp/test_suite.db")
-os.environ["DATABASE_URL"] = f"sqlite:///{TEST_DB_PATH}"  # ensure isolated DB for tests
-if TEST_DB_PATH.exists():
-    TEST_DB_PATH.unlink()
-os.environ.setdefault("TESTING", "1")
+from backend.tests.test_alerts_endpoints import DummyUserService
 
 from backend.main import app  # isort: skip
 from backend.routers import alerts as alerts_router  # isort: skip
 from backend.routers import auth as auth_router  # isort: skip
-from backend.tests.test_alerts_endpoints import DummyUserService
 
 
 @pytest.fixture(scope="session", autouse=True)

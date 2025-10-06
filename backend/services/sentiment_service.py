@@ -3,16 +3,23 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any
 
 import aiohttp
 
 from backend.core.logging_config import get_logger
 
-try:  # pragma: no cover - optional dependency for lightweight tests
+ENV = os.getenv("APP_ENV", "local")
+
+if ENV == "local":
+
+    # 🧩 Codex fix: stub del pipeline en entornos locales para evitar dependencias pesadas
+    def pipeline(task_name: str = "sentiment-analysis", **kwargs):
+        return lambda text: [{"label": "neutral", "score": 0.5}]
+
+else:  # pragma: no cover - solo se ejecuta en entornos reales
     from transformers import pipeline
-except ImportError:  # pragma: no cover
-    pipeline = None  # type: ignore[assignment]
 
 try:  # pragma: no cover - compatibilidad con distintos puntos de entrada
     from backend.utils.cache import CacheClient

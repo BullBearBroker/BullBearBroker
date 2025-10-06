@@ -202,6 +202,20 @@ async def register(user_data: UserCreate):
         )
         raise HTTPException(status_code=400, detail="Credenciales inválidas")
 
+    existing_user = user_service.get_user_by_email(user_data.email)
+    if existing_user:
+        log_event(
+            logger,
+            service="auth_router",
+            event="user_registration_conflict",
+            level="warning",
+            email_hash=hashlib.sha256(user_data.email.encode("utf-8")).hexdigest()[:8],
+        )
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="User already exists",
+        )
+
     try:
         new_user = user_service.create_user(
             email=user_data.email,
@@ -226,6 +240,12 @@ async def register(user_data: UserCreate):
     except ValueError as exc:  # [Codex] nuevo - valida perfil de riesgo
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    if not new_user:  # 🧩 Codex fix: garantizar que el usuario se creó
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create user",
+        )
+
     payload = {
         "id": str(new_user.id),
         "email": new_user.email,
@@ -240,7 +260,10 @@ async def register(user_data: UserCreate):
 @router.post(
     "/login",
     response_model=TokenPair,
-    dependencies=[Depends(_login_rate_limit)],
+    dependencies=[
+        Depends(_login_rate_limit),
+        Depends(_login_ip_rate_limit),
+    ],  # 🧩 Codex fix
 )
 async def login(
     credentials: UserLogin,
@@ -249,7 +272,7 @@ async def login(
 ) -> TokenPair:
     start = time.perf_counter()
     limited_email = bool(getattr(request.state, "login_limited_email", False))
-    limited_ip = False
+    limited_ip = bool(getattr(request.state, "login_limited_ip", False))  # 🧩 Codex fix
     email_hash = getattr(request.state, "login_email_hash", None)
     normalized_email = credentials.email.strip().lower()
     if not email_hash:

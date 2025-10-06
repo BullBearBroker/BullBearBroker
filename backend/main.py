@@ -24,10 +24,6 @@ from backend.middleware.error_handler import register_error_handlers
 # ✅ Codex fix: Import structured logging middleware
 from backend.middleware.logging_middleware import LoggingMiddleware
 from backend.models.base import Base
-
-# Routers de la app
-# ✅ Codex fix: Import Prometheus metrics router
-# nuevo router de salud
 from backend.routers import (  # ✅ Codex fix: registrar gateway WebSocket realtime
     ai,
     ai_context,
@@ -50,6 +46,11 @@ from backend.services.integration_reporter import log_api_integration_report
 from backend.services.notification_dispatcher import notification_dispatcher
 from backend.services.websocket_manager import AlertWebSocketManager
 from backend.utils.config import ENV, Config
+
+# Routers de la app
+# ✅ Codex fix: Import Prometheus metrics router
+# nuevo router de salud
+from backend.routers import notifications_ws  # 🧩 Bloque 9A  # isort: skip
 
 try:  # pragma: no cover - user service puede no estar disponible en algunos tests
     from backend.services.user_service import InvalidTokenError, user_service
@@ -298,11 +299,11 @@ app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(ai_context.router, prefix="/api/ai", tags=["ai"])
 app.include_router(ai_insights.router, prefix="/api/ai", tags=["ai"])
 app.include_router(ai_stream.router, prefix="/api/ai", tags=["ai"])
-app.include_router(
-    notifications.router, prefix="/api/notifications", tags=["notifications"]
-)
+app.include_router(notifications.router)
+# 🧩 Bloque 9A
+app.include_router(notifications_ws.router)
 app.include_router(push.router, prefix="/api/push", tags=["push"])
-app.include_router(portfolio.router, prefix="/api/portfolio", tags=["portfolio"])
+app.include_router(portfolio.router)  # 🧩 Codex fix: router ya incluye prefijo
 app.include_router(indicators.router)
 
 

@@ -2,15 +2,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from enum import Enum as PyEnum  # [Codex] nuevo
+from enum import Enum
 from typing import TYPE_CHECKING  # [Codex] cambiado - se usa Optional
 
-from sqlalchemy import (  # [Codex] cambiado - se añade Enum
-    Boolean,
-    DateTime,
-    Enum,
-    String,
-)
+from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, String
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -35,10 +30,10 @@ except ImportError:  # pragma: no cover
     from backend.utils.config import password_context  # type: ignore[no-redef]
 
 
-class RiskProfile(PyEnum):  # [Codex] nuevo
-    CONSERVADOR = "conservador"
-    MODERADO = "moderado"
-    AGRESIVO = "agresivo"
+class RiskProfileEnum(str, Enum):
+    CONSERVADOR = "CONSERVADOR"
+    MODERADO = "MODERADO"
+    AGRESIVO = "AGRESIVO"
 
 
 class User(Base):
@@ -51,8 +46,9 @@ class User(Base):
     )
     email: Mapped[str] = mapped_column(String, unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String, nullable=False)
-    risk_profile: Mapped[str | None] = mapped_column(  # [Codex] nuevo
-        Enum(RiskProfile, name="risk_profile_enum", native_enum=False), nullable=True
+    risk_profile: Mapped[str | None] = mapped_column(
+        SQLEnum(RiskProfileEnum, name="risk_profile_enum", native_enum=False),
+        nullable=True,
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=datetime.utcnow, nullable=False

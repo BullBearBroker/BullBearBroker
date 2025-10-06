@@ -219,14 +219,15 @@ def rate_limit(
         window = _IN_MEMORY_BUCKETS[bucket_key]
         now = time.monotonic()
         window[:] = [tick for tick in window if now - tick < seconds]
-        if len(window) >= fallback_limit:
+        window.append(now)
+        if len(window) > fallback_limit:
+            window.pop()
             if state_attribute:
                 setattr(request.state, state_attribute, True)
             if on_limit:
                 dimension = on_limit_dimension or identifier
                 on_limit(request, dimension)
             raise HTTPException(status_code=429, detail=detail)
-        window.append(now)
         if state_attribute:
             setattr(request.state, state_attribute, False)
 

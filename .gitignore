@@ -58,3 +58,4 @@ logs/
 # ========================
 .vscode/
 .idea/
+vapid_keys.json

@@ -1,8 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+// 🧩 Bloque 8B
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { subscribePush } from "@/lib/api";
+import {
+  fetchVapidPublicKey,
+  subscribePush,
+  testNotificationDispatcher,
+} from "@/lib/api";
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -17,29 +22,205 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
   return outputArray;
 }
 
+export interface NotificationEnvelope {
+  id: string;
+  title: string;
+  body: string;
+  payload?: Record<string, unknown>;
+  receivedAt: string;
+}
+
+interface NotificationHistoryEntry {
+  id: string;
+  title: string;
+  body: string;
+  timestamp: number;
+}
+
 interface PushNotificationsState {
   enabled: boolean;
   error: string | null;
   permission: NotificationPermission | "unsupported";
   loading: boolean;
+  testing: boolean;
+  events: NotificationEnvelope[];
+  logs: string[];
+  notificationHistory: NotificationHistoryEntry[];
+  lastEvent: NotificationEnvelope | null;
+  sendTestNotification: () => Promise<void>;
+  requestPermission: () => Promise<NotificationPermission | "unsupported">;
+  dismissEvent: (id: string) => void;
+  clearLogs: () => void;
+}
+
+function makeId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function nowLabel() {
+  return new Date().toLocaleTimeString();
+}
+
+// 🧩 Bloque 8A - Validar coincidencia de claves
+export async function registerPushSubscription(
+  registration?: ServiceWorkerRegistration
+): Promise<PushSubscription> {
+  const serverKey = await fetchVapidPublicKey();
+  const localKey = process.env.NEXT_PUBLIC_VAPID_KEY ?? "";
+
+  if (!serverKey) {
+    throw new Error("Missing VAPID public key from backend.");
+  }
+
+  if (localKey && localKey !== serverKey) {
+    throw new Error("VAPID public key mismatch between frontend and backend.");
+  }
+
+  const swContainer = navigator.serviceWorker;
+  const swReg =
+    registration ??
+    ("ready" in swContainer && swContainer.ready
+      ? await swContainer.ready
+      : undefined);
+
+  if (!swReg) {
+    throw new Error("Service worker registration unavailable.");
+  }
+
+  const existingSubscription = await swReg.pushManager.getSubscription();
+  if (existingSubscription) {
+    return existingSubscription;
+  }
+
+  const applicationServerKey = urlBase64ToUint8Array(serverKey);
+  return swReg.pushManager.subscribe({
+    applicationServerKey,
+    userVisibleOnly: true,
+  });
 }
 
 export function usePushNotifications(token?: string | null): PushNotificationsState {
   const [enabled, setEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const permission: NotificationPermission | "unsupported" = useMemo(() => {
+  const [testing, setTesting] = useState(false);
+  const [events, setEvents] = useState<NotificationEnvelope[]>([]);
+  const [logs, setLogs] = useState<string[]>([]);
+  const [notificationHistory, setNotificationHistory] = useState<NotificationHistoryEntry[]>(() => {
+    if (typeof window === "undefined") {
+      return [];
+    }
+    try {
+      const stored = window.localStorage.getItem("notificationHistory");
+      if (!stored) {
+        return [];
+      }
+      const parsed = JSON.parse(stored) as NotificationHistoryEntry[];
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+      return parsed;
+    } catch (err) {
+      console.error("No se pudo hidratar el historial de notificaciones", err);
+      return [];
+    }
+  });
+  const [permission, setPermission] = useState<
+    NotificationPermission | "unsupported"
+  >(() => {
     if (typeof window === "undefined" || !("Notification" in window)) {
       return "unsupported";
     }
     return Notification.permission;
+  });
+
+  const appendLog = useCallback((message: string) => {
+    setLogs((prev) => {
+      const next = [...prev, `[${nowLabel()}] ${message}`];
+      return next.slice(-25);
+    });
   }, []);
+
+  // 🧩 Bloque 8B
+  const appendNotificationHistory = useCallback(
+    (entry: NotificationHistoryEntry) => {
+      setNotificationHistory((prev) => {
+        const next = [...prev, entry];
+        return next.slice(-100);
+      });
+    },
+    []
+  );
+
+  // 🧩 Bloque 8B
+  const clearLogs = useCallback(() => {
+    setLogs([]);
+    setNotificationHistory([]);
+    if (typeof window !== "undefined") {
+      window.localStorage.removeItem("notificationHistory");
+    }
+  }, []);
+
+  // 🧩 Bloque 8B
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (notificationHistory.length === 0) {
+      window.localStorage.removeItem("notificationHistory");
+      return;
+    }
+    window.localStorage.setItem(
+      "notificationHistory",
+      JSON.stringify(notificationHistory)
+    );
+  }, [notificationHistory]);
+
+  const dismissEvent = useCallback((id: string) => {
+    setEvents((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  const requestPermission = useCallback(async () => {
+    if (permission === "unsupported") {
+      return "unsupported";
+    }
+    if (typeof window === "undefined" || !("Notification" in window)) {
+      setPermission("unsupported");
+      return "unsupported";
+    }
+    if (!("PushManager" in window)) {
+      console.warn("🚫 Push notifications not supported in this browser.");
+      setPermission("unsupported");
+      return "unsupported";
+    }
+
+    const result = await Notification.requestPermission();
+    setPermission(result);
+    appendLog(
+      result === "granted"
+        ? "Permiso de notificaciones concedido"
+        : result === "denied"
+        ? "Permiso de notificaciones denegado"
+        : "Permiso de notificaciones pendiente"
+    );
+    return result;
+  }, [appendLog, permission]);
 
   useEffect(() => {
     if (!token) return;
     if (typeof window === "undefined") return;
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    if (!("PushManager" in window)) {
+      console.warn("🚫 Push notifications not supported in this browser.");
+      setPermission("unsupported");
       setError("Las notificaciones push no están soportadas en este navegador.");
+      return;
+    }
+    if (!("serviceWorker" in navigator)) {
+      setPermission("unsupported");
+      setError("Los service workers no están soportados en este navegador.");
       return;
     }
 
@@ -55,23 +236,24 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
       try {
         const registration = await navigator.serviceWorker.register("/sw.js");
         let permissionState = Notification.permission;
+        setPermission(permissionState);
+        if (permissionState === "denied") {
+          appendLog("Permiso de notificaciones denegado");
+        }
         if (permissionState !== "granted") {
           permissionState = await Notification.requestPermission();
+          setPermission(permissionState);
         }
         if (permissionState !== "granted") {
           if (active) {
             setError("Debes habilitar las notificaciones para recibir alertas.");
+            setEnabled(false);
           }
           return;
         }
 
-        let subscription = await registration.pushManager.getSubscription();
-        if (!subscription) {
-          subscription = await registration.pushManager.subscribe({
-            userVisibleOnly: true,
-            applicationServerKey: urlBase64ToUint8Array(vapidKey),
-          });
-        }
+        const subscription = await registerPushSubscription(registration);
+        appendLog("Clave pública VAPID validada correctamente");
 
         const json = subscription.toJSON();
         const auth = json.keys?.auth ?? "";
@@ -94,6 +276,7 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
         if (active) {
           setEnabled(true);
           setError(null);
+          appendLog("Suscripción push activa");
         }
       } catch (err) {
         if (!active) return;
@@ -102,6 +285,10 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
           err instanceof Error ? err.message : "No se pudo registrar la suscripción push.";
         setError(message);
         setEnabled(false);
+        if (message.toLowerCase().includes("vapid")) {
+          setPermission("unsupported");
+        }
+        appendLog(`Error al registrar push: ${message}`);
       } finally {
         if (active) {
           setLoading(false);
@@ -114,7 +301,134 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
     return () => {
       active = false;
     };
-  }, [token]);
+  }, [appendLog, token]);
 
-  return { enabled, error, permission, loading };
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const container = navigator.serviceWorker as unknown as
+      | (ServiceWorkerContainer & EventTarget)
+      | undefined;
+    if (!container || typeof container.addEventListener !== "function") {
+      return;
+    }
+
+    const handleMessage = (event: MessageEvent) => {
+      const data = event.data;
+      if (!data || typeof data !== "object") return;
+      const type = (data as { type?: string }).type;
+      if (type !== "notification:dispatcher" && type !== "push-notification") {
+        return;
+      }
+
+      const title =
+        typeof (data as Record<string, unknown>).title === "string"
+          ? ((data as Record<string, unknown>).title as string)
+          : "Notificación";
+      const body =
+        typeof (data as Record<string, unknown>).body === "string"
+          ? ((data as Record<string, unknown>).body as string)
+          : "";
+      const payload =
+        typeof (data as Record<string, unknown>).payload === "object"
+          ? ((data as Record<string, unknown>).payload as Record<string, unknown>)
+          : undefined;
+      const receivedAt =
+        typeof (data as Record<string, unknown>).receivedAt === "string"
+          ? ((data as Record<string, unknown>).receivedAt as string)
+          : new Date().toISOString();
+
+      const envelope: NotificationEnvelope = {
+        id: makeId(),
+        title,
+        body,
+        payload,
+        receivedAt,
+      };
+
+      setEvents((prev) => [...prev, envelope]);
+      appendNotificationHistory({
+        id: envelope.id,
+        title: envelope.title,
+        body: envelope.body,
+        timestamp: Date.parse(envelope.receivedAt) || Date.now(),
+      });
+      appendLog(`Evento recibido: ${title}`);
+      console.log("Push recibido correctamente", envelope);
+    };
+
+    container.addEventListener("message", handleMessage as EventListener);
+
+    return () => {
+      container.removeEventListener("message", handleMessage as EventListener);
+    };
+  }, [appendLog, appendNotificationHistory]);
+
+  // 🧩 Bloque 8B
+  const triggerLocalNotification = useCallback((title: string, body: string) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (!("Notification" in window)) {
+      return;
+    }
+    try {
+      if (Notification.permission === "granted") {
+        new Notification(title, { body });
+      }
+    } catch (err) {
+      console.warn("No se pudo mostrar la notificación local", err);
+    }
+  }, []);
+
+  // 🧩 Bloque 8B
+  const sendTestNotification = useCallback(async () => {
+    const entry: NotificationHistoryEntry = {
+      id: makeId(),
+      title: "Notificación de prueba",
+      body: "Este es un mensaje de test.",
+      timestamp: Date.now(),
+    };
+
+    if (!token) {
+      appendLog("Generando notificación local de prueba");
+      appendNotificationHistory(entry);
+      triggerLocalNotification(entry.title, entry.body);
+      return;
+    }
+
+    try {
+      setTesting(true);
+      await testNotificationDispatcher(token);
+      appendLog("Solicitud de notificación de prueba enviada");
+      appendNotificationHistory(entry);
+      triggerLocalNotification(entry.title, entry.body);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "No se pudo enviar la notificación de prueba";
+      setError(message);
+      appendLog(`Error al enviar prueba: ${message}`);
+    } finally {
+      setTesting(false);
+    }
+  }, [appendLog, appendNotificationHistory, token, triggerLocalNotification]);
+
+  const lastEvent = useMemo(() => {
+    return events.length > 0 ? events[events.length - 1] : null;
+  }, [events]);
+
+  return {
+    enabled,
+    error,
+    permission,
+    loading,
+    testing,
+    events,
+    logs,
+    notificationHistory,
+    lastEvent,
+    sendTestNotification,
+    requestPermission,
+    dismissEvent,
+    clearLogs,
+  };
 }
