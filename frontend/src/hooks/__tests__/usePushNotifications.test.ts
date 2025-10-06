@@ -36,6 +36,22 @@ jest.mock("@/lib/api", () => ({
   testNotificationDispatcher: jest.fn().mockResolvedValue({ status: "ok" }),
 }));
 
+// # QA fix: Mock Notification y ServiceWorker para entorno jsdom
+Object.defineProperty(global, "Notification", {
+  value: { permission: "granted" },
+  writable: true,
+});
+
+Object.defineProperty(navigator, "serviceWorker", {
+  value: {
+    register: jest.fn().mockResolvedValue({}),
+    ready: Promise.resolve({
+      pushManager: { subscribe: jest.fn().mockResolvedValue({ endpoint: "mock" }) },
+    }),
+  },
+  writable: true,
+});
+
 describe("usePushNotifications", () => {
   const originalNotification = window.Notification;
   const originalServiceWorker = navigator.serviceWorker;
