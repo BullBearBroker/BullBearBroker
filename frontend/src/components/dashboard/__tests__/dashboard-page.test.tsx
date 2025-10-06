@@ -1,3 +1,12 @@
+// # QA fix: simular usuario autenticado y push habilitado
+jest.mock("@/hooks/useAuth", () => ({
+  useAuth: () => ({ user: { name: "Ana", id: 1 }, isAuthenticated: true }),
+}));
+
+jest.mock("@/hooks/usePushNotifications", () => ({
+  usePushNotifications: () => ({ enabled: true, permission: "granted" }),
+}));
+
 import React from "react";
 import { act, customRender, screen, waitFor } from "@/tests/utils/renderWithProviders";
 import userEvent from "@testing-library/user-event";
