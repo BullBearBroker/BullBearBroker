@@ -335,6 +335,14 @@ export function IndicatorsChart({
   const showRSI = Boolean(indicators.rsi);
   const showVWAP = Boolean(indicators.vwap) || volumes.some((volume) => volume > 0);
 
+  const supportsSvgGradients =
+    typeof window !== "undefined" &&
+    typeof window.SVGLinearGradientElement !== "undefined" &&
+    typeof window.SVGStopElement !== "undefined";
+  const atrFill = supportsSvgGradients
+    ? "url(#atrGradient)"
+    : "rgba(56, 189, 248, 0.24)";
+
   const emaFast = computeEMA(closes, emaFastPeriod);
   const emaSlow = computeEMA(closes, emaSlowPeriod);
   const bollinger = computeBollinger(closes, bollingerPeriod, bollingerMult);
@@ -487,18 +495,27 @@ export function IndicatorsChart({
                 {showATR ? (
                   <ResponsiveContainer>
                     <AreaChart data={atrChartData} margin={{ left: 12, right: 12, top: 16, bottom: 8 }}>
-                      <defs>
-                        <linearGradient id="atrGradient" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#38bdf8" stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
+                      {supportsSvgGradients && (
+                        <defs>
+                          <linearGradient id="atrGradient" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.3} />
+                            <stop offset="95%" stopColor="#38bdf8" stopOpacity={0} />
+                          </linearGradient>
+                        </defs>
+                      )}
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="index" tickFormatter={(value) => atrChartData[value]?.label ?? value} interval="preserveStartEnd" />
                       <YAxis width={60} />
                       <Tooltip labelFormatter={(value) => atrChartData[value as number]?.label ?? String(value)} />
                       <Legend />
-                      <Area type="monotone" dataKey="value" stroke="#38bdf8" fillOpacity={1} fill="url(#atrGradient)" name={`ATR ${atrPeriod}`} />
+                      <Area
+                        type="monotone"
+                        dataKey="value"
+                        stroke="#38bdf8"
+                        fillOpacity={supportsSvgGradients ? 1 : 0.32}
+                        fill={atrFill}
+                        name={`ATR ${atrPeriod}`}
+                      />
                     </AreaChart>
                   </ResponsiveContainer>
                 ) : (

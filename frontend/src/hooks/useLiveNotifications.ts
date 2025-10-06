@@ -33,11 +33,21 @@ export function useLiveNotifications(token?: string | null) {
     if (!fallbackData) {
       return;
     }
-    if (!Array.isArray(fallbackData)) {
-      console.warn("Invalid fallback payload for notifications");
+    if (Array.isArray(fallbackData)) {
+      setEvents(fallbackData);
       return;
     }
-    setEvents(fallbackData);
+    const maybeLogs =
+      fallbackData &&
+      typeof fallbackData === "object" &&
+      Array.isArray((fallbackData as { logs?: unknown }).logs)
+        ? ((fallbackData as { logs: NotificationEvent[] }).logs ?? [])
+        : undefined;
+    if (maybeLogs !== undefined) {
+      setEvents(maybeLogs);
+      return;
+    }
+    console.warn("Invalid fallback payload for notifications");
   }, [fallbackData, status]);
 
   useEffect(() => {

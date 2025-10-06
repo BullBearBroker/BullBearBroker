@@ -1,7 +1,7 @@
-import type { Config } from "jest";
-import baseConfig from "./jest.config.base";
+const baseConfig = require("./jest.config.base.cjs");
 
-const config: Config = {
+/** @type {import('jest').Config} */
+module.exports = {
   ...baseConfig,
   collectCoverage: true,
   coverageThreshold: {
@@ -13,5 +13,3 @@ const config: Config = {
     },
   },
 };
-
-export default config;
