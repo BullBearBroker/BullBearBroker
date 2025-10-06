@@ -101,6 +101,18 @@ export const handlers = [
     });
   }),
   ...createMockPortfolioHandlers(),
+  // # QA fix: mock básico del endpoint de chat para suites
+  http.post("*/api/chat", () => HttpResponse.json({ messages: [] })),
+  // # QA fix: mockear validación de sesión para pruebas
+  http.get("*/api/auth/me", () =>
+    HttpResponse.json({ user: { id: 1, name: "QA" }, token: "test-token" })
+  ),
+  // # QA fix: mock de logs de notificaciones
+  http.get("*/api/notifications/logs", () => HttpResponse.json({ logs: [] })),
+  // # QA fix: mock handshake de realtime websocket
+  http.get("*/api/realtime/ws", () => HttpResponse.json({ ok: true })),
+  // # QA fix: mock canal de notificaciones websocket
+  http.get("*/ws/notifications", () => HttpResponse.json({ ok: true })),
 ];
 
 export const newsEmptyHandler = http.get(NEWS_PATH, () =>

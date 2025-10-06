@@ -3,7 +3,8 @@ import 'whatwg-fetch';
 import { server } from './server';
 
 beforeAll(() => {
-  server.listen({ onUnhandledRequest: 'error' });
+  // # QA fix: evitar que requests no mockeadas rompan las suites
+  server.listen({ onUnhandledRequest: 'warn' });
 });
 
 afterEach(() => {

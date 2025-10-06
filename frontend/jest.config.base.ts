@@ -14,7 +14,7 @@ const baseConfig: Config = {
   moduleNameMapper: {
     "^.+\\.(css|less|scss|sass)$": "identity-obj-proxy",
     "^@/styles/globals\\.css$": "identity-obj-proxy",
-    // # QA fix: corregir regex y ruta raíz para alias "@/"
+    // # QA fix: corregir regex y ruta raíz del alias "@/"
     "^@/(.*)$": "<rootDir>/src/$1",
     "^recharts$": "<rootDir>/__mocks__/recharts.tsx",
     "^msw/node$": "<rootDir>/node_modules/msw/lib/node/index.js",
