@@ -22,4 +22,36 @@ describe("ErrorBoundary", () => {
 
     expect(screen.getByText("Ha ocurrido un error crítico")).toBeInTheDocument();
   });
+
+  // QA: cubrimos la lógica de reset para subir la cobertura del boundary.
+  it("restablece el estado cuando cambian las resetKeys", () => {
+    const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+    const Thrower = ({ shouldThrow }: { shouldThrow: boolean }) => {
+      if (shouldThrow) {
+        throw new Error("boom");
+      }
+      return <p>Recuperado</p>;
+    };
+
+    const { rerender } = customRender(
+      <ErrorBoundary resetKeys={["v1"]}>
+        <Thrower shouldThrow />
+      </ErrorBoundary>
+    );
+
+    expect(
+      screen.getByText("Ha ocurrido un error inesperado. Intenta recargar esta sección.")
+    ).toBeInTheDocument();
+
+    rerender(
+      <ErrorBoundary resetKeys={["v2"]}>
+        <Thrower shouldThrow={false} />
+      </ErrorBoundary>
+    );
+
+    expect(screen.getByText("Recuperado")).toBeInTheDocument();
+
+    consoleSpy.mockRestore();
+  });
 });
