@@ -108,7 +108,7 @@ export const handlers = [
     HttpResponse.json({ user: { id: 1, name: "QA" }, token: "test-token" })
   ),
   // # QA fix: mock de logs de notificaciones
-  http.get("*/api/notifications/logs", () => HttpResponse.json({ logs: [] })),
+  http.get("*/api/notifications/logs", () => HttpResponse.json([])),
   // # QA fix: mock handshake de realtime websocket
   http.get("*/api/realtime/ws", () => HttpResponse.json({ ok: true })),
   // # QA fix: mock canal de notificaciones websocket

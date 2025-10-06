@@ -1,7 +1,8 @@
-import path from "path";
-import type { Config } from "jest";
+const path = require("path");
 
-const baseConfig: Config = {
+/** @type {import('jest').Config} */
+const baseConfig = {
+  preset: "ts-jest/presets/js-with-ts",
   rootDir: path.resolve(__dirname),
   testEnvironment: "jsdom",
   testEnvironmentOptions: {
@@ -24,7 +25,14 @@ const baseConfig: Config = {
     "^jest-websocket-mock$": "<rootDir>/src/tests/mocks/jest-websocket-mock.ts", // ✅ Codex fix: mock consistente para WebSocket
   },
   transform: {
-    "^.+\\.(ts|tsx|js|jsx)$": [
+    "^.+\\.(ts|tsx)$": [
+      "ts-jest",
+      {
+        tsconfig: path.resolve(__dirname, "tsconfig.jest.json"),
+        diagnostics: false,
+      },
+    ],
+    "^.+\\.(js|jsx)$": [
       "babel-jest",
       { configFile: path.resolve(__dirname, "babel.config.js"), babelrc: false },
     ],
@@ -52,4 +60,4 @@ const baseConfig: Config = {
   ],
 };
 
-export default baseConfig;
+module.exports = baseConfig;

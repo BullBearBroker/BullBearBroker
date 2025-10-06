@@ -5,30 +5,62 @@ import "jest-axe/extend-expect";
 process.env.NEXT_PUBLIC_API_URL ??= "http://localhost:8000";
 
 const originalError = console.error;
+const originalWarn = console.warn;
+
+const ignoredWarnings = [
+  /Warning:.*(linearGradient|stop|defs)/,
+  /Push notifications not supported/i,
+  /Invalid fallback payload/i,
+  /unrecognized in this browser/i,
+];
+
+const ignoredErrorMessages = [
+  /Mensaje WS no parseable/, // errores controlados por mocks de WS
+  /No se pudo construir la URL del WebSocket/,
+];
+
+function shouldIgnore(message: unknown) {
+  if (typeof message !== "string") {
+    return false;
+  }
+  return ignoredWarnings.some((pattern) => pattern.test(message));
+}
+
+function shouldIgnoreError(message: unknown) {
+  if (shouldIgnore(message)) {
+    return true;
+  }
+  if (typeof message !== "string") {
+    return false;
+  }
+  return ignoredErrorMessages.some((pattern) => pattern.test(message));
+}
 
 beforeAll(() => {
   console.error = (...args: any[]) => {
     const [message] = args;
 
-    if (typeof message === "string") {
-      if (/Warning:.*(linearGradient|stop|defs)/.test(message)) {
-        return;
-      }
-
-      if (
-        message.includes("Mensaje WS no parseable") ||
-        message.includes("No se pudo construir la URL del WebSocket")
-      ) {
-        return;
-      }
+    if (shouldIgnoreError(message)) {
+      return;
     }
 
     originalError.call(console, ...args);
+  };
+
+  console.warn = (...args: any[]) => {
+    const [message] = args;
+
+    if (shouldIgnore(message)) {
+      return;
+    }
+
+    originalWarn.call(console, ...args);
   };
 });
 
 afterAll(() => {
   console.error = originalError;
+  console.warn = originalWarn;
 });
 
 if (typeof (global as any).ResizeObserver === "undefined") {

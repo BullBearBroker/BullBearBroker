@@ -9,6 +9,10 @@ import {
   testNotificationDispatcher,
 } from "@/lib/api";
 
+const isTestEnvironment =
+  typeof process !== "undefined" &&
+  (process.env.NODE_ENV === "test" || process.env.JEST_WORKER_ID !== undefined);
+
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -212,13 +216,21 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
   useEffect(() => {
     if (!token) return;
     if (typeof window === "undefined") return;
-    if (!("PushManager" in window)) {
-      console.warn("🚫 Push notifications not supported in this browser.");
+    const hasNavigator = typeof navigator !== "undefined";
+    if (!("Notification" in window)) {
       setPermission("unsupported");
       setError("Las notificaciones push no están soportadas en este navegador.");
       return;
     }
-    if (!("serviceWorker" in navigator)) {
+    if (!("PushManager" in window)) {
+      if (hasNavigator && !isTestEnvironment) {
+        console.warn("🚫 Push notifications not supported in this browser.");
+      }
+      setPermission("unsupported");
+      setError("Las notificaciones push no están soportadas en este navegador.");
+      return;
+    }
+    if (!hasNavigator || !("serviceWorker" in navigator)) {
       setPermission("unsupported");
       setError("Los service workers no están soportados en este navegador.");
       return;
@@ -235,12 +247,12 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
       setLoading(true);
       try {
         const registration = await navigator.serviceWorker.register("/sw.js");
-        let permissionState = Notification.permission;
+        let permissionState = "Notification" in window ? Notification.permission : "default";
         setPermission(permissionState);
         if (permissionState === "denied") {
           appendLog("Permiso de notificaciones denegado");
         }
-        if (permissionState !== "granted") {
+        if (permissionState !== "granted" && "Notification" in window) {
           permissionState = await Notification.requestPermission();
           setPermission(permissionState);
         }
