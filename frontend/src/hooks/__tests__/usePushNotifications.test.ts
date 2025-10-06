@@ -3,54 +3,37 @@ import { act, renderHook, waitFor } from "@/tests/utils/renderWithProviders";
 import { subscribePush } from "@/lib/api";
 import { usePushNotifications } from "../usePushNotifications";
 
-// ✅ Codex fix: mock global para entorno Push API en Jest
+// # QA fix: mock seguro para Notification y ServiceWorker (evita redefinir varias veces)
 beforeAll(() => {
-  Object.defineProperty(global, "Notification", {
-    value: { permission: "granted" },
-    configurable: true,
-    writable: true,
-  });
+  if (!global.Notification) {
+    Object.defineProperty(global, "Notification", {
+      value: { permission: "granted" },
+      configurable: true,
+      writable: true,
+    });
+  }
 
-  Object.defineProperty(global.navigator, "serviceWorker", {
-    value: {
-      ready: Promise.resolve({
-        pushManager: {
-          subscribe: jest.fn().mockResolvedValue({
-            endpoint: "mock-endpoint",
-            expirationTime: null,
-            keys: {
-              p256dh: "mock-p256dh",
-              auth: "mock-auth",
-            },
-          }),
-        },
-      }),
-    },
-    configurable: true,
-    writable: true,
-  });
+  if (!navigator.serviceWorker) {
+    Object.defineProperty(navigator, "serviceWorker", {
+      value: {
+        register: jest.fn().mockResolvedValue({}),
+        ready: Promise.resolve({
+          pushManager: {
+            subscribe: jest.fn().mockResolvedValue({ endpoint: "mock" }),
+          },
+        }),
+      },
+      configurable: true,
+      writable: true,
+    });
+  }
 });
 
 jest.mock("@/lib/api", () => ({
   subscribePush: jest.fn().mockResolvedValue({ id: "sub" }),
   testNotificationDispatcher: jest.fn().mockResolvedValue({ status: "ok" }),
+  fetchVapidPublicKey: jest.fn().mockResolvedValue("dGVzdA=="), // # QA fix: mockear obtención de clave VAPID
 }));
-
-// # QA fix: Mock Notification y ServiceWorker para entorno jsdom
-Object.defineProperty(global, "Notification", {
-  value: { permission: "granted" },
-  writable: true,
-});
-
-Object.defineProperty(navigator, "serviceWorker", {
-  value: {
-    register: jest.fn().mockResolvedValue({}),
-    ready: Promise.resolve({
-      pushManager: { subscribe: jest.fn().mockResolvedValue({ endpoint: "mock" }) },
-    }),
-  },
-  writable: true,
-});
 
 describe("usePushNotifications", () => {
   const originalNotification = window.Notification;
@@ -60,12 +43,6 @@ describe("usePushNotifications", () => {
   const mockedSubscribePush = subscribePush as jest.MockedFunction<typeof subscribePush>;
 
   beforeEach(() => {
-    // QA fix: forzar permisos de notificación para simular navegador con Push habilitado
-    Object.defineProperty(global, "Notification", {
-      value: { permission: "granted" },
-      writable: true,
-    });
-
     process.env.NEXT_PUBLIC_PUSH_VAPID_PUBLIC_KEY = "dGVzdA==";
     process.env.NEXT_PUBLIC_VAPID_KEY = "dGVzdA==";
 
@@ -85,6 +62,7 @@ describe("usePushNotifications", () => {
       configurable: true,
       value: {
         register: jest.fn().mockResolvedValue(registration),
+        ready: Promise.resolve(registration), // # QA fix: exponer ready con pushManager mockeado
       },
     });
 
@@ -104,6 +82,11 @@ describe("usePushNotifications", () => {
     Object.defineProperty(window, "Notification", {
       configurable: true,
       value: MockNotification,
+    });
+    Object.defineProperty(global, "Notification", {
+      configurable: true,
+      writable: true,
+      value: MockNotification, // # QA fix: reutilizar clase mock para Notification global
     });
   });
 

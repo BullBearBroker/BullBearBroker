@@ -37,6 +37,9 @@ const mockIndicatorsChart = jest.fn((props) => (
   <div data-testid="indicators-chart">{props.symbol}</div>
 ));
 
+const mockUseLiveNotifications = jest
+  .fn(() => ({ events: [], status: "connected" as const })); // # QA fix: mock estable para live notifications
+
 const mockHistoricalRefresh = jest.fn();
 const mockUseHistoricalData = jest.fn(() => ({
   data: { symbol: "BTCUSDT", interval: "1h", source: "Binance", values: [] },
@@ -48,12 +51,44 @@ const mockUseHistoricalData = jest.fn(() => ({
   isEmpty: false,
 }));
 
-const mockUsePushNotifications = jest.fn(() => ({
+// # QA fix: tipado reutilizable para el mock de usePushNotifications
+type PushMockState = {
+  enabled: boolean;
+  error: string | null;
+  permission: NotificationPermission;
+  loading: boolean;
+  testing: boolean;
+  events: Array<{ id: string; title: string; body?: string; receivedAt: string }>;
+  logs: string[];
+  sendTestNotification: jest.Mock;
+  requestPermission: jest.Mock;
+  dismissEvent: jest.Mock;
+  notificationHistory: Array<{ id: string; title: string; body?: string; timestamp: number }>;
+  clearLogs: jest.Mock;
+};
+
+const stablePushEvents: PushMockState["events"] = [];
+const stablePushLogs: PushMockState["logs"] = [];
+const stablePushHistory: PushMockState["notificationHistory"] = [];
+// # QA fix: mantener referencias estables y evitar renders infinitos en NotificationCenterCard
+
+const createPushMockState = (overrides: Partial<PushMockState> = {}): PushMockState => ({
   enabled: false,
   error: null,
   permission: "default" as NotificationPermission,
   loading: false,
-}));
+  testing: false,
+  events: stablePushEvents,
+  logs: stablePushLogs,
+  sendTestNotification: jest.fn(),
+  requestPermission: jest.fn(),
+  dismissEvent: jest.fn(),
+  notificationHistory: stablePushHistory,
+  clearLogs: jest.fn(),
+  ...overrides,
+}); // # QA fix: helper consistente para estados del hook de push
+
+const mockUsePushNotifications = jest.fn(() => createPushMockState());
 
 jest.mock("@/components/sidebar/market-sidebar", () => ({
   MarketSidebar: (props: any) => mockMarketSidebar(props),
@@ -78,6 +113,10 @@ jest.mock("@/components/portfolio/PortfolioPanel", () => ({
 jest.mock("@/components/indicators/IndicatorsChart", () => ({
   IndicatorsChart: (props: any) => mockIndicatorsChart(props),
 }));
+
+jest.mock("@/hooks/useLiveNotifications", () => ({
+  useLiveNotifications: (token?: string) => mockUseLiveNotifications(token),
+})); // # QA fix: estabilizar hook de notificaciones en pruebas
 
 jest.mock("@/components/dashboard/theme-toggle", () => ({
   ThemeToggle: () => <button type="button">Tema</button>,
@@ -132,12 +171,12 @@ describe("DashboardPage", () => {
     mockChatPanel.mockClear();
     mockPortfolioPanel.mockClear();
     mockUsePushNotifications.mockClear();
-    mockUsePushNotifications.mockImplementation(() => ({
-      enabled: false,
-      error: null,
-      permission: "default" as NotificationPermission,
-      loading: false,
-    }));
+    mockUsePushNotifications.mockImplementation(() => createPushMockState()); // # QA fix: restablecer estado base del hook
+    mockUseLiveNotifications.mockReset();
+    mockUseLiveNotifications.mockImplementation(() => ({
+      events: [],
+      status: "connected" as const,
+    })); // # QA fix: estado estable para live notifications
     mockHistoricalRefresh.mockClear();
     mockHistoricalRefresh.mockResolvedValue(undefined);
     mockUseHistoricalData.mockClear();
@@ -197,7 +236,9 @@ describe("DashboardPage", () => {
     });
 
     expect(await screen.findByText(/bienvenido de vuelta/i)).toBeInTheDocument();
-    expect(screen.getByText(/Ana/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { level: 1, name: /Ana/i })
+    ).toBeInTheDocument(); // # QA fix: evitar coincidencias parciales con el texto
     expect(mockMarketSidebar).toHaveBeenCalled();
     expect(mockPortfolioPanel).toHaveBeenCalledWith(
       expect.objectContaining({ token: baseAuth.token })
@@ -308,12 +349,9 @@ describe("DashboardPage", () => {
   });
 
   it("muestra el estado de notificaciones push activas", async () => {
-    mockUsePushNotifications.mockReturnValue({
-      enabled: true,
-      error: null,
-      permission: "granted",
-      loading: false,
-    });
+    mockUsePushNotifications.mockReturnValue(
+      createPushMockState({ enabled: true, permission: "granted", loading: false })
+    ); // # QA fix: estado habilitado consistente para las pruebas
     mockUseAuth.mockReturnValue({ ...baseAuth, loading: false });
     mockUseRouter.mockReturnValue({ replace: jest.fn() });
     mockedGetIndicators.mockResolvedValue({
@@ -426,12 +464,14 @@ describe("DashboardPage", () => {
   });
 
   it("muestra el error de notificaciones push", async () => {
-    mockUsePushNotifications.mockReturnValue({
-      enabled: false,
-      error: "No se pudo registrar push",
-      permission: "denied",
-      loading: false,
-    });
+    mockUsePushNotifications.mockReturnValue(
+      createPushMockState({
+        enabled: false,
+        error: "No se pudo registrar push",
+        permission: "denied",
+        loading: false,
+      })
+    ); // # QA fix: estado de error controlado para notificaciones push
     mockUseAuth.mockReturnValue({ ...baseAuth, loading: false });
     mockUseRouter.mockReturnValue({ replace: jest.fn() });
     mockedGetIndicators.mockResolvedValue({
