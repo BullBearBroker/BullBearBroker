@@ -9,6 +9,10 @@ from sqlalchemy import Boolean, DateTime, Enum as SQLEnum, String
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+# ruff: noqa: I001
+# isort: skip_file
+
+
 if TYPE_CHECKING:
     from .alert import Alert
     from .chat import ChatSession

@@ -27,7 +27,8 @@ from backend.core.security import (
 from backend.database import SessionLocal
 from backend.models import Alert, AlertDeliveryMethod, Session as SessionModel, User
 from backend.models.refresh_token import RefreshToken
-from backend.models.user import RiskProfile  # [Codex] nuevo
+
+# from backend.models.user import RiskProfile  # [Codex] nuevo
 from backend.utils.config import Config, password_context
 
 LOGGER = logging.getLogger(__name__)
@@ -130,9 +131,10 @@ class UserService:
         normalized_profile: str | None = None
         if risk_profile:
             candidate = risk_profile.lower()
-            valid_values = {item.value for item in RiskProfile}
+            # 🧩 Sustituido RiskProfile Enum por conjunto estático de valores válidos (QA fix)
+            valid_values = {"conservador", "moderado", "agresivo", "analista", "fund"}
             if candidate not in valid_values:
-                raise ValueError("Perfil de riesgo inválido")
+                raise ValueError(f"Invalid risk profile: {risk_profile}")
             normalized_profile = candidate
         with self._session_scope() as session:
             if session.query(User).filter(User.email == email).first():
