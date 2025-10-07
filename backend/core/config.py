@@ -1,5 +1,3 @@
-"""Core configuration helpers for BullBearBroker backend."""
-
 from __future__ import annotations
 
 import json
@@ -8,8 +6,11 @@ import os
 from pathlib import Path
 from typing import Any
 
-
 LOGGER = logging.getLogger(__name__)
+
+
+VAPID_PUBLIC_KEY: str | None = os.getenv("VAPID_PUBLIC_KEY")
+VAPID_PRIVATE_KEY: str | None = os.getenv("VAPID_PRIVATE_KEY")
 
 
 class Settings:
@@ -17,8 +18,8 @@ class Settings:
 
     def __init__(self) -> None:
         self.APP_ENV: str = os.getenv("APP_ENV", "local")
-        self.VAPID_PUBLIC_KEY: str | None = os.getenv("VAPID_PUBLIC_KEY")
-        self.VAPID_PRIVATE_KEY: str | None = os.getenv("VAPID_PRIVATE_KEY")
+        self.VAPID_PUBLIC_KEY: str | None = VAPID_PUBLIC_KEY
+        self.VAPID_PRIVATE_KEY: str | None = VAPID_PRIVATE_KEY
 
         if not self.VAPID_PUBLIC_KEY or not self.VAPID_PRIVATE_KEY:
             self._load_vapid_keys_from_file()
@@ -83,5 +84,5 @@ class Settings:
 settings = Settings()
 
 # Backwards compatibility for modules that import module-level constants.
-VAPID_PUBLIC_KEY = settings.VAPID_PUBLIC_KEY or ""
-VAPID_PRIVATE_KEY = settings.VAPID_PRIVATE_KEY or ""
+VAPID_PUBLIC_KEY = settings.VAPID_PUBLIC_KEY
+VAPID_PRIVATE_KEY = settings.VAPID_PRIVATE_KEY

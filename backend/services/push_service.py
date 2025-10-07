@@ -4,26 +4,19 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 from collections.abc import Iterable
 from typing import Any
 
-try:  # pragma: no cover - optional dependency in some environments
-    from pywebpush import WebPushException, webpush
-except ImportError:  # pragma: no cover - provide graceful fallback for tests
+from pywebpush import WebPushException, webpush
 
-    class WebPushException(Exception):
-        """Raised when pywebpush is unavailable."""
-
-    def webpush(**_: Any) -> None:  # type: ignore
-        raise WebPushException("pywebpush package is not installed")
-
-
-# 🧩 Codex fix
-from backend.core import config as core_config
+from backend.core.config import settings
 from backend.models.push_preference import PushNotificationPreference
 from backend.models.push_subscription import PushSubscription
-from backend.utils.config import Config
+
+try:  # pragma: no cover - database may be optional in some contexts
+    from backend.database import SessionLocal
+except Exception:  # pragma: no cover - allow operating without a database
+    SessionLocal = None  # type: ignore[assignment]
 
 LOGGER = logging.getLogger(__name__)
 
@@ -31,96 +24,45 @@ LOGGER = logging.getLogger(__name__)
 class PushService:
     """Encapsulates Web Push subscription handling and delivery."""
 
-    def __init__(
+    def __init__(self) -> None:
+        self.logger = LOGGER
+        # These attributes remain for backwards compatibility with existing tests
+        self._vapid_private_key: str | None = None
+        self._vapid_public_key: str | None = None
+
+    def get_all_subscriptions(self) -> list[PushSubscription]:
+        """Return every stored subscription, if a database is available."""
+
+        if SessionLocal is None:
+            return []
+
+        with SessionLocal() as session:  # type: ignore[misc]
+            return session.query(PushSubscription).all()
+
+    def _resolve_vapid_keys(
         self,
         *,
-        vapid_private_key: str | None = None,
-        vapid_public_key: str | None = None,
-        contact_email: str | None = None,
-        vapid_claims: dict[str, Any] | str | None = None,
-    ) -> None:
-        env_vapid_private_key = os.getenv("VAPID_PRIVATE_KEY")
-        env_vapid_public_key = os.getenv("VAPID_PUBLIC_KEY") or os.getenv(
-            "PUSH_VAPID_PUBLIC_KEY"
-        )
-        try:
-            env_vapid_claims = json.loads(
-                os.getenv("VAPID_CLAIMS", "{}")
-            )  # ✅ Codex fix: cargamos las claims VAPID estandarizadas desde el entorno.
-        except json.JSONDecodeError:
-            LOGGER.warning("Invalid JSON for VAPID_CLAIMS", exc_info=True)
-            env_vapid_claims = None
+        override_private: str | None = None,
+        override_public: str | None = None,
+    ) -> tuple[str | None, str | None]:
+        vapid_private = override_private or settings.VAPID_PRIVATE_KEY or self._vapid_private_key
+        vapid_public = override_public or settings.VAPID_PUBLIC_KEY or self._vapid_public_key
+        return vapid_private, vapid_public
 
-        settings = getattr(core_config, "settings", None)
-        settings_private_key = None
-        settings_public_key = None
-        if settings is not None:
-            settings_private_key = getattr(settings, "VAPID_PRIVATE_KEY", None)
-            settings_public_key = getattr(settings, "VAPID_PUBLIC_KEY", None)
+    def has_vapid_keys(self) -> bool:
+        """Return ``True`` when both VAPID keys are available."""
 
-        config_private_key = (
-            getattr(Config, "PUSH_VAPID_PRIVATE_KEY", None)
-            or getattr(Config, "VAPID_PRIVATE_KEY", None)
-            or settings_private_key
-            or getattr(core_config, "VAPID_PRIVATE_KEY", None)
-        )  # 🧩 Codex fix: normalizamos la clave privada entre Config y core.config
-        config_public_key = (
-            getattr(Config, "PUSH_VAPID_PUBLIC_KEY", None)
-            or getattr(Config, "VAPID_PUBLIC_KEY", None)
-            or settings_public_key
-            or getattr(core_config, "VAPID_PUBLIC_KEY", None)
-        )  # 🧩 Codex fix: normalizamos la clave pública entre Config y core.config
-        config_claims = getattr(Config, "PUSH_VAPID_CLAIMS", None)  # 🧩 Codex fix
+        vapid_private, vapid_public = self._resolve_vapid_keys()
+        return bool(vapid_private and vapid_public)
 
-        self._vapid_private_key = (
-            vapid_private_key or env_vapid_private_key or config_private_key
-        )  # ✅ Codex fix: priorizamos la variable de entorno final VAPID_PRIVATE_KEY.
-        self._vapid_public_key = (
-            vapid_public_key or env_vapid_public_key or config_public_key
-        )  # ✅ Codex fix: priorizamos la variable de entorno final VAPID_PUBLIC_KEY.
-        self._contact_email = contact_email or Config.PUSH_CONTACT_EMAIL
-        self._vapid_claims = self._parse_claims(
-            vapid_claims or env_vapid_claims or config_claims
-        )  # ✅ Codex fix: compatibilidad con claims definidas tanto en JSON como en Config.
-
-        if not self.is_configured:
-            LOGGER.warning("PushService initialised without VAPID keys")
-
-    @property
-    def is_configured(self) -> bool:
-        return bool(self._vapid_private_key and self._vapid_public_key)
-
-    def _parse_claims(
-        self, claims: dict[str, Any] | str | None
-    ) -> dict[str, Any] | None:
-        if isinstance(claims, dict):
-            return claims
-        if isinstance(claims, str) and claims:
-            try:
-                parsed = json.loads(claims)
-            except json.JSONDecodeError:
-                LOGGER.warning("Invalid JSON for VAPID_CLAIMS: %s", claims)
-            else:
-                if isinstance(parsed, dict):
-                    return parsed
-                LOGGER.warning("VAPID_CLAIMS must decode to a JSON object: %s", claims)
-        return None
-
-    def _build_claims(self) -> dict[str, Any]:
-        if self._vapid_claims:
-            return self._vapid_claims
-        contact = self._contact_email or "support@bullbear.ai"
-        if not contact.startswith("mailto:"):
-            contact = f"mailto:{contact}"
-        return {"sub": contact}
-
-    def send_notification(
-        self, subscription: PushSubscription, payload: dict[str, Any]
+    def _deliver(
+        self,
+        subscription: PushSubscription,
+        payload: dict[str, Any],
+        *,
+        vapid_private: str,
+        vapid_public: str,
     ) -> bool:
-        if not self.is_configured:
-            LOGGER.warning("Attempted to send push without VAPID keys configured")
-            return False
-
         subscription_info = {
             "endpoint": subscription.endpoint,
             "keys": {"auth": subscription.auth, "p256dh": subscription.p256dh},
@@ -130,19 +72,15 @@ class PushService:
             webpush(
                 subscription_info=subscription_info,
                 data=json.dumps(payload),
-                vapid_private_key=self._vapid_private_key,
-                vapid_public_key=self._vapid_public_key,
-                vapid_claims=self._build_claims(),
+                vapid_private_key=vapid_private,
+                vapid_public_key=vapid_public,
+                vapid_claims={"sub": "mailto:admin@bullbear.ai"},
             )
         except WebPushException as exc:  # pragma: no cover - defensive logging
-            LOGGER.warning(
-                "Web push delivery failed for %s: %s",
-                subscription.endpoint,
-                exc,
-            )
+            self.logger.warning(f"Push failed for {subscription.endpoint}: {exc}")
             return False
         except Exception as exc:  # pragma: no cover - defensive logging
-            LOGGER.warning(
+            self.logger.warning(
                 "Unexpected error delivering web push for %s: %s",
                 subscription.endpoint,
                 exc,
@@ -172,26 +110,50 @@ class PushService:
         }
         return mapping.get(category, True)
 
-    def broadcast(
+    def broadcast_to_subscriptions(
         self,
         subscriptions: Iterable[PushSubscription],
         payload: dict[str, Any],
         *,
         category: str | None = None,
     ) -> int:
+        """Send ``payload`` to the provided subscriptions."""
+
+        vapid_private, vapid_public = self._resolve_vapid_keys()
+        if not vapid_public or not vapid_private:
+            self.logger.warning("VAPID keys missing — skipping push")
+            return 0
+
         delivered = 0
         for subscription in subscriptions:
             if not self._is_category_allowed(subscription, category):
                 continue
-            success = self.send_notification(subscription, payload)
-            if success:
+            if self._deliver(
+                subscription,
+                payload,
+                vapid_private=vapid_private,
+                vapid_public=vapid_public,
+            ):
                 delivered += 1
-            else:
-                LOGGER.debug(
-                    "Push notification skipped for subscription %s",
-                    getattr(subscription, "id", "unknown"),
-                )
+
         return delivered
+
+    def broadcast(self, payload: dict[str, Any]) -> None:
+        """Send ``payload`` to every registered subscription."""
+
+        vapid_private = settings.VAPID_PRIVATE_KEY or self._vapid_private_key
+        vapid_public = settings.VAPID_PUBLIC_KEY or self._vapid_public_key
+        if not vapid_public or not vapid_private:
+            self.logger.warning("VAPID keys missing — skipping push")
+            return
+
+        subscriptions = self.get_all_subscriptions()
+        category = payload.get("category") if isinstance(payload, dict) else None
+        self.broadcast_to_subscriptions(
+            subscriptions,
+            payload,
+            category=category,
+        )
 
 
 push_service = PushService()
