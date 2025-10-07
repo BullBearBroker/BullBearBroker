@@ -98,8 +98,10 @@ jest.mock("@/components/alerts/alerts-panel", () => ({
   AlertsPanel: (props: any) => mockAlertsPanel(props),
 }));
 
-jest.mock("@/components/news/news-panel", () => ({
+jest.mock("@/components/news/NewsPanel", () => ({
+  __esModule: true,
   NewsPanel: (props: any) => mockNewsPanel(props),
+  default: (props: any) => mockNewsPanel(props),
 }));
 
 jest.mock("@/components/chat/chat-panel", () => ({
@@ -107,11 +109,15 @@ jest.mock("@/components/chat/chat-panel", () => ({
 }));
 
 jest.mock("@/components/portfolio/PortfolioPanel", () => ({
+  __esModule: true,
   PortfolioPanel: (props: any) => mockPortfolioPanel(props),
+  default: (props: any) => mockPortfolioPanel(props),
 }));
 
 jest.mock("@/components/indicators/IndicatorsChart", () => ({
+  __esModule: true,
   IndicatorsChart: (props: any) => mockIndicatorsChart(props),
+  default: (props: any) => mockIndicatorsChart(props),
 }));
 
 jest.mock("@/hooks/useLiveNotifications", () => ({

@@ -11,7 +11,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "@/lib/motion";
-import { Activity, BellRing, Bot, LineChart, Radio, SignalHigh, Wallet } from "lucide-react";
+import { Activity, BellRing, Bot, LineChart, Newspaper, Radio, SignalHigh, Wallet } from "lucide-react";
 
 import { useAuth } from "@/components/providers/auth-provider";
 import { MarketSidebar } from "@/components/sidebar/market-sidebar";
@@ -115,13 +115,10 @@ function AsyncModuleFallback({
 }
 
 const IndicatorsChart = dynamic(
-  () =>
-    import("@/components/indicators/IndicatorsChart").then((mod) => ({
-      default: mod.IndicatorsChart,
-    })),
+  () => import("@/components/indicators/IndicatorsChart"),
   {
     ssr: false,
-    suspense: true,
+    loading: () => <ChartSkeleton />,
   },
 );
 
@@ -137,13 +134,18 @@ const AlertsPanel = dynamic(
 );
 
 const NewsPanel = dynamic(
-  () =>
-    import("@/components/news/news-panel").then((mod) => ({
-      default: mod.NewsPanel,
-    })),
+  () => import("@/components/news/NewsPanel"),
   {
     ssr: false,
-    suspense: true,
+    loading: () => (
+      <AsyncModuleFallback
+        title="Noticias"
+        description="Cargando el pulso del mercado..."
+        icon={<Newspaper className="h-5 w-5 text-primary" aria-hidden="true" />}
+        aria-label="Sección de noticias cargándose"
+        className="h-full"
+      />
+    ),
   },
 );
 
@@ -159,13 +161,18 @@ const ChatPanel = dynamic(
 );
 
 const PortfolioPanel = dynamic(
-  () =>
-    import("@/components/portfolio/PortfolioPanel").then((mod) => ({
-      default: mod.PortfolioPanel,
-    })),
+  () => import("@/components/portfolio/PortfolioPanel"),
   {
     ssr: false,
-    suspense: true,
+    loading: () => (
+      <AsyncModuleFallback
+        title="Portafolio"
+        description="Cargando el resumen de tus posiciones..."
+        icon={<Wallet className="h-5 w-5 text-primary" aria-hidden="true" />}
+        aria-label="Sección de portafolio cargándose"
+        className="h-full"
+      />
+    ),
   },
 );
 
@@ -683,19 +690,7 @@ function DashboardPageContent() {
         >
           <div className="grid auto-rows-min gap-4">
             <motion.div className="h-full" {...createCardMotion(0.08)}>
-              <Suspense
-                fallback={
-                  <AsyncModuleFallback
-                    title="Portafolio"
-                    description="Cargando el resumen de tus posiciones..."
-                    icon={<Wallet className="h-5 w-5 text-primary" aria-hidden="true" />}
-                    aria-label="Sección de portafolio cargándose"
-                    className="h-full"
-                  />
-                }
-              >
-                <PortfolioPanel token={token ?? undefined} />
-              </Suspense>
+              <PortfolioPanel token={token ?? undefined} />
             </motion.div>
             {/* [Codex] nuevo - tarjeta de indicadores con insights AI */}
             <motion.div className="h-full" {...createCardMotion(0.12)}>
@@ -729,20 +724,18 @@ function DashboardPageContent() {
                     </p>
                   )}
                   {indicatorData && (
-                    <Suspense fallback={<ChartSkeleton />}>
-                      <IndicatorsChart
-                        symbol={indicatorData.symbol}
-                        interval={indicatorData.interval}
-                        indicators={indicatorData.indicators}
-                        series={indicatorData.series}
-                        insights={indicatorInsights}
-                        loading={indicatorLoading}
-                        error={indicatorError}
-                        history={historicalData}
-                        historyError={historicalError?.message ?? null}
-                        historyLoading={historicalLoading || historicalValidating}
-                      />
-                    </Suspense>
+                    <IndicatorsChart
+                      symbol={indicatorData.symbol}
+                      interval={indicatorData.interval}
+                      indicators={indicatorData.indicators}
+                      series={indicatorData.series}
+                      insights={indicatorInsights}
+                      loading={indicatorLoading}
+                      error={indicatorError}
+                      history={historicalData}
+                      historyError={historicalError?.message ?? null}
+                      historyLoading={historicalLoading || historicalValidating}
+                    />
                   )}
                   {!indicatorData && !indicatorError && (
                     <p className="text-sm text-muted-foreground">
@@ -796,19 +789,7 @@ function DashboardPageContent() {
               </Suspense>
             </motion.div>
             <motion.div className="h-full" {...createCardMotion(0.12)}>
-              <Suspense
-                fallback={
-                  <AsyncModuleFallback
-                    title="Noticias"
-                    description="Buscando las últimas noticias del mercado..."
-                    icon={<Radio className="h-5 w-5 text-primary" aria-hidden="true" />}
-                    aria-label="Sección de noticias cargándose"
-                    className="h-full"
-                  />
-                }
-              >
-                <NewsPanel token={token ?? undefined} />
-              </Suspense>
+              <NewsPanel token={token ?? undefined} />
             </motion.div>
           </div>
         </section>

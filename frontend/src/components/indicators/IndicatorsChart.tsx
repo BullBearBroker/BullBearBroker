@@ -1,5 +1,7 @@
 "use client";
 
+import { memo, useMemo } from "react";
+
 import {
   Area,
   AreaChart,
@@ -306,7 +308,7 @@ function computeVWAP(
   return result;
 }
 
-export function IndicatorsChart({
+const IndicatorsChartComponent = memo(function IndicatorsChart({
   symbol,
   interval,
   indicators,
@@ -318,30 +320,35 @@ export function IndicatorsChart({
   loading,
   error,
 }: IndicatorsChartProps) {
-  const fallbackCandles: CandleLike[] = (series?.closes ?? []).map((close, idx) => ({
-    timestamp: `${idx}`,
-    open: series?.closes?.[idx] ?? close,
-    high: series?.highs?.[idx] ?? close,
-    low: series?.lows?.[idx] ?? close,
-    close,
-    volume: series?.volumes?.[idx] ?? 0,
-  }));
+  const { candles, closes, highs, lows, volumes } = useMemo(() => {
+    const fallbackCandles: CandleLike[] = (series?.closes ?? []).map((close, idx) => ({
+      timestamp: `${idx}`,
+      open: series?.closes?.[idx] ?? close,
+      high: series?.highs?.[idx] ?? close,
+      low: series?.lows?.[idx] ?? close,
+      close,
+      volume: series?.volumes?.[idx] ?? 0,
+    }));
 
-  const candles = history?.values?.length
-    ? history.values.map((item) => ({
-        timestamp: item.timestamp,
-        open: item.open,
-        high: item.high,
-        low: item.low,
-        close: item.close,
-        volume: item.volume ?? 0,
-      }))
-    : fallbackCandles;
+    const resolvedCandles = history?.values?.length
+      ? history.values.map((item) => ({
+          timestamp: item.timestamp,
+          open: item.open,
+          high: item.high,
+          low: item.low,
+          close: item.close,
+          volume: item.volume ?? 0,
+        }))
+      : fallbackCandles;
 
-  const closes = candles.map((item) => item.close);
-  const highs = candles.map((item) => item.high ?? item.close);
-  const lows = candles.map((item) => item.low ?? item.close);
-  const volumes = candles.map((item) => item.volume ?? 0);
+    return {
+      candles: resolvedCandles,
+      closes: resolvedCandles.map((item) => item.close),
+      highs: resolvedCandles.map((item) => item.high ?? item.close),
+      lows: resolvedCandles.map((item) => item.low ?? item.close),
+      volumes: resolvedCandles.map((item) => item.volume ?? 0),
+    };
+  }, [history?.values, series?.closes, series?.highs, series?.lows, series?.volumes]);
 
   const emaFastPeriod = indicators.ema?.[0]?.period ?? 20;
   const emaSlowPeriod = indicators.ema?.[1]?.period ?? 50;
@@ -353,90 +360,124 @@ export function IndicatorsChart({
   const macdSlow = indicators.macd?.slow ?? 26;
   const macdSignal = indicators.macd?.signal ?? 9;
   const ichimokuSettings = indicators.ichimoku;
+  const ichimokuParams = {
+    conversion: ichimokuSettings?.conversion ?? 9,
+    base: ichimokuSettings?.base ?? 26,
+    spanB: ichimokuSettings?.span_b ?? 52,
+  };
   const showIchimoku = Boolean(ichimokuSettings);
   const showATR = Boolean(indicators.atr);
   const showRSI = Boolean(indicators.rsi);
   const showVWAP = Boolean(indicators.vwap) || volumes.some((volume) => volume > 0);
+  const historyHasValues = Boolean(history?.values?.length);
 
-  const supportsSvgGradients =
-    typeof window !== "undefined" &&
-    typeof window.SVGLinearGradientElement !== "undefined" &&
-    typeof window.SVGStopElement !== "undefined";
-  const atrFill = supportsSvgGradients
-    ? "url(#atrGradient)"
-    : "hsl(var(--info) / 0.24)";
+  const supportsSvgGradients = useMemo(
+    () =>
+      typeof window !== "undefined" &&
+      typeof window.SVGLinearGradientElement !== "undefined" &&
+      typeof window.SVGStopElement !== "undefined",
+    []
+  );
 
-  const emaFast = computeEMA(closes, emaFastPeriod);
-  const emaSlow = computeEMA(closes, emaSlowPeriod);
-  const bollinger = computeBollinger(closes, bollingerPeriod, bollingerMult);
-  const rsiSeries = computeRSI(closes, rsiPeriod);
-  const atrSeries = showATR ? computeATR(highs, lows, closes, atrPeriod) : [];
-  const macdSeries = computeMACD(closes, macdFast, macdSlow, macdSignal);
-  const ichimokuSeries = showIchimoku
-    ? computeIchimoku(
-        highs,
-        lows,
-        ichimokuSettings.conversion ?? 9,
-        ichimokuSettings.base ?? 26,
-        ichimokuSettings.span_b ?? 52
-      )
-    : null;
-  const vwapSeries = showVWAP ? computeVWAP(highs, lows, closes, volumes) : [];
+  const atrFill = supportsSvgGradients ? "url(#atrGradient)" : "hsl(var(--info) / 0.24)";
 
-  const labels = candles.map((item, idx) => {
-    if (history?.values?.length) {
-      try {
-        return new Date(item.timestamp).toLocaleString("es-ES", { hour12: false });
-      } catch (err) {
-        return item.timestamp;
+  const {
+    priceChartData,
+    rsiChartData,
+    atrChartData,
+    ichimokuChartData,
+    macdChartData,
+    ichimokuSeries,
+    labels,
+  } = useMemo(() => {
+    const emaFast = computeEMA(closes, emaFastPeriod);
+    const emaSlow = computeEMA(closes, emaSlowPeriod);
+    const bollinger = computeBollinger(closes, bollingerPeriod, bollingerMult);
+    const rsiSeries = computeRSI(closes, rsiPeriod);
+    const atrSeries = showATR ? computeATR(highs, lows, closes, atrPeriod) : [];
+    const macdSeries = computeMACD(closes, macdFast, macdSlow, macdSignal);
+    const ichimokuSeriesResult = showIchimoku
+      ? computeIchimoku(highs, lows, ichimokuParams.conversion, ichimokuParams.base, ichimokuParams.spanB)
+      : null;
+    const vwapSeries = showVWAP ? computeVWAP(highs, lows, closes, volumes) : [];
+
+    const resolvedLabels = candles.map((item, idx) => {
+      if (historyHasValues) {
+        try {
+          return new Date(item.timestamp).toLocaleString("es-ES", { hour12: false });
+        } catch (err) {
+          return item.timestamp;
+        }
       }
-    }
-    return `#${idx + 1}`;
-  });
+      return `#${idx + 1}`;
+    });
 
-  const priceChartData = candles.map((item, idx) => ({
-    index: idx,
-    label: labels[idx],
-    close: item.close,
-    emaFast: emaFast[idx],
-    emaSlow: emaSlow[idx],
-    bollingerUpper: bollinger.upper[idx],
-    bollingerLower: bollinger.lower[idx],
-    bollingerMiddle: bollinger.middle[idx],
-    vwap: vwapSeries[idx] ?? null,
-  }));
+    return {
+      labels: resolvedLabels,
+      priceChartData: candles.map((item, idx) => ({
+        index: idx,
+        label: resolvedLabels[idx],
+        close: item.close,
+        emaFast: emaFast[idx],
+        emaSlow: emaSlow[idx],
+        bollingerUpper: bollinger.upper[idx],
+        bollingerLower: bollinger.lower[idx],
+        bollingerMiddle: bollinger.middle[idx],
+        vwap: vwapSeries[idx] ?? null,
+      })),
+      rsiChartData: rsiSeries.map((value, idx) => ({
+        index: idx,
+        label: resolvedLabels[idx],
+        value,
+      })),
+      atrChartData: atrSeries.map((value, idx) => ({
+        index: idx,
+        label: resolvedLabels[idx],
+        value,
+      })),
+      ichimokuChartData: (ichimokuSeriesResult?.tenkan ?? []).map((_, idx) => ({
+        index: idx,
+        label: resolvedLabels[idx],
+        tenkan: ichimokuSeriesResult?.tenkan[idx] ?? null,
+        kijun: ichimokuSeriesResult?.kijun[idx] ?? null,
+        spanA: ichimokuSeriesResult?.spanA[idx] ?? null,
+        spanB: ichimokuSeriesResult?.spanB[idx] ?? null,
+      })),
+      macdChartData: macdSeries.macd.map((value, idx) => ({
+        index: idx,
+        label: resolvedLabels[idx],
+        macd: value,
+        signal: macdSeries.signal[idx],
+        histogram: macdSeries.histogram[idx],
+      })),
+      ichimokuSeries: ichimokuSeriesResult,
+    };
+  }, [
+    atrPeriod,
+    bollingerMult,
+    bollingerPeriod,
+    candles,
+    closes,
+    highs,
+    historyHasValues,
+    ichimokuParams.base,
+    ichimokuParams.conversion,
+    ichimokuParams.spanB,
+    lows,
+    macdFast,
+    macdSignal,
+    macdSlow,
+    rsiPeriod,
+    showATR,
+    showIchimoku,
+    showVWAP,
+    volumes,
+  ]);
 
-  const rsiChartData = rsiSeries.map((value, idx) => ({
-    index: idx,
-    label: labels[idx],
-    value,
-  }));
-
-  const atrChartData = atrSeries.map((value, idx) => ({
-    index: idx,
-    label: labels[idx],
-    value,
-  }));
-
-  const ichimokuChartData = (ichimokuSeries?.tenkan ?? []).map((_, idx) => ({
-    index: idx,
-    label: labels[idx],
-    tenkan: ichimokuSeries?.tenkan[idx] ?? null,
-    kijun: ichimokuSeries?.kijun[idx] ?? null,
-    spanA: ichimokuSeries?.spanA[idx] ?? null,
-    spanB: ichimokuSeries?.spanB[idx] ?? null,
-  }));
-
-  const macdChartData = macdSeries.macd.map((value, idx) => ({
-    index: idx,
-    label: labels[idx],
-    macd: value,
-    signal: macdSeries.signal[idx],
-    histogram: macdSeries.histogram[idx],
-  }));
-
-  const insightBlocks =
-    insights?.split(/\n+/).filter((line) => line.trim().length > 0) ?? [];
+  const insightBlocks = useMemo(
+    () => insights?.split(/\n+/).filter((line) => line.trim().length > 0) ?? [],
+    [insights]
+  );
 
   return (
     <div className="grid gap-6 xl:grid-cols-[2fr_1fr]" data-testid="technical-analysis">
@@ -621,4 +662,7 @@ export function IndicatorsChart({
       </aside>
     </div>
   );
-}
+});
+
+export { IndicatorsChartComponent as IndicatorsChart };
+export default IndicatorsChartComponent;

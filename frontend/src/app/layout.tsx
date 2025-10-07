@@ -25,8 +25,20 @@ const inter = Inter({
   subsets: ["latin"],
   display: "swap",
   variable: "--font-inter",
-  preload: false,
 });
+
+const apiPreconnectOrigin = (() => {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (!apiUrl) return null;
+  try {
+    return new URL(apiUrl).origin;
+  } catch (error) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("Invalid NEXT_PUBLIC_API_URL provided for preconnect", error);
+    }
+    return null;
+  }
+})();
 
 export const metadata: Metadata = {
   metadataBase,
@@ -83,6 +95,9 @@ export default function RootLayout({
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        {process.env.NODE_ENV === "production" && apiPreconnectOrigin && (
+          <link rel="preconnect" href={apiPreconnectOrigin} crossOrigin="anonymous" />
+        )}
         <link rel="prefetch" href="/portfolio" as="document" />
         <link rel="prefetch" href="/test-indicators" as="document" />
       </head>

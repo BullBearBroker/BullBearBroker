@@ -21,7 +21,9 @@ jest.mock("@/components/chat/chat-panel", () => ({
 }));
 
 jest.mock("@/components/indicators/IndicatorsChart", () => ({
+  __esModule: true,
   IndicatorsChart: () => <div data-testid="indicators-chart" />,
+  default: () => <div data-testid="indicators-chart" />,
 }));
 
 jest.mock("@/components/dashboard/theme-toggle", () => ({
