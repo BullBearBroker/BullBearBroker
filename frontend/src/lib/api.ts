@@ -521,7 +521,7 @@ export interface PushConfigResponse {
 export async function fetchVapidPublicKey(): Promise<string | null> {
   try {
     const { vapidPublicKey } = await request<PushConfigResponse>(
-      "/api/config/push-key"
+      "/api/notifications/vapid-public-key"
     );
     if (typeof vapidPublicKey === "string" && vapidPublicKey.length > 0) {
       return vapidPublicKey;
