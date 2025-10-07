@@ -13,6 +13,9 @@ export default [
       "build/",
       "coverage/",
       "out/",
+      "jest.config.*.cjs",
+      "babel.config.cjs",
+      "*.config.cjs",
     ],
   },
   js.configs.recommended,
@@ -53,6 +56,18 @@ export default [
   },
   {
     files: ["tailwind.config.js", "postcss.config.js"],
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
+  {
+    files: [
+      "**/*.test.{ts,tsx}",
+      "**/__tests__/**/*.{ts,tsx}",
+      "tests/**/*.{ts,tsx}",
+      "src/tests/**/*.{ts,tsx}",
+      "jest.setup.ts",
+    ],
     rules: {
       "@typescript-eslint/no-require-imports": "off",
     },

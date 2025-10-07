@@ -110,27 +110,27 @@ import { TextDecoder, TextEncoder } from "util";
 import { ReadableStream, WritableStream, TransformStream } from "stream/web";
 
 if (!globalThis.TextEncoder) {
-  // @ts-ignore - asignación deliberada al objeto global
+  // @ts-expect-error - asignación deliberada al objeto global
   globalThis.TextEncoder = TextEncoder;
 }
 
 if (!globalThis.TextDecoder) {
-  // @ts-ignore - asignación deliberada al objeto global
+  // @ts-expect-error - asignación deliberada al objeto global
   globalThis.TextDecoder = TextDecoder;
 }
 
 if (!globalThis.TransformStream) {
-  // @ts-ignore - asignación deliberada al objeto global
+  // @ts-expect-error - asignación deliberada al objeto global
   globalThis.TransformStream = TransformStream;
 }
 
 if (!globalThis.ReadableStream) {
-  // @ts-ignore - asignación deliberada al objeto global
+  // @ts-expect-error - asignación deliberada al objeto global
   globalThis.ReadableStream = ReadableStream;
 }
 
 if (!globalThis.WritableStream) {
-  // @ts-ignore - asignación deliberada al objeto global
+  // @ts-expect-error - asignación deliberada al objeto global
   globalThis.WritableStream = WritableStream;
 }
 
@@ -144,7 +144,7 @@ if (!globalThis.BroadcastChannel) {
     onmessage: ((event: MessageEvent) => void) | null = null;
   }
 
-  // @ts-ignore - asignación deliberada al objeto global
+  // @ts-expect-error - asignación deliberada al objeto global
   globalThis.BroadcastChannel = MockBroadcastChannel;
 }
 

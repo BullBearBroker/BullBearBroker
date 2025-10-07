@@ -488,7 +488,8 @@ describe("DashboardPage", () => {
       customRender(<DashboardPage />);
     });
 
-    expect(await screen.findByText("No se pudo registrar push")).toBeInTheDocument();
+    const alerts = await screen.findAllByText("No se pudo registrar push");
+    expect(alerts).toHaveLength(2);
   });
 
   it("limpia los insights cuando la IA devuelve un error", async () => {
