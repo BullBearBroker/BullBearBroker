@@ -8,7 +8,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { usePushNotifications } from "@/hooks/usePushNotifications";
+import {
+  PERMISSION_DENIED_MESSAGE,
+  usePushNotifications,
+} from "@/hooks/usePushNotifications";
 // 🧩 Bloque 9B
 import { useLiveNotifications } from "@/hooks/useLiveNotifications";
 // 🧩 Bloque 9B
@@ -25,6 +28,7 @@ const STORAGE_KEY = "notificationHistory";
 
 export default function NotificationCenterCard() {
   const {
+    error,
     permission,
     requestPermission,
     sendTestNotification,
@@ -35,6 +39,7 @@ export default function NotificationCenterCard() {
   const { token } = useAuth();
   // 🧩 Bloque 9B
   const { events, status } = useLiveNotifications(token ?? undefined);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [history, setHistory] = useState<NotificationLog[]>(() => {
     if (typeof window === "undefined") {
       return notificationHistory;
@@ -54,6 +59,27 @@ export default function NotificationCenterCard() {
       return notificationHistory;
     }
   });
+
+  useEffect(() => {
+    if (permission === "denied") {
+      setToastMessage(PERMISSION_DENIED_MESSAGE);
+    }
+  }, [permission]);
+
+  useEffect(() => {
+    if (!error) {
+      return;
+    }
+    setToastMessage(error);
+  }, [error]);
+
+  useEffect(() => {
+    if (!toastMessage) {
+      return;
+    }
+    const timeout = window.setTimeout(() => setToastMessage(null), 5000);
+    return () => window.clearTimeout(timeout);
+  }, [toastMessage]);
 
   // 🧩 Bloque 8B
   useEffect(() => {
@@ -149,6 +175,14 @@ export default function NotificationCenterCard() {
 
   return (
     <Card className="surface-card">
+      {toastMessage ? (
+        <div
+          role="alert"
+          className="fixed bottom-6 right-6 z-50 max-w-sm rounded-xl border border-border/60 bg-background/90 px-4 py-3 text-sm text-foreground shadow-lg backdrop-blur"
+        >
+          {toastMessage}
+        </div>
+      ) : null}
       <CardHeader className="space-y-3 pb-4">
         <div className="flex flex-col gap-2">
           <CardTitle className="flex items-center gap-2 text-lg font-sans font-medium tracking-tight">

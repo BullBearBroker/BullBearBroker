@@ -17,9 +17,12 @@ export function ServiceWorkerProvider() {
 
     const registerServiceWorker = async () => {
       try {
-        const registration = await navigator.serviceWorker.register(
+        const existing = await navigator.serviceWorker.getRegistration(
           SERVICE_WORKER_PATH,
         );
+        const registration =
+          existing ??
+          (await navigator.serviceWorker.register(SERVICE_WORKER_PATH));
 
         if (cancelled) {
           return;

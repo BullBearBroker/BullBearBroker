@@ -13,6 +13,9 @@ const isTestEnvironment =
   typeof process !== "undefined" &&
   (process.env.NODE_ENV === "test" || process.env.JEST_WORKER_ID !== undefined);
 
+export const PERMISSION_DENIED_MESSAGE =
+  "Debes permitir notificaciones para recibir alertas.";
+
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
   const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
@@ -70,9 +73,10 @@ function nowLabel() {
 
 // 🧩 Bloque 8A - Validar coincidencia de claves
 export async function registerPushSubscription(
-  registration?: ServiceWorkerRegistration
+  registration?: ServiceWorkerRegistration,
+  vapidPublicKey?: string | null
 ): Promise<PushSubscription> {
-  const serverKey = await fetchVapidPublicKey();
+  const serverKey = vapidPublicKey ?? (await fetchVapidPublicKey());
   const localKey = process.env.NEXT_PUBLIC_VAPID_KEY ?? "";
 
   if (!serverKey) {
@@ -80,7 +84,7 @@ export async function registerPushSubscription(
   }
 
   if (localKey && localKey !== serverKey) {
-    throw new Error("VAPID public key mismatch between frontend and backend.");
+    console.warn("VAPID public key mismatch between frontend and backend.");
   }
 
   const swContainer = navigator.serviceWorker;
@@ -201,6 +205,10 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
       return "unsupported";
     }
 
+    if (permission !== "granted") {
+      setError(null);
+    }
+
     const result = await Notification.requestPermission();
     setPermission(result);
     appendLog(
@@ -210,6 +218,11 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
         ? "Permiso de notificaciones denegado"
         : "Permiso de notificaciones pendiente"
     );
+    if (result === "denied") {
+      setError(PERMISSION_DENIED_MESSAGE);
+    } else if (result === "granted") {
+      setError(null);
+    }
     return result;
   }, [appendLog, permission]);
 
@@ -237,34 +250,59 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
     }
 
     let active = true;
-    const vapidKey = process.env.NEXT_PUBLIC_VAPID_KEY;
-    if (!vapidKey) {
-      setError("Falta configurar la clave pública VAPID.");
-      return;
-    }
 
     const register = async () => {
       setLoading(true);
       try {
-        const registration = await navigator.serviceWorker.register("/sw.js");
+        const registration = await navigator.serviceWorker.ready;
+        if (!registration) {
+          throw new Error("Service worker registration unavailable.");
+        }
+
         let permissionState = "Notification" in window ? Notification.permission : "default";
         setPermission(permissionState);
+
         if (permissionState === "denied") {
           appendLog("Permiso de notificaciones denegado");
-        }
-        if (permissionState !== "granted" && "Notification" in window) {
-          permissionState = await Notification.requestPermission();
-          setPermission(permissionState);
-        }
-        if (permissionState !== "granted") {
-          if (active) {
-            setError("Debes habilitar las notificaciones para recibir alertas.");
-            setEnabled(false);
-          }
+          setError(PERMISSION_DENIED_MESSAGE);
+          setEnabled(false);
           return;
         }
 
-        const subscription = await registerPushSubscription(registration);
+        if (permissionState !== "granted" && "Notification" in window) {
+          permissionState = await Notification.requestPermission();
+          setPermission(permissionState);
+          appendLog(
+            permissionState === "granted"
+              ? "Permiso de notificaciones concedido"
+              : permissionState === "denied"
+              ? "Permiso de notificaciones denegado"
+              : "Permiso de notificaciones pendiente"
+          );
+        }
+
+        if (permissionState !== "granted") {
+          if (permissionState === "denied") {
+            setError(PERMISSION_DENIED_MESSAGE);
+          }
+          setEnabled(false);
+          return;
+        }
+
+        const vapidPublicKey = await fetchVapidPublicKey();
+        if (!vapidPublicKey) {
+          console.warn("Missing VAPID public key from backend.");
+          appendLog("No se recibió clave pública VAPID del backend");
+          setPermission("unsupported");
+          setError("No se pudo obtener la clave pública VAPID desde el servidor.");
+          setEnabled(false);
+          return;
+        }
+
+        const subscription = await registerPushSubscription(
+          registration,
+          vapidPublicKey
+        );
         appendLog("Clave pública VAPID validada correctamente");
 
         const json = subscription.toJSON();

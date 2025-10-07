@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from "@/tests/utils/renderWithProviders";
 
-import { subscribePush } from "@/lib/api";
+import { fetchVapidPublicKey, subscribePush } from "@/lib/api";
 import { usePushNotifications } from "../usePushNotifications";
 
 // # QA fix: mock seguro para Notification y ServiceWorker (evita redefinir varias veces)
@@ -41,6 +41,8 @@ describe("usePushNotifications", () => {
   const originalPushManager = (window as any).PushManager;
   const originalAtob = (global as any).atob;
   const mockedSubscribePush = subscribePush as jest.MockedFunction<typeof subscribePush>;
+  const mockedFetchVapidPublicKey =
+    fetchVapidPublicKey as jest.MockedFunction<typeof fetchVapidPublicKey>;
 
   beforeEach(() => {
     process.env.NEXT_PUBLIC_PUSH_VAPID_PUBLIC_KEY = "dGVzdA==";
@@ -134,6 +136,7 @@ describe("usePushNotifications", () => {
   it("reporta error cuando falta la clave VAPID", async () => {
     process.env.NEXT_PUBLIC_PUSH_VAPID_PUBLIC_KEY = "";
     process.env.NEXT_PUBLIC_VAPID_KEY = "";
+    mockedFetchVapidPublicKey.mockResolvedValueOnce(null);
 
     const { result } = renderHook(() => usePushNotifications("token"));
 
