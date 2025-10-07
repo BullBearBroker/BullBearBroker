@@ -76,12 +76,31 @@ export async function registerPushSubscription(
   registration?: ServiceWorkerRegistration,
   vapidPublicKey?: string | null
 ): Promise<PushSubscription> {
-  const serverKey = vapidPublicKey ?? (await fetchVapidPublicKey());
-  const localKey = process.env.NEXT_PUBLIC_VAPID_KEY ?? "";
+  const toastApi = (globalThis as {
+    toast?: { error?: (message: string) => void };
+  }).toast;
+
+  const normalizeKey = (key?: string | null) =>
+    typeof key === "string" ? key.trim() : "";
+
+  let serverKey = normalizeKey(vapidPublicKey);
+  if (!serverKey) {
+    serverKey = normalizeKey(await fetchVapidPublicKey());
+  }
 
   if (!serverKey) {
-    throw new Error("Missing VAPID public key from backend.");
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    serverKey = normalizeKey(await fetchVapidPublicKey());
   }
+
+  if (!serverKey) {
+    if (toastApi?.error) {
+      toastApi.error("Faltan claves VAPID");
+    }
+    throw new Error("Missing VAPID key");
+  }
+
+  const localKey = normalizeKey(process.env.NEXT_PUBLIC_VAPID_KEY ?? "");
 
   if (localKey && localKey !== serverKey) {
     console.warn("VAPID public key mismatch between frontend and backend.");
@@ -291,7 +310,7 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
 
         const vapidPublicKey = await fetchVapidPublicKey();
         if (!vapidPublicKey) {
-          console.warn("Missing VAPID public key from backend.");
+          console.warn("Missing VAPID key from backend.");
           appendLog("No se recibió clave pública VAPID del backend");
           setPermission("unsupported");
           setError("No se pudo obtener la clave pública VAPID desde el servidor.");
