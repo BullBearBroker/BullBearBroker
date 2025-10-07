@@ -5,79 +5,28 @@ from __future__ import annotations
 import asyncio
 import json
 from asyncio import Lock  # 🧩 Bloque 9A
-from collections.abc import Awaitable, Callable, Sequence
 from typing import Any  # 🧩 Bloque 9A
 
 from fastapi import WebSocket  # 🧩 Bloque 9A
 
 from backend.core.logging_config import get_logger
-from backend.models.push_subscription import PushSubscription
 from backend.schemas.notifications import NotificationEvent  # 🧩 Bloque 9A
 from backend.services.audit_service import AuditService
 from backend.services.push_service import push_service
 from backend.services.realtime_service import RealtimeService
 from backend.utils.config import ENV
 
-try:  # pragma: no cover - database may be optional in some contexts
-    from backend.database import SessionLocal
-except Exception:  # pragma: no cover - allow dispatcher to operate without DB
-    SessionLocal = None  # type: ignore[assignment]
-
 
 class PushBroadcastChannel:
     """Asynchronous adapter to deliver payloads using ``PushService``."""
 
-    def __init__(
-        self,
-        push_service_impl: Any,
-        subscription_provider: (
-            Callable[[], Awaitable[Sequence[PushSubscription]]] | None
-        ) = None,
-    ) -> None:
+    def __init__(self, push_service_impl: Any) -> None:
         self._service = push_service_impl
-        self._subscription_provider = subscription_provider or self._load_subscriptions
         self._logger = get_logger(service="push_broadcast_channel")
 
-    async def _load_subscriptions(self) -> Sequence[PushSubscription]:
-        if SessionLocal is None:
-            return []
-
-        def _query() -> Sequence[PushSubscription]:
-            with SessionLocal() as session:  # type: ignore[misc]
-                return session.query(PushSubscription).all()
-
-        return await asyncio.to_thread(_query)
-
-    async def broadcast(self, payload: dict[str, Any]) -> int:
-        subscriptions: Sequence[PushSubscription]
+    async def broadcast(self, payload: dict[str, Any]) -> None:
         try:
-            subscriptions = await self._subscription_provider()
-        except Exception as exc:  # pragma: no cover - defensive guard
-            self._logger.warning(
-                {
-                    "service": "push_broadcast_channel",
-                    "event": "subscription_fetch_error",
-                    "error": str(exc),
-                }
-            )
-            return 0
-
-        if not subscriptions:
-            self._logger.info(
-                {
-                    "service": "push_broadcast_channel",
-                    "event": "no_subscriptions",
-                }
-            )
-            return 0
-
-        category = payload.get("category")
-
-        def _send() -> int:
-            return self._service.broadcast(subscriptions, payload, category=category)
-
-        try:
-            return await asyncio.to_thread(_send)
+            await asyncio.to_thread(self._service.broadcast, payload)
         except Exception as exc:  # pragma: no cover - ensure dispatcher resilience
             self._logger.warning(
                 {
@@ -86,7 +35,6 @@ class PushBroadcastChannel:
                     "error": str(exc),
                 }
             )
-            return 0
 
 
 class NotificationDispatcher:
@@ -100,6 +48,7 @@ class NotificationDispatcher:
     ) -> None:
         self.realtime = realtime_service
         self.push = push_service_channel
+        self.push_service = getattr(push_service_channel, "_service", push_service_channel)
         self.audit = audit_service
         self._logger = get_logger(service="notification_dispatcher")
 
@@ -133,19 +82,28 @@ class NotificationDispatcher:
             )
 
         push_status = "skipped"
-        try:
-            push_result = await self.push.broadcast(push_payload)
-            push_status = f"sent:{push_result}"
-        except Exception as exc:  # pragma: no cover - defensive logging
-            push_status = f"error:{exc}"
-            self._logger.warning(
+        has_keys = getattr(self.push_service, "has_vapid_keys", None)
+        if callable(has_keys) and not has_keys():
+            self._logger.info(
                 {
                     "service": "notification_dispatcher",
-                    "event": "push_error",
+                    "event": "push_skipped_missing_keys",
                     "type": event_type,
-                    "error": str(exc),
                 }
             )
+        else:
+            try:
+                await asyncio.to_thread(self.push_service.broadcast, push_payload)
+                push_status = "sent"
+            except Exception as exc:  # pragma: no cover - defensive logging
+                self._logger.warning(
+                    {
+                        "service": "notification_dispatcher",
+                        "event": "push_error",
+                        "type": event_type,
+                        "error": str(exc),
+                    }
+                )
 
         self._logger.info(
             {

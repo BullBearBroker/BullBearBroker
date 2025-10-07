@@ -1,10 +1,8 @@
 # backend/routers/notifications.py
 
-from fastapi import APIRouter, Depends, Request, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Request, status
 
 from backend.core.config import settings
-from backend.database import get_db
 from backend.schemas.notifications import NotificationEvent  # 🧩 Bloque 9A
 from backend.services.audit_service import AuditService
 
@@ -15,7 +13,7 @@ from backend.services.notification_dispatcher import (
 )
 
 # isort: on
-from backend.services.push_service import PushService
+from backend.services.push_service import push_service
 from backend.services.realtime_service import RealtimeService
 
 # 🧩 Bloque 8A
@@ -71,12 +69,9 @@ def send_global_test_notification() -> dict[str, int]:
     Envía una notificación de prueba global a todos los suscriptores push registrados.
     Conserva compatibilidad con el flujo previo de validación.
     """
-    # Ruff fix: evitar Depends() en argumentos por defecto
-    db: Session = Depends(get_db)()
-    push = PushService(db)
-    sent = push.broadcast(
-        {"title": "BullBearBroker Test", "body": "Prueba de notificación global"}
-    )
+    subscriptions = push_service.get_all_subscriptions()
+    payload = {"title": "BullBearBroker Test", "body": "Prueba de notificación global"}
+    sent = push_service.broadcast_to_subscriptions(subscriptions, payload)
     return {"sent": sent}
 
 
@@ -89,16 +84,15 @@ async def broadcast_test(request: Request):
     - Web Push (PushService)
     - Audit logs (AuditService)
     """
-    # Ruff fix: evitar Depends() en argumentos por defecto
-    db: Session = Depends(get_db)()
     payload = await request.json()
 
     # Instanciar servicios
     realtime = RealtimeService()
-    push = PushService(db)
     audit = AuditService()
     dispatcher = NotificationDispatcher(
-        realtime_service=realtime, push_service=push, audit_service=audit
+        realtime_service=realtime,
+        push_service_channel=push_service,
+        audit_service=audit,
     )
 
     await dispatcher.broadcast_event("manual", payload)

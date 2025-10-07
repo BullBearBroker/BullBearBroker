@@ -220,7 +220,7 @@ async def send_test_notification(
         "body": "Notificación de prueba",
     }
 
-    delivered = push_service.broadcast(
+    delivered = push_service.broadcast_to_subscriptions(
         subscriptions,
         payload,
         category="system",
