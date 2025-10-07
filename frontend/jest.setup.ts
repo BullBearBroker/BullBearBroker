@@ -1,5 +1,12 @@
 import "@testing-library/jest-dom";
 import "jest-axe/extend-expect";
+jest.mock("next/font/google", () => ({
+  Inter: () => ({
+    className: "font-inter",
+    variable: "--font-inter",
+    style: {},
+  }),
+}));
 
 // Configura una URL de API por defecto para los tests del frontend
 process.env.NEXT_PUBLIC_API_URL ??= "http://localhost:8000";

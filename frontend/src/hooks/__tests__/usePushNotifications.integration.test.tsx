@@ -33,7 +33,6 @@ describe("usePushNotifications integration", () => {
   const originalServiceWorker = navigator.serviceWorker;
   const originalPushManager = (window as any).PushManager;
   const originalAtob = (global as any).atob;
-  const consoleLogSpy = jest.spyOn(console, "log").mockImplementation(() => {});
   let dispatchServiceWorkerMessage: ((data: unknown) => void) | undefined;
 
   beforeEach(() => {
@@ -110,14 +109,9 @@ describe("usePushNotifications integration", () => {
     } else {
       delete (global as any).atob;
     }
-    consoleLogSpy.mockClear();
     mockedSubscribePush.mockReset();
     mockedTestNotificationDispatcher.mockReset();
     mockedFetchVapidPublicKey.mockReset();
-  });
-
-  afterAll(() => {
-    consoleLogSpy.mockRestore();
   });
 
   const Harness = ({ token = "secure-token" }: { token?: string }) => {
@@ -176,10 +170,11 @@ describe("usePushNotifications integration", () => {
       await userEvent.click(trigger);
     });
     expect(mockedTestNotificationDispatcher).toHaveBeenCalledWith("secure-token");
-    expect(consoleLogSpy).toHaveBeenCalledWith(
-      expect.stringContaining("Push recibido correctamente"),
-      expect.objectContaining({ title: "BullBearBroker Test" })
-    );
+    expect(
+      logsList
+        .getAllByRole("listitem")
+        .some((item) => item.textContent?.includes("Push recibido correctamente"))
+    ).toBe(true);
   });
 
   it("maneja permisos denegados sin lanzar errores", async () => {

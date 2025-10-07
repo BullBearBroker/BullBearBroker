@@ -48,18 +48,18 @@ describe("NotificationCenterCard", () => {
   it("renders and handles push actions", async () => {
     render(<NotificationCenterCard />);
 
-    expect(screen.getByText("Centro de Notificaciones")).toBeInTheDocument();
+    expect(screen.getByText("Notificaciones en vivo")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("🧪 Enviar Test"));
+    fireEvent.click(screen.getByRole("button", { name: /Enviar prueba/i }));
     expect(await screen.findByText(/Notificación de prueba/i)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("🧹 Limpiar"));
+    fireEvent.click(screen.getByRole("button", { name: /Limpiar/i }));
     expect(screen.getByText(/Sin notificaciones aún/i)).toBeInTheDocument();
   });
 
   // 🧩 Bloque 9B
   it("shows live connection state indicator", () => {
     render(<NotificationCenterCard />);
-    expect(screen.getByText(/🟡 Fallback \(Polling\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/Canal en modo seguro/i)).toBeInTheDocument();
   });
 });

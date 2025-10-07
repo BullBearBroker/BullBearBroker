@@ -1,17 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import dynamic from "next/dynamic";
+import { Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Activity, BellRing, Bot, LineChart, Radio, SignalHigh } from "lucide-react";
+import { Activity, BellRing, Bot, LineChart, Radio, SignalHigh, Wallet } from "lucide-react";
 
 import { useAuth } from "@/components/providers/auth-provider";
-import { ChatPanel } from "@/components/chat/chat-panel";
-import { AlertsPanel } from "@/components/alerts/alerts-panel";
-import { NewsPanel } from "@/components/news/news-panel";
-import { PortfolioPanel } from "@/components/portfolio/PortfolioPanel";
 import { MarketSidebar } from "@/components/sidebar/market-sidebar";
 import { ThemeToggle } from "@/components/dashboard/theme-toggle";
-import { IndicatorsChart } from "@/components/indicators/IndicatorsChart"; // [Codex] nuevo
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,6 +19,125 @@ import { useHistoricalData } from "@/hooks/useHistoricalData"; // [Codex] nuevo
 import { useRealtime } from "@/hooks/useRealtime"; // ✅ Codex fix: integración realtime en dashboard
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Skeleton } from "@/components/common/Skeleton";
+import { cn } from "@/lib/utils";
+
+function PanelSkeleton({
+  lines = 3,
+  "aria-label": ariaLabel,
+}: {
+  lines?: number;
+  "aria-label"?: string;
+}) {
+  return (
+    <div className="space-y-3" aria-label={ariaLabel} aria-live="polite">
+      {Array.from({ length: lines }).map((_, index) => (
+        <Skeleton key={`panel-skeleton-${index}`} className="h-3 w-full" />
+      ))}
+    </div>
+  );
+}
+
+function ChartSkeleton() {
+  return (
+    <div className="space-y-4" aria-busy aria-live="polite">
+      <Skeleton className="h-9 w-48" />
+      <div className="space-y-2">
+        {Array.from({ length: 6 }).map((_, index) => (
+          <Skeleton key={`chart-skeleton-${index}`} className="h-3 w-full" />
+        ))}
+      </div>
+      <Skeleton className="h-56 w-full" />
+    </div>
+  );
+}
+
+function AsyncModuleFallback({
+  title,
+  description,
+  icon,
+  className,
+  "aria-label": ariaLabel,
+}: {
+  title: string;
+  description: string;
+  icon: ReactNode;
+  className?: string;
+  "aria-label"?: string;
+}) {
+  return (
+    <Card
+      className={cn("surface-card flex flex-col", className)}
+      aria-label={ariaLabel}
+      aria-live="polite"
+    >
+      <CardHeader className="space-y-2 pb-4">
+        <CardTitle className="flex items-center gap-2 text-lg font-sans font-medium tracking-tight">
+          {icon} {title}
+        </CardTitle>
+        <CardDescription>{description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <PanelSkeleton aria-label={`Cargando ${title.toLowerCase()}`} lines={4} />
+      </CardContent>
+    </Card>
+  );
+}
+
+const IndicatorsChart = dynamic(
+  () =>
+    import("@/components/indicators/IndicatorsChart").then((mod) => ({
+      default: mod.IndicatorsChart,
+    })),
+  {
+    ssr: false,
+    suspense: true,
+  },
+);
+
+const AlertsPanel = dynamic(
+  () =>
+    import("@/components/alerts/alerts-panel").then((mod) => ({
+      default: mod.AlertsPanel,
+    })),
+  {
+    ssr: false,
+    suspense: true,
+  },
+);
+
+const NewsPanel = dynamic(
+  () =>
+    import("@/components/news/news-panel").then((mod) => ({
+      default: mod.NewsPanel,
+    })),
+  {
+    ssr: false,
+    suspense: true,
+  },
+);
+
+const ChatPanel = dynamic(
+  () =>
+    import("@/components/chat/chat-panel").then((mod) => ({
+      default: mod.ChatPanel,
+    })),
+  {
+    ssr: false,
+    suspense: true,
+  },
+);
+
+const PortfolioPanel = dynamic(
+  () =>
+    import("@/components/portfolio/PortfolioPanel").then((mod) => ({
+      default: mod.PortfolioPanel,
+    })),
+  {
+    ssr: false,
+    suspense: true,
+  },
+);
 
 function DashboardPageContent() {
   const { user, loading, token, logout } = useAuth();
@@ -219,7 +334,12 @@ function DashboardPageContent() {
       <aside className="border-r border-border/60 bg-card/60 backdrop-blur">
         <MarketSidebar token={sidebarToken} user={user} onLogout={logout} />
       </aside>
-      <main className="flex flex-col gap-6 p-4 md:p-6" data-testid="dashboard-content">
+      <main
+        className="flex flex-col gap-6 p-4 md:p-6"
+        data-testid="dashboard-content"
+        role="main"
+        aria-label="Panel principal del dashboard"
+      >
         <header
           className="surface-card flex flex-col gap-4 animate-in fade-in-50 slide-in-from-bottom-2 md:flex-row md:items-center md:justify-between"
         >
@@ -229,7 +349,7 @@ function DashboardPageContent() {
               {user.name || user.email}
             </h1>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3" aria-live="polite">
             <Badge
               variant={pushEnabled ? "outline" : "secondary"}
               className="hidden rounded-full px-3 py-1 text-xs font-medium md:inline-flex"
@@ -340,7 +460,10 @@ function DashboardPageContent() {
                     <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
                       Registro de eventos
                     </p>
-                    <ScrollArea className="h-32 rounded-xl border border-border/40 bg-[hsl(var(--surface))] p-2">
+                    <ScrollArea
+                      className="h-32 rounded-xl border border-border/40 bg-[hsl(var(--surface))] p-2"
+                      aria-label="Registro de eventos de notificaciones push"
+                    >
                       {pushLogs.length === 0 ? (
                         <p className="text-xs text-muted-foreground">
                           Esperando eventos auditables del dispatcher...
@@ -370,8 +493,8 @@ function DashboardPageContent() {
                     Mantén el pulso de la conexión en vivo y los últimos eventos del mercado.
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="space-y-3 text-sm">
-                  <div className="flex items-center gap-2 text-xs font-medium">
+                <CardContent className="space-y-3 text-sm" aria-live="polite">
+                  <div className="flex items-center gap-2 text-xs font-medium" aria-atomic="true">
                     <span className={realtimeConnected ? "text-success" : "text-destructive"}>
                       {realtimeConnected ? "Conectado a Realtime" : "Conexión inactiva"}
                     </span>
@@ -383,7 +506,10 @@ function DashboardPageContent() {
                     )}
                   </div>
                   {realtimeData && (
-                    <pre className="max-h-40 overflow-auto rounded-xl border border-border/50 bg-[hsl(var(--surface))] p-3 text-xs text-muted-foreground">
+                    <pre
+                      className="max-h-40 overflow-auto rounded-xl border border-border/50 bg-[hsl(var(--surface))] p-3 text-xs text-muted-foreground"
+                      aria-label="Detalle del último evento en tiempo real"
+                    >
                       {JSON.stringify(realtimeData, null, 2)}
                     </pre>
                   )}
@@ -398,7 +524,19 @@ function DashboardPageContent() {
         >
           <div className="grid auto-rows-min gap-4">
             <div className="h-full animate-in fade-in-50" style={{ animationDelay: "80ms" }}>
-              <PortfolioPanel token={token ?? undefined} />
+              <Suspense
+                fallback={
+                  <AsyncModuleFallback
+                    title="Portafolio"
+                    description="Cargando el resumen de tus posiciones..."
+                    icon={<Wallet className="h-5 w-5 text-primary" aria-hidden="true" />}
+                    aria-label="Sección de portafolio cargándose"
+                    className="h-full"
+                  />
+                }
+              >
+                <PortfolioPanel token={token ?? undefined} />
+              </Suspense>
             </div>
             {/* [Codex] nuevo - tarjeta de indicadores con insights AI */}
             <div className="h-full animate-in fade-in-50" style={{ animationDelay: "120ms" }}>
@@ -420,23 +558,29 @@ function DashboardPageContent() {
                       : "Actualizar"}
                   </Button>
                 </CardHeader>
-                <CardContent className="pt-0">
+                <CardContent
+                  className="pt-0"
+                  aria-busy={indicatorLoading || historicalLoading || historicalValidating}
+                  aria-live="polite"
+                >
                   {indicatorError && (
                     <p className="text-sm text-destructive">{indicatorError}</p>
                   )}
                   {indicatorData && (
-                    <IndicatorsChart
-                      symbol={indicatorData.symbol}
-                      interval={indicatorData.interval}
-                      indicators={indicatorData.indicators}
-                      series={indicatorData.series}
-                      insights={indicatorInsights}
-                      loading={indicatorLoading}
-                      error={indicatorError}
-                      history={historicalData}
-                      historyError={historicalError?.message ?? null}
-                      historyLoading={historicalLoading || historicalValidating}
-                    />
+                    <Suspense fallback={<ChartSkeleton />}>
+                      <IndicatorsChart
+                        symbol={indicatorData.symbol}
+                        interval={indicatorData.interval}
+                        indicators={indicatorData.indicators}
+                        series={indicatorData.series}
+                        insights={indicatorInsights}
+                        loading={indicatorLoading}
+                        error={indicatorError}
+                        history={historicalData}
+                        historyError={historicalError?.message ?? null}
+                        historyLoading={historicalLoading || historicalValidating}
+                      />
+                    </Suspense>
                   )}
                   {!indicatorData && !indicatorError && (
                     <p className="text-sm text-muted-foreground">
@@ -458,18 +602,51 @@ function DashboardPageContent() {
                     Conversa con el bot para contextualizar las señales del mercado.
                   </CardDescription>
                 </CardHeader>
-                <CardContent className="flex h-full flex-col gap-4">
-                  <ChatPanel token={token ?? undefined} />
+                <CardContent className="flex h-full flex-col gap-4" aria-live="polite">
+                  <Suspense
+                    fallback={
+                      <PanelSkeleton
+                        lines={5}
+                        aria-label="Cargando conversación con el asistente estratégico"
+                      />
+                    }
+                  >
+                    <ChatPanel token={token ?? undefined} />
+                  </Suspense>
                 </CardContent>
               </Card>
             </div>
           </div>
           <div className="grid auto-rows-min gap-4">
             <div className="h-full animate-in fade-in-50" style={{ animationDelay: "80ms" }}>
-              <AlertsPanel token={token ?? undefined} />
+              <Suspense
+                fallback={
+                  <AsyncModuleFallback
+                    title="Alertas"
+                    description="Sincronizando tus alertas personalizadas..."
+                    icon={<BellRing className="h-5 w-5 text-primary" aria-hidden="true" />}
+                    aria-label="Sección de alertas cargándose"
+                    className="h-full"
+                  />
+                }
+              >
+                <AlertsPanel token={token ?? undefined} />
+              </Suspense>
             </div>
             <div className="h-full animate-in fade-in-50" style={{ animationDelay: "120ms" }}>
-              <NewsPanel token={token ?? undefined} />
+              <Suspense
+                fallback={
+                  <AsyncModuleFallback
+                    title="Noticias"
+                    description="Buscando las últimas noticias del mercado..."
+                    icon={<Radio className="h-5 w-5 text-primary" aria-hidden="true" />}
+                    aria-label="Sección de noticias cargándose"
+                    className="h-full"
+                  />
+                }
+              >
+                <NewsPanel token={token ?? undefined} />
+              </Suspense>
             </div>
           </div>
         </section>

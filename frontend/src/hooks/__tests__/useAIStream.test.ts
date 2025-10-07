@@ -23,17 +23,17 @@ class EventSourceMock {
 
 describe("useAIStream", () => {
   const originalEventSource = window.EventSource;
-  let consoleLogSpy: jest.SpyInstance;
+  let consoleDebugSpy: jest.SpyInstance;
 
   beforeEach(() => {
     EventSourceMock.instances = [];
     (window as any).EventSource = EventSourceMock as unknown as typeof EventSource;
-    consoleLogSpy = jest.spyOn(console, "log").mockImplementation(() => {});
+    consoleDebugSpy = jest.spyOn(console, "debug").mockImplementation(() => {});
   });
 
   afterEach(() => {
     window.EventSource = originalEventSource as typeof EventSource;
-    consoleLogSpy.mockRestore();
+    consoleDebugSpy.mockRestore();
   });
 
   it("abre el stream cuando está habilitado y parsea mensajes JSON", async () => {
@@ -78,7 +78,7 @@ describe("useAIStream", () => {
 
     expect(result.current.insights).toHaveLength(2);
     expect(result.current.insights[1]).toMatchObject({ source: "realtime", message: "desde realtime" });
-    expect(consoleLogSpy).toHaveBeenCalledWith("AI Insight recibido:", "desde realtime");
+    expect(consoleDebugSpy).toHaveBeenCalledWith("AI Insight recibido:", "desde realtime");
   });
 
   it("cierra el stream y limpia estado cuando se deshabilita", async () => {

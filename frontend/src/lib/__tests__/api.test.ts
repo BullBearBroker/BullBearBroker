@@ -301,7 +301,7 @@ describe("API wrappers", () => {
   });
 
   it("continúa aunque getIndicators falle", async () => {
-    const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    const errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
     (global.fetch as jest.Mock)
       .mockRejectedValueOnce(new Error("sin datos"))
       .mockResolvedValueOnce(createResponse({ response: "Ok" }));
@@ -316,13 +316,13 @@ describe("API wrappers", () => {
       { symbol: "ETH", sessionId: "persisted" }
     );
 
-    expect(warnSpy).toHaveBeenCalled();
+    expect(errorSpy).toHaveBeenCalled();
     expect((global.fetch as jest.Mock).mock.calls[1][0]).toBe(
       `${API_BASE_URL}/api/ai/chat`
     );
     expect(result.messages[result.messages.length - 1].content).toBe("Ok");
     expect(result.sessionId).toBe("persisted");
-    warnSpy.mockRestore();
+    errorSpy.mockRestore();
   });
 
   it("lanza error cuando el tipo de mercado no es soportado", async () => {

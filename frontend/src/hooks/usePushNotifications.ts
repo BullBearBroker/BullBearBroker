@@ -196,7 +196,7 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
       return "unsupported";
     }
     if (!("PushManager" in window)) {
-      console.warn("🚫 Push notifications not supported in this browser.");
+      appendLog("Notificaciones push no soportadas en este navegador");
       setPermission("unsupported");
       return "unsupported";
     }
@@ -224,7 +224,7 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
     }
     if (!("PushManager" in window)) {
       if (hasNavigator && !isTestEnvironment) {
-        console.warn("🚫 Push notifications not supported in this browser.");
+        appendLog("Notificaciones push no soportadas en este navegador");
       }
       setPermission("unsupported");
       setError("Las notificaciones push no están soportadas en este navegador.");
@@ -365,7 +365,7 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
         timestamp: Date.parse(envelope.receivedAt) || Date.now(),
       });
       appendLog(`Evento recibido: ${title}`);
-      console.log("Push recibido correctamente", envelope);
+      appendLog("Push recibido correctamente");
     };
 
     container.addEventListener("message", handleMessage as EventListener);
@@ -388,7 +388,9 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
         new Notification(title, { body });
       }
     } catch (err) {
-      console.warn("No se pudo mostrar la notificación local", err);
+      if (process.env.NODE_ENV !== "production") {
+        console.error("No se pudo mostrar la notificación local", err);
+      }
     }
   }, []);
 
