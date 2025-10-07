@@ -2,9 +2,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { BellRing, Beaker, History, Inbox, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { usePushNotifications } from "@/hooks/usePushNotifications";
 // 🧩 Bloque 9B
 import { useLiveNotifications } from "@/hooks/useLiveNotifications";
@@ -142,57 +145,110 @@ export default function NotificationCenterCard() {
     });
   }, [events]);
 
+  const isRealtime = status === "connected";
+
   return (
-    <Card className="p-4 shadow-md rounded-2xl">
-      <CardHeader>
-        <CardTitle className="text-lg font-semibold">Centro de Notificaciones</CardTitle>
+    <Card className="surface-card">
+      <CardHeader className="space-y-3 pb-4">
+        <div className="flex flex-col gap-2">
+          <CardTitle className="flex items-center gap-2 text-lg font-sans font-medium tracking-tight">
+            <BellRing className="h-5 w-5 text-primary" />
+            Notificaciones en vivo
+          </CardTitle>
+          <CardDescription className="text-sm text-muted-foreground">
+            Gestiona la suscripción push y consulta el historial consolidado de eventos.
+          </CardDescription>
+        </div>
+        <Badge
+          variant={isRealtime ? "outline" : "secondary"}
+          className="w-fit rounded-full px-3 py-1 text-xs font-medium"
+        >
+          {isRealtime ? "Canal en tiempo real" : "Canal en modo seguro"}
+        </Badge>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex gap-2">
-          <Button onClick={() => void requestPermission()}>🔔 Activar Push</Button>
-          <Button onClick={() => void sendTestNotification()} variant="secondary">
-            🧪 Enviar Test
+        <div className="grid gap-2 md:grid-cols-3">
+          <Button
+            type="button"
+            variant="secondary"
+            className="flex items-center justify-center gap-2"
+            onClick={() => void requestPermission()}
+          >
+            <BellRing className="h-4 w-4" />
+            Activar push
           </Button>
           <Button
+            type="button"
+            variant="outline"
+            className="flex items-center justify-center gap-2"
+            onClick={() => void sendTestNotification()}
+          >
+            <Beaker className="h-4 w-4" />
+            Enviar prueba
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            className="flex items-center justify-center gap-2"
             onClick={() => {
               clearLogs();
               setHistory([]);
             }}
-            variant="destructive"
           >
-            🧹 Limpiar
+            <Trash2 className="h-4 w-4" />
+            Limpiar
           </Button>
         </div>
 
-        <div className="max-h-64 overflow-y-auto border rounded-lg p-2 bg-muted/40">
-          {history.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Sin notificaciones aún.</p>
-          ) : (
-            history
-              .slice()
-              .reverse()
-              .map((n) => (
-                <div key={n.id} className="border-b last:border-0 py-1 text-sm leading-tight">
-                  <span className="font-semibold">{n.title}</span> — {n.body}{" "}
-                  <span className="text-xs text-muted-foreground">
-                    ({new Date(n.timestamp).toLocaleTimeString()})
-                  </span>
-                </div>
-              ))
-          )}
+        <div className="space-y-2 rounded-xl border border-border/50 bg-[hsl(var(--surface))] p-3">
+          <div className="flex items-center justify-between">
+            <p className="flex items-center gap-2 text-sm font-medium text-card-foreground">
+              <History className="h-4 w-4 text-primary" /> Historial reciente
+            </p>
+            <span className="text-xs text-muted-foreground">{history.length} eventos</span>
+          </div>
+          <ScrollArea className="max-h-56">
+            <div className="space-y-2 pr-2">
+              {history.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Sin notificaciones aún.</p>
+              ) : (
+                history
+                  .slice()
+                  .reverse()
+                  .map((n) => (
+                    <div
+                      key={n.id}
+                      className="rounded-lg border border-border/40 bg-[hsl(var(--surface-muted))] p-3 text-sm text-card-foreground"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <p className="font-medium">{n.title}</p>
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(n.timestamp).toLocaleTimeString()}
+                        </span>
+                      </div>
+                      {n.body && (
+                        <p className="mt-1 text-xs text-muted-foreground leading-relaxed">{n.body}</p>
+                      )}
+                    </div>
+                  ))
+              )}
+            </div>
+          </ScrollArea>
         </div>
 
-        <p className="text-xs text-muted-foreground">
-          Estado: <strong>{permission}</strong>
-        </p>
-        <p className="text-xs text-muted-foreground">
-          Estado:{" "}
-          <strong>
-            {status === "connected"
-              ? "🟢 Conectado (Tiempo real)"
-              : "🟡 Fallback (Polling)"}
-          </strong>
-        </p>
+        <div className="grid gap-2 rounded-xl border border-border/40 bg-[hsl(var(--surface))] p-3 text-xs text-muted-foreground">
+          <div className="flex items-center justify-between gap-2">
+            <span className="flex items-center gap-2 font-medium text-card-foreground">
+              <Inbox className="h-4 w-4 text-primary" /> Estado de permisos
+            </span>
+            <Badge variant="outline" className="rounded-full px-2 py-0.5 text-[10px] uppercase">
+              {permission}
+            </Badge>
+          </div>
+          <p>
+            Canal actual: <span className="font-medium text-card-foreground">{isRealtime ? "Tiempo real" : "Fallback"}</span>
+          </p>
+        </div>
       </CardContent>
     </Card>
   );

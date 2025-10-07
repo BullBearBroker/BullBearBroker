@@ -3,7 +3,7 @@
 import Link from "next/link";
 import useSWR from "swr";
 import { useMemo } from "react";
-import { LineChart, Coins, Wallet } from "lucide-react";
+import { LineChart, Coins, Wallet, LogOut } from "lucide-react";
 
 import { MarketQuote, UserProfile, getMarketQuote } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
@@ -83,13 +83,13 @@ export function MarketSidebar({ token, user, onLogout }: MarketSidebarProps) {
 
   return (
     <div className="flex h-full flex-col gap-4 p-4" data-testid="market-sidebar-root">
-      <Card className="border-none bg-transparent shadow-none">
-        <CardContent className="space-y-3 p-0">
+      <Card className="surface-card">
+        <CardContent className="space-y-4">
           <div>
-            <h2 className="text-xl font-semibold">BullBearBroker</h2>
+            <h2 className="text-xl font-sans font-semibold tracking-tight text-card-foreground">BullBearBroker</h2>
             <p className="text-sm text-muted-foreground">{user.email}</p>
           </div>
-          <Button variant="secondary" size="sm" className="w-full" asChild>
+          <Button variant="outline" size="sm" className="w-full" asChild>
             <Link href="/portfolio" className="flex items-center justify-center gap-2">
               <Wallet className="h-4 w-4" />
               <span>Ver portafolio</span>
@@ -105,7 +105,8 @@ export function MarketSidebar({ token, user, onLogout }: MarketSidebarProps) {
         </div>
       </ScrollArea>
       <Separator />
-      <Button variant="outline" onClick={onLogout}>
+      <Button variant="outline" onClick={onLogout} className="flex items-center justify-center gap-2">
+        <LogOut className="h-4 w-4" />
         Cerrar sesión
       </Button>
     </div>
@@ -123,14 +124,16 @@ function MarketSection({ label, items, token }: MarketSectionProps) {
   const Icon = icons[type];
 
   return (
-    <Card>
+    <Card className="surface-card">
       <CardContent className="space-y-3 pt-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Icon className="h-4 w-4 text-primary" />
-            <h3 className="font-medium">{label}</h3>
+            <h3 className="text-sm font-medium text-card-foreground">{label}</h3>
           </div>
-          <Badge variant="secondary">Tiempo real</Badge>
+          <Badge variant="outline" className="rounded-full px-3 py-1 text-[10px] font-medium uppercase tracking-wide">
+            Tiempo real
+          </Badge>
         </div>
         <div className="space-y-2">
           {items.map((item) => (
@@ -168,17 +171,18 @@ function MarketRow({ config, token }: MarketRowProps) {
 
   const change = typeof data?.raw_change === "number" ? data.raw_change : null;
   const changeText = change !== null ? `${change > 0 ? "+" : ""}${change.toFixed(2)}%` : "--";
-  const changeClass = change === null ? "text-muted-foreground" : change >= 0 ? "text-emerald-500" : "text-red-500";
+  const changeClass =
+    change === null ? "text-muted-foreground" : change >= 0 ? "text-success" : "text-destructive";
 
   return (
-    <div className="flex flex-col gap-2 rounded-md bg-muted/40 p-2">
+    <div className="flex flex-col gap-2 rounded-2xl border border-border/40 bg-[hsl(var(--surface))] p-3 transition-all duration-300 hover:border-border hover:bg-[hsl(var(--surface-hover))]">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-sm font-semibold">{config.displaySymbol}</p>
+          <p className="text-sm font-semibold text-card-foreground">{config.displaySymbol}</p>
           <p className="text-xs text-muted-foreground">{config.label}</p>
         </div>
         <div className="text-right">
-          <p className="text-sm font-semibold">{priceText}</p>
+          <p className="text-sm font-semibold text-card-foreground">{priceText}</p>
           <p className={`text-xs ${changeClass}`}>{changeText}</p>
         </div>
       </div>
@@ -206,7 +210,12 @@ function Sparkline({ change, positive, loading }: SparklineProps) {
   const slope = clamped * 0.6;
   const mid = baseline - slope / 2;
   const end = baseline - slope;
-  const color = positive === undefined ? "currentColor" : positive ? "#10b981" : "#ef4444";
+  const color =
+    positive === undefined
+      ? "hsl(var(--muted-foreground))"
+      : positive
+      ? "hsl(var(--success))"
+      : "hsl(var(--destructive))";
 
   return (
     <svg viewBox="0 0 100 32" className="h-6 w-16">

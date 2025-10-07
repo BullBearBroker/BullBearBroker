@@ -8,7 +8,7 @@ import { listNews, NewsItem } from "@/lib/api";
 import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { EmptyState } from "@/components/common/EmptyState";
 import { Skeleton } from "@/components/common/Skeleton";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 interface NewsPanelProps {
@@ -30,19 +30,23 @@ function NewsPanelContent({ token }: NewsPanelProps) {
     });
 
   return (
-    <Card className="flex flex-col">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-        <CardTitle className="text-lg font-medium">Noticias</CardTitle>
-        <Badge variant="secondary" className="flex items-center gap-1">
-          <Newspaper className="h-3.5 w-3.5" />
-          Últimas
-        </Badge>
+    <Card className="surface-card flex flex-col">
+      <CardHeader className="space-y-2 pb-4">
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="flex items-center gap-2 text-lg font-sans font-medium tracking-tight">
+            <Newspaper className="h-5 w-5 text-primary" /> Noticias
+          </CardTitle>
+          <Badge variant="outline" className="flex items-center gap-2 rounded-full px-3 py-1 text-xs font-medium">
+            <Newspaper className="h-3.5 w-3.5" /> Últimas
+          </Badge>
+        </div>
+        <CardDescription>Descubre las señales más relevantes del mercado en tiempo real.</CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
         {isLoading && (
           <div className="space-y-2" data-testid="news-loading">
             {[0, 1, 2].map((index) => (
-              <div key={index} className="space-y-2 rounded-lg border p-3">
+              <div key={index} className="space-y-2 rounded-xl border border-border/40 bg-[hsl(var(--surface))] p-3">
                 <Skeleton className="h-4 w-3/4" />
                 <Skeleton className="h-3 w-full" />
                 <Skeleton className="h-3 w-1/2" />
@@ -65,9 +69,12 @@ function NewsPanelContent({ token }: NewsPanelProps) {
           />
         )}
         {sortedNews?.slice(0, 6).map((item) => (
-          <article key={item.id} className="space-y-1 rounded-lg border p-3">
-            <h3 className="text-sm font-semibold">{item.title}</h3>
-            {item.summary && <p className="text-xs text-muted-foreground">{item.summary}</p>}
+          <article
+            key={item.id}
+            className="space-y-2 rounded-2xl border border-border/40 bg-[hsl(var(--surface))] p-4 transition-all duration-300 hover:border-border hover:bg-[hsl(var(--surface-hover))]"
+          >
+            <h3 className="text-sm font-medium text-card-foreground">{item.title}</h3>
+            {item.summary && <p className="text-xs text-muted-foreground leading-relaxed">{item.summary}</p>}
             <div className="flex items-center justify-between text-xs text-muted-foreground">
               <span>{item.source ?? "Fuente desconocida"}</span>
               {item.published_at && (
@@ -78,7 +85,7 @@ function NewsPanelContent({ token }: NewsPanelProps) {
               href={item.url}
               target="_blank"
               rel="noreferrer"
-              className="text-xs font-medium text-primary hover:underline"
+              className="inline-flex items-center gap-1 text-xs font-medium text-primary transition-colors hover:text-primary/80"
             >
               Leer noticia
             </Link>
@@ -91,12 +98,14 @@ function NewsPanelContent({ token }: NewsPanelProps) {
 
 function NewsPanelFallback() {
   return (
-    <Card className="flex flex-col">
-      <CardHeader className="space-y-1">
-        <CardTitle className="text-lg font-medium">Noticias</CardTitle>
-        <p className="text-sm text-muted-foreground">
+    <Card className="surface-card flex flex-col">
+      <CardHeader className="space-y-2">
+        <CardTitle className="flex items-center gap-2 text-lg font-sans font-medium tracking-tight">
+          <Newspaper className="h-5 w-5 text-primary" /> Noticias
+        </CardTitle>
+        <CardDescription>
           No se pudo cargar esta sección. Intenta nuevamente en unos instantes.
-        </p>
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <EmptyState
