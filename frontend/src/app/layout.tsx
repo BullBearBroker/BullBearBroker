@@ -20,18 +20,15 @@ const metadataBase = (() => {
   }
 })();
 
-let inter: { className: string; variable: string };
+let inter: { className: string };
 
 if (process.env.ANALYZE === "true") {
-  // 🚧 En modo análisis desactivamos next/font (incompatible con Babel)
-  inter = { className: "", variable: "" };
+  inter = { className: "" };
 } else {
-  // ✅ En ejecución normal usamos next/font
   const { Inter } = require("next/font/google") as typeof import("next/font/google");
   inter = Inter({
     subsets: ["latin"],
     display: "swap",
-    variable: "--font-inter",
   });
 }
 
@@ -111,7 +108,7 @@ export default function RootLayout({
       </head>
       <body
         className={cn(
-          inter.variable,
+          inter.className,
           "min-h-screen bg-background font-sans antialiased"
         )}
       >

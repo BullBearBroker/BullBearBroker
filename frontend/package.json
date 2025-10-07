@@ -8,6 +8,8 @@
     "build": "next build",
     "start": "next start",
     "analyze": "ANALYZE=true next build",
+    "analyze:client": "ANALYZE=true next build && open .next/analyze/client.html",
+    "analyze:report": "pnpm run analyze && pnpm exec lighthouse http://localhost:3000 --output html --output-path ./lighthouse-report.html",
     "build:start": "next build && next start -p 4000",
     "lighthouse:desktop": "lighthouse http://localhost:4000/dashboard --preset=desktop --quiet --chrome-flags='--headless --no-sandbox' --output=json --output-path=./.lighthouse/dashboard-desktop.json",
     "lighthouse:mobile": "lighthouse http://localhost:4000/dashboard --preset=mobile --quiet --chrome-flags='--headless --no-sandbox' --output=json --output-path=./.lighthouse/dashboard-mobile.json",

@@ -1,4 +1,6 @@
 node_modules
+!node_modules/critters/
+!node_modules/critters/**
 .next
 out
 .DS_Store
