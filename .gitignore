@@ -24,6 +24,8 @@ env/
 # 📦 Node.js
 # ========================
 node_modules/
+!node_modules/critters/
+!node_modules/critters/**
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*

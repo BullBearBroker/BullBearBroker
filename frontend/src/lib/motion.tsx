@@ -52,19 +52,29 @@ const createFallbackMotion = () => {
 
 const fallbackAnimatePresence: ComponentType<{ children?: ReactNode }> = ({ children }) => <>{children}</>;
 
-function resolveFramerMotion(): Required<FramerExports> {
+const optionalRequire = (() => {
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const mod: FramerExports = require("framer-motion");
-    if (mod?.AnimatePresence && mod?.motion) {
-      return {
-        AnimatePresence: mod.AnimatePresence,
-        motion: mod.motion,
-      };
-    }
+    // eslint-disable-next-line no-new-func
+    return Function("return require")();
   } catch {
-    if (process.env.NODE_ENV === "development") {
-      console.warn("framer-motion no está disponible, usando animaciones de reserva livianas.");
+    return null;
+  }
+})();
+
+function resolveFramerMotion(): Required<FramerExports> {
+  if (optionalRequire) {
+    try {
+      const mod: FramerExports = optionalRequire("framer-motion");
+      if (mod?.AnimatePresence && mod?.motion) {
+        return {
+          AnimatePresence: mod.AnimatePresence,
+          motion: mod.motion,
+        };
+      }
+    } catch {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("framer-motion no está disponible, usando animaciones de reserva livianas.");
+      }
     }
   }
 

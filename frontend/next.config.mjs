@@ -1,4 +1,19 @@
-import bundleAnalyzer from "@next/bundle-analyzer";
+let bundleAnalyzerModule;
+
+try {
+  bundleAnalyzerModule = await import("@next/bundle-analyzer");
+} catch (error) {
+  if (process.env.ANALYZE === "true") {
+    console.warn(
+      "@next/bundle-analyzer no está disponible, usando implementación interna",
+      error
+    );
+  }
+  bundleAnalyzerModule = await import("./config/simple-bundle-analyzer.mjs");
+}
+
+const bundleAnalyzer =
+  bundleAnalyzerModule?.default ?? bundleAnalyzerModule ?? ((options = {}) => () => options);
 
 const withBundleAnalyzer = bundleAnalyzer({
   enabled: process.env.ANALYZE === "true",
@@ -20,8 +35,12 @@ const remoteImagePatterns = [
   },
 ];
 
-const nextConfig = {
+export default withBundleAnalyzer({
   reactStrictMode: true,
+  experimental: {
+    optimizeCss: true,
+  },
+  // ✅ Mantener Babel activo, pero asegurarse de ignorar next/font cuando ANALYZE=true
   compress: true,
   poweredByHeader: false,
   eslint: {
@@ -42,6 +61,4 @@ const nextConfig = {
     // 🧩 Bloque 8A
     NEXT_PUBLIC_VAPID_KEY: process.env.NEXT_PUBLIC_VAPID_KEY,
   },
-};
-
-export default withBundleAnalyzer(nextConfig);
+});
