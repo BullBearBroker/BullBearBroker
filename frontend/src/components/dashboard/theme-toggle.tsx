@@ -18,8 +18,13 @@ export function ThemeToggle() {
       size="icon"
       onClick={() => setTheme(isDark ? "light" : "dark")}
       aria-label="Cambiar tema"
+      aria-pressed={isDark}
     >
-      {isDark ? <SunIcon className="h-4 w-4" /> : <MoonIcon className="h-4 w-4" />}
+      {isDark ? (
+        <SunIcon className="h-4 w-4" aria-hidden="true" />
+      ) : (
+        <MoonIcon className="h-4 w-4" aria-hidden="true" />
+      )}
     </Button>
   );
 }

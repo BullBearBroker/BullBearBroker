@@ -85,16 +85,26 @@ export function MarketSidebar({ token, user, onLogout }: MarketSidebarProps) {
     <div className="flex h-full flex-col gap-4 p-4" data-testid="market-sidebar-root">
       <Card className="surface-card">
         <CardContent className="space-y-4">
-          <div>
+          <div className="space-y-3">
             <h2 className="text-xl font-sans font-semibold tracking-tight text-card-foreground">BullBearBroker</h2>
             <p className="text-sm text-muted-foreground">{user.email}</p>
+            <Button variant="outline" size="sm" className="w-full focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" asChild>
+              <Link href="/portfolio" className="flex items-center justify-center gap-2">
+                <Wallet className="h-4 w-4" aria-hidden="true" />
+                <span>Ver portafolio</span>
+              </Link>
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="w-full justify-center gap-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              onClick={onLogout}
+            >
+              <LogOut className="h-4 w-4" aria-hidden="true" />
+              Cerrar sesión
+            </Button>
           </div>
-          <Button variant="outline" size="sm" className="w-full" asChild>
-            <Link href="/portfolio" className="flex items-center justify-center gap-2">
-              <Wallet className="h-4 w-4" />
-              <span>Ver portafolio</span>
-            </Link>
-          </Button>
         </CardContent>
       </Card>
       <ScrollArea className="flex-1">
@@ -105,10 +115,6 @@ export function MarketSidebar({ token, user, onLogout }: MarketSidebarProps) {
         </div>
       </ScrollArea>
       <Separator />
-      <Button variant="outline" onClick={onLogout} className="flex items-center justify-center gap-2">
-        <LogOut className="h-4 w-4" />
-        Cerrar sesión
-      </Button>
     </div>
   );
 }
