@@ -106,6 +106,7 @@ class NotificationDispatcher:
     async def broadcast_event(self, event_type: str, payload: dict[str, Any]) -> None:
         envelope = self._build_envelope(event_type, payload)
         payload_size = len(json.dumps(envelope.get("payload", {}), default=str))
+        push_payload = self._build_push_payload(event_type, payload, envelope)
 
         self._logger.info(
             {
@@ -133,7 +134,7 @@ class NotificationDispatcher:
 
         push_status = "skipped"
         try:
-            push_result = await self.push.broadcast(envelope)
+            push_result = await self.push.broadcast(push_payload)
             push_status = f"sent:{push_result}"
         except Exception as exc:  # pragma: no cover - defensive logging
             push_status = f"error:{exc}"
@@ -172,6 +173,11 @@ class NotificationDispatcher:
                 }
             )
 
+    async def broadcast_test(self, payload: dict[str, Any]) -> None:
+        """Helper used by scripts/tests to emit a test notification."""
+
+        await self.broadcast_event("test", payload)
+
     @staticmethod
     def _build_envelope(event_type: str, payload: dict[str, Any]) -> dict[str, Any]:
         summary = (
@@ -187,6 +193,16 @@ class NotificationDispatcher:
             "payload": payload,
         }
 
+    @staticmethod
+    def _build_push_payload(
+        event_type: str, payload: dict[str, Any], envelope: dict[str, Any]
+    ) -> dict[str, Any]:
+        enriched_payload = dict(payload)
+        enriched_payload.setdefault("title", envelope["title"])
+        enriched_payload.setdefault("body", envelope["body"])
+        enriched_payload.setdefault("type", event_type)
+        return enriched_payload
+
 
 _realtime_service = RealtimeService()
 _push_channel = PushBroadcastChannel(push_service)
@@ -201,6 +217,7 @@ notification_dispatcher = NotificationDispatcher(
 
 __all__ = [
     "NotificationDispatcher",
+    "PushBroadcastChannel",
     "notification_dispatcher",
     "ConnectionManager",  # 🧩 Bloque 9A
     "manager",  # 🧩 Bloque 9A
