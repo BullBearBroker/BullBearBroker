@@ -15,8 +15,6 @@ load_dotenv()
 
 LOGGER = logging.getLogger(__name__)
 
-ENV: str = os.environ.get("ENV", "local")
-
 
 def _get_env(name: str, default: str | None = None) -> str | None:
     """Wrapper around :func:`os.environ.get` that trims whitespace."""
@@ -57,7 +55,44 @@ def _get_bool_env(name: str, default: bool = False) -> bool:
     return raw_value.lower() in {"1", "true", "yes", "on"}
 
 
+_SUPPORTED_ENVIRONMENTS = {"local", "staging", "production"}
+
+_ENVIRONMENT_DEFAULTS = {
+    # 🧩 Codex fix: valores por defecto seguros por entorno
+    "local": {
+        "DATABASE_URL": "sqlite+aiosqlite:///./app.db",
+        "SUPABASE_URL": "http://localhost:54321",
+        "SUPABASE_KEY": "local_supabase_key",
+    },
+    "staging": {
+        "DATABASE_URL": "postgresql+asyncpg://user:pass@host:5432/bullbearbroker",
+        "SUPABASE_URL": "https://staging.supabase.co",
+        "SUPABASE_KEY": "staging_supabase_key",
+    },
+    "production": {
+        "DATABASE_URL": "postgresql+asyncpg://user:pass@host:5432/bullbearbroker",  # pragma: allowlist secret
+        "SUPABASE_URL": "https://api.supabase.prod",
+        "SUPABASE_KEY": "production_supabase_key",
+    },
+}
+
+APP_ENV = (_get_env("APP_ENV", "local") or "local").lower()
+if APP_ENV not in _SUPPORTED_ENVIRONMENTS:
+    LOGGER.warning("unknown_app_env", extra={"app_env": APP_ENV})
+    APP_ENV = "local"
+
+# 🧩 Codex fix: mantener compatibilidad con ENV pero priorizar APP_ENV
+ENV = _get_env("ENV") or APP_ENV
+
+_active_defaults = _ENVIRONMENT_DEFAULTS[APP_ENV]
+
+
 class Config:
+    APP_ENV = APP_ENV  # 🧩 Codex fix: exponer entorno activo
+    ENV = ENV
+    DATABASE_URL = _get_env("DATABASE_URL") or _active_defaults["DATABASE_URL"]
+    SUPABASE_URL = _get_env("SUPABASE_URL") or _active_defaults["SUPABASE_URL"]
+    SUPABASE_KEY = _get_env("SUPABASE_KEY") or _active_defaults["SUPABASE_KEY"]
     # Stocks APIs
     ALPHA_VANTAGE_API_KEY = _get_env("ALPHA_VANTAGE_API_KEY")
     TWELVEDATA_API_KEY = _get_env("TWELVEDATA_API_KEY")

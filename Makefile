@@ -42,6 +42,10 @@ up-staging:
 	@echo "🚀 Iniciando backend en modo staging..."
 	@APP_ENV=staging uvicorn $(APP) --port $(PORT)
 
+frontend-staging:
+	@echo "🚀 Iniciando frontend en modo staging..."
+	@NEXT_PUBLIC_ENV=staging pnpm --prefix frontend dev --port 3001
+
 # --- 🧩 MIGRACIONES ---
 migrate:
 	@echo "🧩 Aplicando migraciones Alembic..."
