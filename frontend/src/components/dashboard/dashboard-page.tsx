@@ -1,8 +1,16 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import {
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import { useRouter } from "next/navigation";
+import { AnimatePresence, motion } from "@/lib/motion";
 import { Activity, BellRing, Bot, LineChart, Radio, SignalHigh, Wallet } from "lucide-react";
 
 import { useAuth } from "@/components/providers/auth-provider";
@@ -21,6 +29,9 @@ import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/common/Skeleton";
 import { cn } from "@/lib/utils";
+import { useOptionalUIState } from "@/hooks/useUIState";
+
+const noopCallback = () => undefined;
 
 function PanelSkeleton({
   lines = 3,
@@ -51,6 +62,25 @@ function ChartSkeleton() {
     </div>
   );
 }
+
+const cardMotionProps = {
+  initial: { opacity: 0, y: 20 },
+  animate: { opacity: 1, y: 0 },
+  exit: { opacity: 0, y: 12 },
+  transition: { duration: 0.24, ease: "easeOut" },
+} as const;
+
+const overlayMotionProps = {
+  initial: { opacity: 0 },
+  animate: { opacity: 1 },
+  exit: { opacity: 0 },
+  transition: { duration: 0.2 },
+} as const;
+
+const createCardMotion = (delay = 0) => ({
+  ...cardMotionProps,
+  transition: { ...cardMotionProps.transition, delay },
+});
 
 function AsyncModuleFallback({
   title,
@@ -142,6 +172,28 @@ const PortfolioPanel = dynamic(
 function DashboardPageContent() {
   const { user, loading, token, logout } = useAuth();
   const router = useRouter();
+  const uiState = useOptionalUIState();
+  const sidebarOpen = uiState?.sidebarOpen ?? false;
+  const closeSidebar = uiState?.closeSidebar ?? noopCallback;
+  const resolveDesktopPreference = useCallback(() => {
+    if (typeof window === "undefined") {
+      return true;
+    }
+
+    const minimumWidth = 768;
+    const widthFallback = typeof window.innerWidth === "number" ? window.innerWidth >= minimumWidth : true;
+
+    if (typeof window.matchMedia === "function") {
+      const mediaQuery = window.matchMedia("(min-width: 768px)");
+      if (typeof mediaQuery.matches === "boolean") {
+        return mediaQuery.matches || widthFallback;
+      }
+    }
+
+    return widthFallback;
+  }, []);
+
+  const [isDesktop, setIsDesktop] = useState<boolean>(() => resolveDesktopPreference());
 
   const sidebarToken = useMemo(() => token ?? undefined, [token]);
 
@@ -165,12 +217,84 @@ function DashboardPageContent() {
   const [indicatorInsights, setIndicatorInsights] = useState<string | null>(null); // [Codex] nuevo
   const [indicatorLoading, setIndicatorLoading] = useState(false); // [Codex] nuevo
   const [indicatorError, setIndicatorError] = useState<string | null>(null); // [Codex] nuevo
+  const sidebarVariants = useMemo(
+    () => ({
+      hidden: {
+        x: isDesktop ? 0 : -320,
+        opacity: isDesktop ? 1 : 0,
+        pointerEvents: isDesktop ? "auto" : "none",
+      },
+      visible: {
+        x: 0,
+        opacity: 1,
+        pointerEvents: "auto",
+      },
+    }),
+    [isDesktop],
+  );
+  const shouldShowOverlay = sidebarOpen && !isDesktop;
 
   useEffect(() => {
     if (!loading && !user) {
       router.replace("/login");
     }
   }, [loading, router, user]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return;
+    }
+
+    const minimumWidth = 768;
+    const mediaQuery = window.matchMedia("(min-width: 768px)");
+
+    const computeDesktopState = (matches: boolean) => {
+      if (matches) {
+        return true;
+      }
+      if (typeof window.innerWidth === "number") {
+        return window.innerWidth >= minimumWidth;
+      }
+      return false;
+    };
+
+    setIsDesktop(computeDesktopState(mediaQuery.matches));
+
+    const listener = (event: MediaQueryListEvent) => {
+      setIsDesktop(computeDesktopState(event.matches));
+    };
+
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", listener);
+      return () => {
+        mediaQuery.removeEventListener("change", listener);
+      };
+    }
+
+    if (typeof mediaQuery.addListener === "function") {
+      mediaQuery.addListener(listener);
+      return () => {
+        mediaQuery.removeListener(listener);
+      };
+    }
+
+    return () => undefined;
+  }, []);
+
+  useEffect(() => {
+    if (!sidebarOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeSidebar();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [closeSidebar, sidebarOpen]);
 
   const loadIndicators = useCallback(
     async (opts?: { cancelled?: () => boolean }) => {
@@ -331,17 +455,44 @@ function DashboardPageContent() {
       className="grid min-h-screen bg-background text-foreground md:grid-cols-[280px_1fr]"
       data-testid="dashboard-shell"
     >
-      <aside className="border-r border-border/60 bg-card/60 backdrop-blur">
+      <AnimatePresence>
+        {shouldShowOverlay ? (
+          <motion.div
+            {...overlayMotionProps}
+            className="fixed inset-0 z-30 bg-background/70 backdrop-blur-sm md:hidden"
+            role="presentation"
+            aria-hidden="true"
+            onClick={closeSidebar}
+          />
+        ) : null}
+      </AnimatePresence>
+      <motion.aside
+        id="market-sidebar"
+        role="complementary"
+        aria-label="Panel de mercados y navegación secundaria"
+        aria-hidden={!(sidebarOpen || isDesktop)}
+        tabIndex={sidebarOpen || isDesktop ? 0 : -1}
+        className={cn(
+          "fixed inset-y-0 left-0 z-40 flex h-full w-72 flex-col overflow-y-auto border-r border-border/60 bg-card/90 shadow-xl backdrop-blur-lg",
+          "md:relative md:z-auto md:w-full md:border-r md:bg-card/60 md:shadow-none md:backdrop-blur",
+        )}
+        variants={sidebarVariants}
+        initial={isDesktop ? "visible" : "hidden"}
+        animate={sidebarOpen || isDesktop ? "visible" : "hidden"}
+        transition={{ duration: 0.24, ease: "easeOut" }}
+        data-state={sidebarOpen ? "open" : "closed"}
+      >
         <MarketSidebar token={sidebarToken} user={user} onLogout={logout} />
-      </aside>
+      </motion.aside>
       <main
         className="flex flex-col gap-6 p-4 md:p-6"
         data-testid="dashboard-content"
         role="main"
         aria-label="Panel principal del dashboard"
       >
-        <header
-          className="surface-card flex flex-col gap-4 animate-in fade-in-50 slide-in-from-bottom-2 md:flex-row md:items-center md:justify-between"
+        <motion.header
+          className="surface-card flex flex-col gap-4 md:flex-row md:items-center md:justify-between"
+          {...cardMotionProps}
         >
           <div>
             <p className="text-sm text-muted-foreground">Bienvenido de vuelta</p>
@@ -357,30 +508,38 @@ function DashboardPageContent() {
               {pushEnabled ? "Push activo" : "Push inactivo"}
             </Badge>
             <ThemeToggle />
-            <Button variant="outline" onClick={logout}>
+            <Button
+              variant="outline"
+              onClick={logout}
+              className="focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            >
               Cerrar sesión
             </Button>
           </div>
-        </header>
+        </motion.header>
         <div className="flex flex-col gap-4">
-          {pushError && (
-            <div
-              className="rounded-2xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive animate-in fade-in-50"
-              style={{ animationDelay: "120ms" }}
-            >
-              {pushError}
-            </div>
-          )}
+          <AnimatePresence initial={false}>
+            {pushError ? (
+              <motion.div
+                key="push-error"
+                role="alert"
+                className="rounded-2xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive shadow-sm"
+                {...createCardMotion(0.12)}
+              >
+                {pushError}
+              </motion.div>
+            ) : null}
+          </AnimatePresence>
           {/* 🧩 Bloque 8B */}
           <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <div className="h-full animate-in fade-in-50" style={{ animationDelay: "80ms" }}>
+            <motion.div className="h-full" {...createCardMotion(0.08)}>
               <NotificationCenterCard />
-            </div>
-            <div className="h-full animate-in fade-in-50" style={{ animationDelay: "120ms" }}>
+            </motion.div>
+            <motion.div className="h-full" {...createCardMotion(0.12)}>
               <Card data-testid="notification-center" className="surface-card">
                 <CardHeader className="space-y-2 pb-4">
                   <CardTitle className="flex items-center gap-2 text-lg font-sans font-medium tracking-tight">
-                    <BellRing className="h-5 w-5 text-primary" /> Preferencias de alerta
+                    <BellRing className="h-5 w-5 text-primary" aria-hidden="true" /> Preferencias de alerta
                   </CardTitle>
                   <CardDescription>
                     Gestiona las alertas en tiempo real provenientes del dispatcher.
@@ -404,9 +563,9 @@ function DashboardPageContent() {
                         variant="outline"
                         onClick={() => void requestPushPermission()}
                         disabled={pushLoading}
-                        className="flex items-center gap-2"
+                        className="flex items-center gap-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       >
-                        <BellRing className="h-4 w-4" />
+                        <BellRing className="h-4 w-4" aria-hidden="true" />
                         Activar notificaciones
                       </Button>
                     )}
@@ -415,9 +574,9 @@ function DashboardPageContent() {
                       variant="ghost"
                       onClick={() => void sendTestNotification()}
                       disabled={!pushEnabled || pushTesting}
-                      className="flex items-center gap-2"
+                      className="flex items-center gap-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                     >
-                      <Radio className="h-4 w-4" />
+                      <Radio className="h-4 w-4" aria-hidden="true" />
                       {pushTesting ? "Enviando prueba..." : "Enviar prueba"}
                     </Button>
                   </div>
@@ -447,7 +606,7 @@ function DashboardPageContent() {
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="-mr-1"
+                              className="-mr-1 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                               onClick={() => dismissPushEvent(event.id)}
                             >
                               Cerrar
@@ -482,12 +641,12 @@ function DashboardPageContent() {
                   </div>
                 </CardContent>
               </Card>
-            </div>
-            <div className="h-full animate-in fade-in-50" style={{ animationDelay: "160ms" }}>
+            </motion.div>
+            <motion.div className="h-full" {...createCardMotion(0.16)}>
               <Card className="surface-card h-full">
                 <CardHeader className="space-y-1 pb-4">
                   <CardTitle className="flex items-center gap-2 text-lg font-sans font-medium tracking-tight">
-                    <Activity className="h-5 w-5 text-primary" /> Estado de la sesión
+                    <Activity className="h-5 w-5 text-primary" aria-hidden="true" /> Estado de la sesión
                   </CardTitle>
                   <CardDescription>
                     Mantén el pulso de la conexión en vivo y los últimos eventos del mercado.
@@ -515,7 +674,7 @@ function DashboardPageContent() {
                   )}
                 </CardContent>
               </Card>
-            </div>
+            </motion.div>
           </section>
         </div>
         <section
@@ -523,7 +682,7 @@ function DashboardPageContent() {
           data-testid="dashboard-modules"
         >
           <div className="grid auto-rows-min gap-4">
-            <div className="h-full animate-in fade-in-50" style={{ animationDelay: "80ms" }}>
+            <motion.div className="h-full" {...createCardMotion(0.08)}>
               <Suspense
                 fallback={
                   <AsyncModuleFallback
@@ -537,22 +696,23 @@ function DashboardPageContent() {
               >
                 <PortfolioPanel token={token ?? undefined} />
               </Suspense>
-            </div>
+            </motion.div>
             {/* [Codex] nuevo - tarjeta de indicadores con insights AI */}
-            <div className="h-full animate-in fade-in-50" style={{ animationDelay: "120ms" }}>
+            <motion.div className="h-full" {...createCardMotion(0.12)}>
               <Card className="surface-card flex flex-col" data-testid="dashboard-indicators">
                 <CardHeader className="flex flex-wrap items-center justify-between gap-3 pb-4">
                   <CardTitle className="flex items-center gap-2 text-lg font-sans font-medium tracking-tight">
-                    <SignalHigh className="h-5 w-5 text-primary" /> Indicadores clave ({indicatorSymbol})
+                    <SignalHigh className="h-5 w-5 text-primary" aria-hidden="true" /> Indicadores clave ({indicatorSymbol})
                   </CardTitle>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={handleRefreshIndicators}
                     disabled={indicatorLoading || historicalLoading || historicalValidating}
-                    className="flex items-center gap-2"
+                    className="flex items-center gap-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                    aria-live="polite"
                   >
-                    <LineChart className="h-4 w-4" />
+                    <LineChart className="h-4 w-4" aria-hidden="true" />
                     {indicatorLoading || historicalLoading || historicalValidating
                       ? "Actualizando..."
                       : "Actualizar"}
@@ -564,7 +724,9 @@ function DashboardPageContent() {
                   aria-live="polite"
                 >
                   {indicatorError && (
-                    <p className="text-sm text-destructive">{indicatorError}</p>
+                    <p className="text-sm text-destructive" role="status">
+                      {indicatorError}
+                    </p>
                   )}
                   {indicatorData && (
                     <Suspense fallback={<ChartSkeleton />}>
@@ -591,12 +753,12 @@ function DashboardPageContent() {
                   )}
                 </CardContent>
               </Card>
-            </div>
-            <div className="h-full animate-in fade-in-50" style={{ animationDelay: "160ms" }}>
+            </motion.div>
+            <motion.div className="h-full" {...createCardMotion(0.16)}>
               <Card className="surface-card flex flex-col" data-testid="dashboard-chat">
                 <CardHeader className="pb-4">
                   <CardTitle className="flex items-center gap-2 text-lg font-sans font-medium tracking-tight">
-                    <Bot className="h-5 w-5 text-primary" /> Asistente estratégico
+                    <Bot className="h-5 w-5 text-primary" aria-hidden="true" /> Asistente estratégico
                   </CardTitle>
                   <CardDescription>
                     Conversa con el bot para contextualizar las señales del mercado.
@@ -615,10 +777,10 @@ function DashboardPageContent() {
                   </Suspense>
                 </CardContent>
               </Card>
-            </div>
+            </motion.div>
           </div>
           <div className="grid auto-rows-min gap-4">
-            <div className="h-full animate-in fade-in-50" style={{ animationDelay: "80ms" }}>
+            <motion.div className="h-full" {...createCardMotion(0.08)}>
               <Suspense
                 fallback={
                   <AsyncModuleFallback
@@ -632,8 +794,8 @@ function DashboardPageContent() {
               >
                 <AlertsPanel token={token ?? undefined} />
               </Suspense>
-            </div>
-            <div className="h-full animate-in fade-in-50" style={{ animationDelay: "120ms" }}>
+            </motion.div>
+            <motion.div className="h-full" {...createCardMotion(0.12)}>
               <Suspense
                 fallback={
                   <AsyncModuleFallback
@@ -647,7 +809,7 @@ function DashboardPageContent() {
               >
                 <NewsPanel token={token ?? undefined} />
               </Suspense>
-            </div>
+            </motion.div>
           </div>
         </section>
       </main>

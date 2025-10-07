@@ -2,6 +2,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AnimatePresence, motion } from "@/lib/motion";
 import { BellRing, Beaker, History, Inbox, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -16,6 +17,7 @@ import {
 import { useLiveNotifications } from "@/hooks/useLiveNotifications";
 // 🧩 Bloque 9B
 import { useAuth } from "@/components/providers/auth-provider";
+import { useOptionalUIState } from "@/hooks/useUIState";
 
 export interface NotificationLog {
   id: string;
@@ -172,21 +174,43 @@ export default function NotificationCenterCard() {
   }, [events]);
 
   const isRealtime = status === "connected";
+  const uiState = useOptionalUIState();
+  const setToastVisible = uiState?.setToastVisible;
+
+  useEffect(() => {
+    if (!setToastVisible) {
+      return;
+    }
+
+    setToastVisible(Boolean(toastMessage));
+    return () => {
+      if (toastMessage) {
+        setToastVisible(false);
+      }
+    };
+  }, [setToastVisible, toastMessage]);
 
   return (
     <Card className="surface-card">
-      {toastMessage ? (
-        <div
-          role="alert"
-          className="fixed bottom-6 right-6 z-50 max-w-sm rounded-xl border border-border/60 bg-background/90 px-4 py-3 text-sm text-foreground shadow-lg backdrop-blur"
-        >
-          {toastMessage}
-        </div>
-      ) : null}
+      <AnimatePresence>
+        {toastMessage ? (
+          <motion.div
+            key="notification-toast"
+            role="alert"
+            initial={{ opacity: 0, scale: 0.9, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 12 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="fixed bottom-6 right-6 z-50 max-w-sm rounded-xl border border-border/60 bg-background/90 px-4 py-3 text-sm text-foreground shadow-lg backdrop-blur"
+          >
+            {toastMessage}
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
       <CardHeader className="space-y-3 pb-4">
         <div className="flex flex-col gap-2">
           <CardTitle className="flex items-center gap-2 text-lg font-sans font-medium tracking-tight">
-            <BellRing className="h-5 w-5 text-primary" />
+            <BellRing className="h-5 w-5 text-primary" aria-hidden="true" />
             Notificaciones en vivo
           </CardTitle>
           <CardDescription className="text-sm text-muted-foreground">
@@ -205,31 +229,31 @@ export default function NotificationCenterCard() {
           <Button
             type="button"
             variant="secondary"
-            className="flex items-center justify-center gap-2"
+            className="flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             onClick={() => void requestPermission()}
           >
-            <BellRing className="h-4 w-4" />
+            <BellRing className="h-4 w-4" aria-hidden="true" />
             Activar push
           </Button>
           <Button
             type="button"
             variant="outline"
-            className="flex items-center justify-center gap-2"
+            className="flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             onClick={() => void sendTestNotification()}
           >
-            <Beaker className="h-4 w-4" />
+            <Beaker className="h-4 w-4" aria-hidden="true" />
             Enviar prueba
           </Button>
           <Button
             type="button"
             variant="ghost"
-            className="flex items-center justify-center gap-2"
+            className="flex items-center justify-center gap-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             onClick={() => {
               clearLogs();
               setHistory([]);
             }}
           >
-            <Trash2 className="h-4 w-4" />
+            <Trash2 className="h-4 w-4" aria-hidden="true" />
             Limpiar
           </Button>
         </div>
@@ -237,7 +261,7 @@ export default function NotificationCenterCard() {
         <div className="space-y-2 rounded-xl border border-border/50 bg-[hsl(var(--surface))] p-3">
           <div className="flex items-center justify-between">
             <p className="flex items-center gap-2 text-sm font-medium text-card-foreground">
-              <History className="h-4 w-4 text-primary" /> Historial reciente
+              <History className="h-4 w-4 text-primary" aria-hidden="true" /> Historial reciente
             </p>
             <span className="text-xs text-muted-foreground">{history.length} eventos</span>
           </div>
@@ -273,7 +297,7 @@ export default function NotificationCenterCard() {
         <div className="grid gap-2 rounded-xl border border-border/40 bg-[hsl(var(--surface))] p-3 text-xs text-muted-foreground">
           <div className="flex items-center justify-between gap-2">
             <span className="flex items-center gap-2 font-medium text-card-foreground">
-              <Inbox className="h-4 w-4 text-primary" /> Estado de permisos
+              <Inbox className="h-4 w-4 text-primary" aria-hidden="true" /> Estado de permisos
             </span>
             <Badge variant="outline" className="rounded-full px-2 py-0.5 text-[10px] uppercase">
               {permission}
