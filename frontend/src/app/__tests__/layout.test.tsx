@@ -26,7 +26,10 @@ describe("RootLayout", () => {
 
     expect(layout.props.lang).toBe("es");
 
-    const body = layout.props.children as React.ReactElement;
+    const children = Array.isArray(layout.props.children)
+      ? layout.props.children
+      : [layout.props.children];
+    const body = children.find((child: any) => child?.type === "body") as React.ReactElement;
 
     render(body.props.children);
 

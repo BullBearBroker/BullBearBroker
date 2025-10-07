@@ -47,7 +47,9 @@ export function useLiveNotifications(token?: string | null) {
       setEvents(maybeLogs);
       return;
     }
-    console.warn("Invalid fallback payload for notifications");
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Invalid fallback payload for notifications");
+    }
   }, [fallbackData, status]);
 
   useEffect(() => {
@@ -73,7 +75,9 @@ export function useLiveNotifications(token?: string | null) {
         const data = JSON.parse(event.data) as NotificationEvent;
         setEvents((prev) => [...prev, data]);
       } catch (error) {
-        console.warn("Invalid WS message:", error);
+        if (process.env.NODE_ENV !== "production") {
+          console.error("Invalid WS message:", error);
+        }
       }
     };
 

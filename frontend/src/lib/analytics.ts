@@ -18,7 +18,9 @@ export function trackEvent(event: string, payload?: AnalyticsEventPayload) {
     try {
       client.track(event, payload);
     } catch (error) {
-      console.warn("analytics track failed", error);
+      if (process.env.NODE_ENV !== "production") {
+        console.error("analytics track failed", error);
+      }
     }
     return;
   }

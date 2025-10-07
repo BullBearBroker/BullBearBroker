@@ -38,18 +38,18 @@ class WebSocketMock {
 
 describe("useLiveNotifications", () => {
   const originalWebSocket = window.WebSocket;
-  let consoleWarnSpy: jest.SpyInstance;
+  let consoleErrorSpy: jest.SpyInstance;
 
   beforeEach(() => {
     currentFallbackData = undefined;
     useSWRMock.mockClear();
     (window as any).WebSocket = WebSocketMock as unknown as typeof WebSocket;
-    consoleWarnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
   });
 
   afterEach(() => {
     window.WebSocket = originalWebSocket as typeof WebSocket;
-    consoleWarnSpy.mockRestore();
+    consoleErrorSpy.mockRestore();
     WebSocketMock.instances = [];
   });
 
@@ -104,7 +104,7 @@ describe("useLiveNotifications", () => {
       WebSocketMock.instances[0].onmessage?.({ data: "no-json" } as MessageEvent<string>);
     });
 
-    expect(consoleWarnSpy).toHaveBeenCalledWith("Invalid WS message:", expect.any(SyntaxError));
+    expect(consoleErrorSpy).toHaveBeenCalledWith("Invalid WS message:", expect.any(SyntaxError));
 
     await act(async () => {
       WebSocketMock.instances[0].onerror?.();

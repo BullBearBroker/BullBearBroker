@@ -4,18 +4,18 @@ import { trackEvent } from "../analytics";
 describe("analytics helpers", () => {
   const originalAnalytics = (window as any).analytics;
   let infoSpy: jest.SpyInstance;
-  let warnSpy: jest.SpyInstance;
+  let errorSpy: jest.SpyInstance;
 
   beforeEach(() => {
     (window as any).analytics = undefined;
     infoSpy = jest.spyOn(console, "info").mockImplementation(() => {});
-    warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {});
+    errorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
   });
 
   afterEach(() => {
     (window as any).analytics = originalAnalytics;
     infoSpy.mockRestore();
-    warnSpy.mockRestore();
+    errorSpy.mockRestore();
   });
 
   it("no lanza errores cuando no hay cliente y registra en consola", () => {
@@ -40,6 +40,6 @@ describe("analytics helpers", () => {
     };
 
     expect(() => trackEvent("failing")).not.toThrow();
-    expect(warnSpy).toHaveBeenCalledWith("analytics track failed", error);
+    expect(errorSpy).toHaveBeenCalledWith("analytics track failed", error);
   });
 });

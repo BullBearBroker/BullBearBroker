@@ -396,7 +396,9 @@ export async function sendChatMessage(
         token
       );
     } catch (err) {
-      console.warn("No se pudieron obtener indicadores:", err);
+      if (process.env.NODE_ENV !== "production") {
+        console.error("No se pudieron obtener indicadores:", err);
+      }
     }
   }
 

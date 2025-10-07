@@ -143,7 +143,7 @@ describe("IndicatorsChart", () => {
     expect(screen.getByTestId("line-macd")).toHaveTextContent("MACD");
     expect(screen.getByTestId("bar-histogram")).toHaveTextContent("Histograma");
 
-    expect(screen.getByText("🧠 Insights del asistente")).toBeInTheDocument();
+    expect(screen.getByText(/Insights del asistente/i)).toBeInTheDocument();
     expect(screen.getByText("Tendencia alcista moderada")).toBeInTheDocument();
     expect(screen.getByText("Vigilar posibles divergencias")).toBeInTheDocument();
     expect(screen.getByText("Considerar stop-loss ajustado")).toBeInTheDocument();

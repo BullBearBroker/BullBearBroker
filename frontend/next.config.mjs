@@ -1,12 +1,31 @@
 /** @type {import('next').NextConfig} */
+const remoteImagePatterns = [
+  {
+    protocol: "https",
+    hostname: "images.unsplash.com",
+  },
+  {
+    protocol: "https",
+    hostname: "assets.coingecko.com",
+  },
+  {
+    protocol: "https",
+    hostname: "cdn.coincap.io",
+  },
+];
+
 const nextConfig = {
   reactStrictMode: true,
+  swcMinify: true,
+  compress: true,
+  poweredByHeader: false,
   eslint: {
     // ✅ Evita que ESLint bloquee la compilación
     ignoreDuringBuilds: true,
   },
   images: {
-    remotePatterns: [],
+    formats: ["image/avif", "image/webp"],
+    remotePatterns: remoteImagePatterns,
   },
   typescript: {
     ignoreBuildErrors: true,
