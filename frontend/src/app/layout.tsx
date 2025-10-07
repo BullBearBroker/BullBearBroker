@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import "@/styles/globals.css";
-import { Inter } from "next/font/google";
 
 import { AuthProvider } from "@/components/providers/auth-provider";
 import { ThemeProvider } from "@/components/providers/theme-provider";
@@ -21,11 +20,20 @@ const metadataBase = (() => {
   }
 })();
 
-const inter = Inter({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-inter",
-});
+let inter: { className: string; variable: string };
+
+if (process.env.ANALYZE === "true") {
+  // 🚧 En modo análisis desactivamos next/font (incompatible con Babel)
+  inter = { className: "", variable: "" };
+} else {
+  // ✅ En ejecución normal usamos next/font
+  const { Inter } = require("next/font/google") as typeof import("next/font/google");
+  inter = Inter({
+    subsets: ["latin"],
+    display: "swap",
+    variable: "--font-inter",
+  });
+}
 
 const apiPreconnectOrigin = (() => {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL;
