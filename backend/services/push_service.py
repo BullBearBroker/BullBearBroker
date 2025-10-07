@@ -51,14 +51,23 @@ class PushService:
             LOGGER.warning("Invalid JSON for VAPID_CLAIMS", exc_info=True)
             env_vapid_claims = None
 
+        settings = getattr(core_config, "settings", None)
+        settings_private_key = None
+        settings_public_key = None
+        if settings is not None:
+            settings_private_key = getattr(settings, "VAPID_PRIVATE_KEY", None)
+            settings_public_key = getattr(settings, "VAPID_PUBLIC_KEY", None)
+
         config_private_key = (
             getattr(Config, "PUSH_VAPID_PRIVATE_KEY", None)
             or getattr(Config, "VAPID_PRIVATE_KEY", None)
+            or settings_private_key
             or getattr(core_config, "VAPID_PRIVATE_KEY", None)
         )  # 🧩 Codex fix: normalizamos la clave privada entre Config y core.config
         config_public_key = (
             getattr(Config, "PUSH_VAPID_PUBLIC_KEY", None)
             or getattr(Config, "VAPID_PUBLIC_KEY", None)
+            or settings_public_key
             or getattr(core_config, "VAPID_PUBLIC_KEY", None)
         )  # 🧩 Codex fix: normalizamos la clave pública entre Config y core.config
         config_claims = getattr(Config, "PUSH_VAPID_CLAIMS", None)  # 🧩 Codex fix
@@ -73,6 +82,9 @@ class PushService:
         self._vapid_claims = self._parse_claims(
             vapid_claims or env_vapid_claims or config_claims
         )  # ✅ Codex fix: compatibilidad con claims definidas tanto en JSON como en Config.
+
+        if not self.is_configured:
+            LOGGER.warning("PushService initialised without VAPID keys")
 
     @property
     def is_configured(self) -> bool:
@@ -104,9 +116,10 @@ class PushService:
 
     def send_notification(
         self, subscription: PushSubscription, payload: dict[str, Any]
-    ) -> None:
+    ) -> bool:
         if not self.is_configured:
-            raise RuntimeError("Web Push configuration missing VAPID keys")
+            LOGGER.warning("Attempted to send push without VAPID keys configured")
+            return False
 
         subscription_info = {
             "endpoint": subscription.endpoint,
@@ -122,8 +135,21 @@ class PushService:
                 vapid_claims=self._build_claims(),
             )
         except WebPushException as exc:  # pragma: no cover - defensive logging
-            LOGGER.warning("Web push delivery failed: %s", exc)
-            raise RuntimeError("Failed to deliver push notification") from exc
+            LOGGER.warning(
+                "Web push delivery failed for %s: %s",
+                subscription.endpoint,
+                exc,
+            )
+            return False
+        except Exception as exc:  # pragma: no cover - defensive logging
+            LOGGER.warning(
+                "Unexpected error delivering web push for %s: %s",
+                subscription.endpoint,
+                exc,
+            )
+            return False
+
+        return True
 
     def _is_category_allowed(
         self, subscription: PushSubscription, category: str | None
@@ -157,11 +183,14 @@ class PushService:
         for subscription in subscriptions:
             if not self._is_category_allowed(subscription, category):
                 continue
-            try:
-                self.send_notification(subscription, payload)
-            except RuntimeError:
-                continue
-            delivered += 1
+            success = self.send_notification(subscription, payload)
+            if success:
+                delivered += 1
+            else:
+                LOGGER.debug(
+                    "Push notification skipped for subscription %s",
+                    getattr(subscription, "id", "unknown"),
+                )
         return delivered
 
 
