@@ -2,7 +2,7 @@
 
 import { type ChangeEvent, useCallback, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
-import { PlusCircle, Trash2 } from "lucide-react";
+import { BriefcaseBusiness, PlusCircle, Trash2 } from "lucide-react";
 
 import {
   PortfolioItem,
@@ -212,22 +212,26 @@ function PortfolioPanelContent({ token }: PortfolioPanelProps) {
   }, []);
 
   return (
-    <Card className="flex flex-col">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-        <div>
-          <CardTitle className="text-lg font-medium">Portafolio</CardTitle>
-          <p className="text-sm text-muted-foreground">
-            Administra tus posiciones y consulta su valoración estimada.
-          </p>
+    <Card className="surface-card flex flex-col">
+      <CardHeader className="flex flex-col gap-3 pb-4">
+        <div className="flex items-center justify-between gap-3">
+          <CardTitle className="flex items-center gap-2 text-lg font-sans font-medium tracking-tight">
+            <BriefcaseBusiness className="h-5 w-5 text-primary" /> Mi portafolio
+          </CardTitle>
+          <Badge variant="outline" className="rounded-full px-3 py-1 text-xs font-medium">
+            Total: {formattedTotal}
+          </Badge>
         </div>
-        <Badge variant="secondary">Total: {formattedTotal}</Badge>
+        <p className="text-sm text-muted-foreground">
+          Administra tus posiciones y consulta su valoración estimada.
+        </p>
       </CardHeader>
       <CardContent className="space-y-4">
         {csvEnabled && (
-          <div className="space-y-3 rounded-lg border border-dashed p-3">
-            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div className="space-y-3 rounded-2xl border border-dashed border-border/50 bg-[hsl(var(--surface))] p-4">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="space-y-1">
-                <p className="text-sm font-medium">Importar / exportar cartera</p>
+                <p className="text-sm font-medium text-card-foreground">Importar / exportar cartera</p>
                 <p className="text-xs text-muted-foreground">
                   Trabaja con archivos CSV usando las columnas <code>symbol</code> y <code>amount</code>.
                 </p>
@@ -264,10 +268,10 @@ function PortfolioPanelContent({ token }: PortfolioPanelProps) {
               <div
                 role="status"
                 className={cn(
-                  "rounded-md border p-3 text-sm",
+                  "rounded-xl border p-3 text-sm",
                   csvFeedback.variant === "error" && "border-destructive/40 text-destructive",
-                  csvFeedback.variant === "warning" && "border-yellow-500/50 text-yellow-600",
-                  csvFeedback.variant === "success" && "border-emerald-500/40 text-emerald-600"
+                  csvFeedback.variant === "warning" && "border-warning/40 text-warning",
+                  csvFeedback.variant === "success" && "border-success/40 text-success"
                 )}
               >
                 <p>{csvFeedback.message}</p>
@@ -340,17 +344,17 @@ function PortfolioPanelContent({ token }: PortfolioPanelProps) {
             return (
               <div
                 key={item.id}
-                className="flex flex-col gap-2 rounded-lg border p-3 md:flex-row md:items-center md:justify-between"
+                className="flex flex-col gap-3 rounded-2xl border border-border/40 bg-[hsl(var(--surface))] p-4 transition-all duration-300 hover:border-border hover:bg-[hsl(var(--surface-hover))] md:flex-row md:items-center md:justify-between"
               >
                 <div>
-                  <p className="font-medium">{item.symbol}</p>
+                  <p className="text-sm font-medium text-card-foreground">{item.symbol}</p>
                   <p className="text-xs text-muted-foreground">
                     Cantidad: {item.amount.toLocaleString("en-US")}
                   </p>
                   <p className="text-xs text-muted-foreground">Precio: {priceLabel}</p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <p className="text-sm font-semibold">{valueLabel}</p>
+                  <p className="text-sm font-semibold text-card-foreground">{valueLabel}</p>
                   <Button
                     type="button"
                     variant="destructive"

@@ -16,7 +16,30 @@ import {
   YAxis,
 } from "recharts";
 
+import { Sparkles } from "lucide-react";
+
 import type { HistoricalDataResponse } from "@/lib/api";
+
+const chartPalette = {
+  price: "hsl(var(--card-foreground))",
+  emaFast: "hsl(var(--primary))",
+  emaSlow: "hsl(var(--info))",
+  bollingerUpper: "hsl(var(--info))",
+  bollingerLower: "hsl(var(--success))",
+  bollingerMiddle: "hsl(var(--muted-foreground))",
+  vwap: "hsl(var(--warning))",
+  rsi: "hsl(var(--warning))",
+  rsiLower: "hsl(var(--destructive))",
+  rsiUpper: "hsl(var(--success))",
+  atr: "hsl(var(--info))",
+  ichimokuTenkan: "hsl(var(--warning))",
+  ichimokuKijun: "hsl(var(--primary))",
+  ichimokuSpanA: "hsl(var(--accent-foreground))",
+  ichimokuSpanB: "hsl(var(--success))",
+  macd: "hsl(var(--info))",
+  macdSignal: "hsl(var(--destructive))",
+  macdHistogram: "hsl(var(--success))",
+};
 
 interface IndicatorsChartProps {
   symbol: string;
@@ -341,7 +364,7 @@ export function IndicatorsChart({
     typeof window.SVGStopElement !== "undefined";
   const atrFill = supportsSvgGradients
     ? "url(#atrGradient)"
-    : "rgba(56, 189, 248, 0.24)";
+    : "hsl(var(--info) / 0.24)";
 
   const emaFast = computeEMA(closes, emaFastPeriod);
   const emaSlow = computeEMA(closes, emaSlowPeriod);
@@ -418,8 +441,8 @@ export function IndicatorsChart({
   return (
     <div className="grid gap-6 xl:grid-cols-[2fr_1fr]" data-testid="technical-analysis">
       <div className="space-y-6">
-        <header className="space-y-1">
-          <h2 className="text-xl font-semibold">
+        <header className="space-y-2">
+          <h2 className="text-xl font-sans font-semibold tracking-tight text-card-foreground">
             {symbol} · {interval.toUpperCase()}
           </h2>
           <p className="text-sm text-muted-foreground">
@@ -436,8 +459,10 @@ export function IndicatorsChart({
         </header>
 
         <section className="space-y-4">
-          <div className="rounded-lg border bg-card p-4">
-            <h3 className="text-sm font-medium">Precio, EMAs y Bandas de Bollinger</h3>
+          <div className="rounded-2xl border border-border/40 bg-[hsl(var(--surface))] p-4 transition-all duration-300 hover:border-border hover:bg-[hsl(var(--surface-hover))]">
+            <h3 className="text-sm font-sans font-medium tracking-tight text-card-foreground">
+              Precio, EMAs y Bandas de Bollinger
+            </h3>
             <div className="mt-3 h-72 w-full">
               {historyLoading && !priceChartData.length ? (
                 <p className="text-sm text-muted-foreground">Cargando serie histórica...</p>
@@ -451,14 +476,14 @@ export function IndicatorsChart({
                       labelFormatter={(value) => priceChartData[value as number]?.label ?? String(value)}
                     />
                     <Legend />
-                    <Line type="monotone" dataKey="close" stroke="#0f172a" dot={false} name="Precio" strokeWidth={1.5} />
-                    <Line type="monotone" dataKey="emaFast" stroke="#ec4899" dot={false} name={`EMA ${emaFastPeriod}`} strokeWidth={1.2} />
-                    <Line type="monotone" dataKey="emaSlow" stroke="#6366f1" dot={false} name={`EMA ${emaSlowPeriod}`} strokeWidth={1.2} />
-                    <Line type="monotone" dataKey="bollingerUpper" stroke="#38bdf8" dot={false} name="Bollinger Sup" strokeDasharray="5 5" />
-                    <Line type="monotone" dataKey="bollingerLower" stroke="#22c55e" dot={false} name="Bollinger Inf" strokeDasharray="5 5" />
-                    <Line type="monotone" dataKey="bollingerMiddle" stroke="#94a3b8" dot={false} name="Bollinger Media" strokeDasharray="3 3" />
+                    <Line type="monotone" dataKey="close" stroke={chartPalette.price} dot={false} name="Precio" strokeWidth={1.5} />
+                    <Line type="monotone" dataKey="emaFast" stroke={chartPalette.emaFast} dot={false} name={`EMA ${emaFastPeriod}`} strokeWidth={1.2} />
+                    <Line type="monotone" dataKey="emaSlow" stroke={chartPalette.emaSlow} dot={false} name={`EMA ${emaSlowPeriod}`} strokeWidth={1.2} />
+                    <Line type="monotone" dataKey="bollingerUpper" stroke={chartPalette.bollingerUpper} dot={false} name="Bollinger Sup" strokeDasharray="5 5" />
+                    <Line type="monotone" dataKey="bollingerLower" stroke={chartPalette.bollingerLower} dot={false} name="Bollinger Inf" strokeDasharray="5 5" />
+                    <Line type="monotone" dataKey="bollingerMiddle" stroke={chartPalette.bollingerMiddle} dot={false} name="Bollinger Media" strokeDasharray="3 3" />
                     {showVWAP && (
-                      <Line type="monotone" dataKey="vwap" stroke="#f97316" dot={false} name="VWAP" strokeWidth={1.5} />
+                      <Line type="monotone" dataKey="vwap" stroke={chartPalette.vwap} dot={false} name="VWAP" strokeWidth={1.5} />
                     )}
                   </LineChart>
                 </ResponsiveContainer>
@@ -467,8 +492,10 @@ export function IndicatorsChart({
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-lg border bg-card p-4">
-              <h3 className="text-sm font-medium">Índice de Fuerza Relativa (RSI)</h3>
+            <div className="rounded-2xl border border-border/40 bg-[hsl(var(--surface))] p-4 transition-all duration-300 hover:border-border hover:bg-[hsl(var(--surface-hover))]">
+              <h3 className="text-sm font-sans font-medium tracking-tight text-card-foreground">
+                Índice de Fuerza Relativa (RSI)
+              </h3>
               <div className="mt-3 h-56 w-full">
                 {showRSI ? (
                   <ResponsiveContainer>
@@ -478,9 +505,9 @@ export function IndicatorsChart({
                       <YAxis domain={[0, 100]} width={50} />
                       <Tooltip labelFormatter={(value) => rsiChartData[value as number]?.label ?? String(value)} />
                       <Legend />
-                      <ReferenceLine y={30} stroke="#ef4444" strokeDasharray="4 4" />
-                      <ReferenceLine y={70} stroke="#22c55e" strokeDasharray="4 4" />
-                      <Line type="monotone" dataKey="value" stroke="#f59e0b" dot={false} name={`RSI ${rsiPeriod}`} strokeWidth={1.5} />
+                      <ReferenceLine y={30} stroke={chartPalette.rsiLower} strokeDasharray="4 4" />
+                      <ReferenceLine y={70} stroke={chartPalette.rsiUpper} strokeDasharray="4 4" />
+                      <Line type="monotone" dataKey="value" stroke={chartPalette.rsi} dot={false} name={`RSI ${rsiPeriod}`} strokeWidth={1.5} />
                     </LineChart>
                   </ResponsiveContainer>
                 ) : (
@@ -489,8 +516,10 @@ export function IndicatorsChart({
               </div>
             </div>
 
-            <div className="rounded-lg border bg-card p-4">
-              <h3 className="text-sm font-medium">Average True Range (ATR)</h3>
+            <div className="rounded-2xl border border-border/40 bg-[hsl(var(--surface))] p-4 transition-all duration-300 hover:border-border hover:bg-[hsl(var(--surface-hover))]">
+              <h3 className="text-sm font-sans font-medium tracking-tight text-card-foreground">
+                Average True Range (ATR)
+              </h3>
               <div className="mt-3 h-56 w-full">
                 {showATR ? (
                   <ResponsiveContainer>
@@ -498,8 +527,8 @@ export function IndicatorsChart({
                       {supportsSvgGradients && (
                         <defs>
                           <linearGradient id="atrGradient" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#38bdf8" stopOpacity={0.3} />
-                            <stop offset="95%" stopColor="#38bdf8" stopOpacity={0} />
+                            <stop offset="5%" stopColor={chartPalette.atr} stopOpacity={0.28} />
+                            <stop offset="95%" stopColor={chartPalette.atr} stopOpacity={0} />
                           </linearGradient>
                         </defs>
                       )}
@@ -511,7 +540,7 @@ export function IndicatorsChart({
                       <Area
                         type="monotone"
                         dataKey="value"
-                        stroke="#38bdf8"
+                        stroke={chartPalette.atr}
                         fillOpacity={supportsSvgGradients ? 1 : 0.32}
                         fill={atrFill}
                         name={`ATR ${atrPeriod}`}
@@ -526,8 +555,8 @@ export function IndicatorsChart({
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
-            <div className="rounded-lg border bg-card p-4">
-              <h3 className="text-sm font-medium">Ichimoku</h3>
+            <div className="rounded-2xl border border-border/40 bg-[hsl(var(--surface))] p-4 transition-all duration-300 hover:border-border hover:bg-[hsl(var(--surface-hover))]">
+              <h3 className="text-sm font-sans font-medium tracking-tight text-card-foreground">Ichimoku</h3>
               <div className="mt-3 h-56 w-full">
                 {showIchimoku && ichimokuSeries ? (
                   <ResponsiveContainer>
@@ -537,10 +566,10 @@ export function IndicatorsChart({
                       <YAxis width={60} />
                       <Tooltip labelFormatter={(value) => ichimokuChartData[value as number]?.label ?? String(value)} />
                       <Legend />
-                      <Line type="monotone" dataKey="tenkan" stroke="#f97316" dot={false} name="Tenkan" />
-                      <Line type="monotone" dataKey="kijun" stroke="#22d3ee" dot={false} name="Kijun" />
-                      <Line type="monotone" dataKey="spanA" stroke="#6366f1" dot={false} name="Span A" strokeDasharray="5 5" />
-                      <Line type="monotone" dataKey="spanB" stroke="#10b981" dot={false} name="Span B" strokeDasharray="5 5" />
+                      <Line type="monotone" dataKey="tenkan" stroke={chartPalette.ichimokuTenkan} dot={false} name="Tenkan" />
+                      <Line type="monotone" dataKey="kijun" stroke={chartPalette.ichimokuKijun} dot={false} name="Kijun" />
+                      <Line type="monotone" dataKey="spanA" stroke={chartPalette.ichimokuSpanA} dot={false} name="Span A" strokeDasharray="5 5" />
+                      <Line type="monotone" dataKey="spanB" stroke={chartPalette.ichimokuSpanB} dot={false} name="Span B" strokeDasharray="5 5" />
                     </LineChart>
                   </ResponsiveContainer>
                 ) : (
@@ -549,8 +578,8 @@ export function IndicatorsChart({
               </div>
             </div>
 
-            <div className="rounded-lg border bg-card p-4">
-              <h3 className="text-sm font-medium">MACD</h3>
+            <div className="rounded-2xl border border-border/40 bg-[hsl(var(--surface))] p-4 transition-all duration-300 hover:border-border hover:bg-[hsl(var(--surface-hover))]">
+              <h3 className="text-sm font-sans font-medium tracking-tight text-card-foreground">MACD</h3>
               <div className="mt-3 h-56 w-full">
                 <ResponsiveContainer>
                   <ComposedChart data={macdChartData} margin={{ left: 12, right: 12, top: 16, bottom: 8 }}>
@@ -559,9 +588,9 @@ export function IndicatorsChart({
                     <YAxis width={60} />
                     <Tooltip labelFormatter={(value) => macdChartData[value as number]?.label ?? String(value)} />
                     <Legend />
-                    <Line type="monotone" dataKey="macd" stroke="#0ea5e9" dot={false} name="MACD" />
-                    <Line type="monotone" dataKey="signal" stroke="#ef4444" dot={false} name="Signal" />
-                    <Bar dataKey="histogram" fill="#22c55e" name="Histograma" />
+                    <Line type="monotone" dataKey="macd" stroke={chartPalette.macd} dot={false} name="MACD" />
+                    <Line type="monotone" dataKey="signal" stroke={chartPalette.macdSignal} dot={false} name="Signal" />
+                    <Bar dataKey="histogram" fill={chartPalette.macdHistogram} name="Histograma" />
                   </ComposedChart>
                 </ResponsiveContainer>
               </div>
@@ -570,8 +599,10 @@ export function IndicatorsChart({
         </section>
       </div>
 
-      <aside className="flex flex-col gap-4 rounded-lg border bg-muted/20 p-4" data-testid="analysis-insights">
-        <h3 className="text-lg font-semibold">🧠 Insights del asistente</h3>
+      <aside className="surface-card flex flex-col gap-4 p-4" data-testid="analysis-insights">
+        <h3 className="flex items-center gap-2 text-lg font-sans font-medium tracking-tight text-card-foreground">
+          <Sparkles className="h-5 w-5 text-primary" /> Insights del asistente
+        </h3>
         {loading && <p className="text-sm text-muted-foreground">Analizando indicadores...</p>}
         {error && <p className="text-sm text-destructive">{error}</p>}
         {!loading && !error && insightBlocks.length === 0 && (
@@ -579,7 +610,10 @@ export function IndicatorsChart({
         )}
         <ul className="space-y-2 text-sm">
           {insightBlocks.map((line, idx) => (
-            <li key={idx} className="rounded-md bg-background p-2 shadow-sm">
+            <li
+              key={idx}
+              className="rounded-xl border border-border/40 bg-[hsl(var(--surface))] p-3 text-card-foreground shadow-sm"
+            >
               {line}
             </li>
           ))}

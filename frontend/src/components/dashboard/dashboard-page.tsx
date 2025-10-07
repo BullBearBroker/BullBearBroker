@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Activity, BellRing, Bot, LineChart, Radio, SignalHigh } from "lucide-react";
 
 import { useAuth } from "@/components/providers/auth-provider";
 import { ChatPanel } from "@/components/chat/chat-panel";
@@ -215,17 +216,24 @@ function DashboardPageContent() {
       className="grid min-h-screen bg-background text-foreground md:grid-cols-[280px_1fr]"
       data-testid="dashboard-shell"
     >
-      <aside className="border-r bg-card/50">
+      <aside className="border-r border-border/60 bg-card/60 backdrop-blur">
         <MarketSidebar token={sidebarToken} user={user} onLogout={logout} />
       </aside>
-      <main className="flex flex-col gap-6 p-4 lg:p-6" data-testid="dashboard-content">
-        <header className="flex flex-col gap-4 rounded-lg border bg-card p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+      <main className="flex flex-col gap-6 p-4 md:p-6" data-testid="dashboard-content">
+        <header
+          className="surface-card flex flex-col gap-4 animate-in fade-in-50 slide-in-from-bottom-2 md:flex-row md:items-center md:justify-between"
+        >
           <div>
             <p className="text-sm text-muted-foreground">Bienvenido de vuelta</p>
-            <h1 className="text-2xl font-semibold">{user.name || user.email}</h1>
+            <h1 className="text-2xl font-sans font-semibold tracking-tight">
+              {user.name || user.email}
+            </h1>
           </div>
-          <div className="flex items-center gap-3">
-            <Badge variant={pushEnabled ? "outline" : "secondary"} className="hidden md:inline-flex">
+          <div className="flex flex-wrap items-center gap-3">
+            <Badge
+              variant={pushEnabled ? "outline" : "secondary"}
+              className="hidden rounded-full px-3 py-1 text-xs font-medium md:inline-flex"
+            >
               {pushEnabled ? "Push activo" : "Push inactivo"}
             </Badge>
             <ThemeToggle />
@@ -234,184 +242,235 @@ function DashboardPageContent() {
             </Button>
           </div>
         </header>
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-4">
           {pushError && (
-            <div className="rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+            <div
+              className="rounded-2xl border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive animate-in fade-in-50"
+              style={{ animationDelay: "120ms" }}
+            >
               {pushError}
             </div>
           )}
-          // 🧩 Bloque 8B
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-            <NotificationCenterCard />
-            <Card data-testid="notification-center" className="border-dashed">
-              <CardHeader className="flex flex-col gap-1 pb-3">
-                <CardTitle className="text-base font-semibold">Centro de notificaciones</CardTitle>
-                <CardDescription>
-                  Gestiona las alertas en tiempo real provenientes del dispatcher.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant={pushEnabled ? "default" : "secondary"}>
-                    {pushEnabled ? "Suscripción activa" : pushLoading ? "Sincronizando..." : "Suscripción inactiva"}
-                  </Badge>
-                  {pushPermission !== "unsupported" && pushPermission !== "granted" && (
+          {/* 🧩 Bloque 8B */}
+          <section className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="h-full animate-in fade-in-50" style={{ animationDelay: "80ms" }}>
+              <NotificationCenterCard />
+            </div>
+            <div className="h-full animate-in fade-in-50" style={{ animationDelay: "120ms" }}>
+              <Card data-testid="notification-center" className="surface-card">
+                <CardHeader className="space-y-2 pb-4">
+                  <CardTitle className="flex items-center gap-2 text-lg font-sans font-medium tracking-tight">
+                    <BellRing className="h-5 w-5 text-primary" /> Preferencias de alerta
+                  </CardTitle>
+                  <CardDescription>
+                    Gestiona las alertas en tiempo real provenientes del dispatcher.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant={pushEnabled ? "outline" : "secondary"}
+                      className="rounded-full px-3 py-1 text-xs font-medium"
+                    >
+                      {pushEnabled
+                        ? "Suscripción activa"
+                        : pushLoading
+                        ? "Sincronizando..."
+                        : "Suscripción inactiva"}
+                    </Badge>
+                    {pushPermission !== "unsupported" && pushPermission !== "granted" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => void requestPushPermission()}
+                        disabled={pushLoading}
+                        className="flex items-center gap-2"
+                      >
+                        <BellRing className="h-4 w-4" />
+                        Activar notificaciones
+                      </Button>
+                    )}
                     <Button
                       size="sm"
-                      variant="outline"
-                      onClick={() => void requestPushPermission()}
-                      disabled={pushLoading}
+                      variant="ghost"
+                      onClick={() => void sendTestNotification()}
+                      disabled={!pushEnabled || pushTesting}
+                      className="flex items-center gap-2"
                     >
-                      Activar notificaciones
+                      <Radio className="h-4 w-4" />
+                      {pushTesting ? "Enviando prueba..." : "Enviar prueba"}
                     </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => void sendTestNotification()}
-                    disabled={!pushEnabled || pushTesting}
-                  >
-                    {pushTesting ? "Enviando prueba..." : "Enviar prueba"}
-                  </Button>
-                </div>
-                <div className="space-y-2" aria-live="polite">
-                  {pushEvents.length === 0 ? (
-                    <p className="text-sm text-muted-foreground">
-                      Aún no se reciben notificaciones. Envía una prueba para verificar el canal.
-                    </p>
-                  ) : (
-                    pushEvents
-                      .slice()
-                      .reverse()
-                      .map((event) => (
-                        <div
-                          key={event.id}
-                          className="flex items-start justify-between gap-3 rounded-md border border-border/60 bg-muted/40 p-3"
-                        >
-                          <div className="space-y-1">
-                            <p className="text-sm font-medium text-foreground">{event.title}</p>
-                            {event.body && (
-                              <p className="text-sm text-muted-foreground">{event.body}</p>
-                            )}
-                            <p className="text-xs text-muted-foreground">
-                              {new Date(event.receivedAt).toLocaleString()}
-                            </p>
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="-mr-1"
-                            onClick={() => dismissPushEvent(event.id)}
-                          >
-                            Cerrar
-                          </Button>
-                        </div>
-                      ))
-                  )}
-                </div>
-                <div>
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    Registro de eventos
-                  </p>
-                  <ScrollArea className="h-32 rounded-md border border-border/60 bg-muted/20 p-2">
-                    {pushLogs.length === 0 ? (
-                      <p className="text-xs text-muted-foreground">
-                        Esperando eventos auditables del dispatcher...
+                  </div>
+                  <div className="space-y-2" aria-live="polite">
+                    {pushEvents.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        Aún no se reciben notificaciones. Envía una prueba para verificar el canal.
                       </p>
                     ) : (
-                      <ul className="space-y-1 text-xs text-foreground">
-                        {pushLogs
-                          .slice()
-                          .reverse()
-                          .map((log, index) => (
-                            <li key={`${log}-${index}`}>{log}</li>
-                          ))}
-                      </ul>
+                      pushEvents
+                        .slice()
+                        .reverse()
+                        .map((event) => (
+                          <div
+                            key={event.id}
+                            className="flex items-start justify-between gap-3 rounded-xl border border-border/50 bg-[hsl(var(--surface-muted))] p-3"
+                          >
+                            <div className="space-y-1">
+                              <p className="text-sm font-medium text-card-foreground">{event.title}</p>
+                              {event.body && (
+                                <p className="text-sm text-muted-foreground">{event.body}</p>
+                              )}
+                              <p className="text-xs text-muted-foreground">
+                                {new Date(event.receivedAt).toLocaleString()}
+                              </p>
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="-mr-1"
+                              onClick={() => dismissPushEvent(event.id)}
+                            >
+                              Cerrar
+                            </Button>
+                          </div>
+                        ))
                     )}
-                  </ScrollArea>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
-        <div className="p-2 text-xs">
-          <span className={realtimeConnected ? "text-green-500" : "text-red-500"}>
-            {realtimeConnected ? "🟢 Conectado a Realtime" : "🔴 Desconectado"}
-          </span>
-          {realtimeHighlight && (
-            <p className="mt-1 text-foreground">{realtimeHighlight}</p>
-          )}
-          {realtimeData && (
-            <pre className="text-gray-400 mt-2">
-              {JSON.stringify(realtimeData, null, 2)}
-            </pre>
-          )}
+                  </div>
+                  <div>
+                    <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      Registro de eventos
+                    </p>
+                    <ScrollArea className="h-32 rounded-xl border border-border/40 bg-[hsl(var(--surface))] p-2">
+                      {pushLogs.length === 0 ? (
+                        <p className="text-xs text-muted-foreground">
+                          Esperando eventos auditables del dispatcher...
+                        </p>
+                      ) : (
+                        <ul className="space-y-1 text-xs text-card-foreground">
+                          {pushLogs
+                            .slice()
+                            .reverse()
+                            .map((log, index) => (
+                              <li key={`${log}-${index}`}>{log}</li>
+                            ))}
+                        </ul>
+                      )}
+                    </ScrollArea>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+            <div className="h-full animate-in fade-in-50" style={{ animationDelay: "160ms" }}>
+              <Card className="surface-card h-full">
+                <CardHeader className="space-y-1 pb-4">
+                  <CardTitle className="flex items-center gap-2 text-lg font-sans font-medium tracking-tight">
+                    <Activity className="h-5 w-5 text-primary" /> Estado de la sesión
+                  </CardTitle>
+                  <CardDescription>
+                    Mantén el pulso de la conexión en vivo y los últimos eventos del mercado.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-3 text-sm">
+                  <div className="flex items-center gap-2 text-xs font-medium">
+                    <span className={realtimeConnected ? "text-success" : "text-destructive"}>
+                      {realtimeConnected ? "Conectado a Realtime" : "Conexión inactiva"}
+                    </span>
+                    {realtimeHighlight && (
+                      <span className="text-muted-foreground">•</span>
+                    )}
+                    {realtimeHighlight && (
+                      <span className="text-card-foreground">{realtimeHighlight}</span>
+                    )}
+                  </div>
+                  {realtimeData && (
+                    <pre className="max-h-40 overflow-auto rounded-xl border border-border/50 bg-[hsl(var(--surface))] p-3 text-xs text-muted-foreground">
+                      {JSON.stringify(realtimeData, null, 2)}
+                    </pre>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </section>
         </div>
         <section
-          className="grid flex-1 gap-6 lg:grid-cols-2 xl:grid-cols-[2fr_1fr]"
+          className="grid flex-1 gap-4 lg:grid-cols-2 xl:grid-cols-[2fr_1fr]"
           data-testid="dashboard-modules"
         >
-          <div className="grid auto-rows-min gap-6">
-            <PortfolioPanel token={token ?? undefined} />
+          <div className="grid auto-rows-min gap-4">
+            <div className="h-full animate-in fade-in-50" style={{ animationDelay: "80ms" }}>
+              <PortfolioPanel token={token ?? undefined} />
+            </div>
             {/* [Codex] nuevo - tarjeta de indicadores con insights AI */}
-            <Card className="flex flex-col" data-testid="dashboard-indicators">
-              <CardHeader className="flex items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-lg font-medium">
-                  Indicadores clave ({indicatorSymbol})
-                </CardTitle>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={handleRefreshIndicators}
-                  disabled={indicatorLoading || historicalLoading || historicalValidating}
-                >
-                  {indicatorLoading || historicalLoading || historicalValidating
-                    ? "Actualizando..."
-                    : "Actualizar"}
-                </Button>
-              </CardHeader>
-              <CardContent className="pt-4">
-                {indicatorError && (
-                  <p className="text-sm text-destructive">{indicatorError}</p>
-                )}
-                {indicatorData && (
-                  <IndicatorsChart
-                    symbol={indicatorData.symbol}
-                    interval={indicatorData.interval}
-                    indicators={indicatorData.indicators}
-                    series={indicatorData.series}
-                    insights={indicatorInsights}
-                    loading={indicatorLoading}
-                    error={indicatorError}
-                    history={historicalData}
-                    historyError={historicalError?.message ?? null}
-                    historyLoading={historicalLoading || historicalValidating}
-                  />
-                )}
-                {!indicatorData && !indicatorError && (
-                  <p className="text-sm text-muted-foreground">
-                    {indicatorLoading
-                      ? "Cargando indicadores en tiempo real..."
-                      : "Aún no se han cargado indicadores."}
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-            <Card className="flex flex-col" data-testid="dashboard-chat">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg font-medium">Asistente estratégico</CardTitle>
-                <CardDescription>
-                  Conversa con el bot para contextualizar las señales del mercado.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="flex h-full flex-col gap-4">
-                <ChatPanel token={token ?? undefined} />
-              </CardContent>
-            </Card>
+            <div className="h-full animate-in fade-in-50" style={{ animationDelay: "120ms" }}>
+              <Card className="surface-card flex flex-col" data-testid="dashboard-indicators">
+                <CardHeader className="flex flex-wrap items-center justify-between gap-3 pb-4">
+                  <CardTitle className="flex items-center gap-2 text-lg font-sans font-medium tracking-tight">
+                    <SignalHigh className="h-5 w-5 text-primary" /> Indicadores clave ({indicatorSymbol})
+                  </CardTitle>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRefreshIndicators}
+                    disabled={indicatorLoading || historicalLoading || historicalValidating}
+                    className="flex items-center gap-2"
+                  >
+                    <LineChart className="h-4 w-4" />
+                    {indicatorLoading || historicalLoading || historicalValidating
+                      ? "Actualizando..."
+                      : "Actualizar"}
+                  </Button>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  {indicatorError && (
+                    <p className="text-sm text-destructive">{indicatorError}</p>
+                  )}
+                  {indicatorData && (
+                    <IndicatorsChart
+                      symbol={indicatorData.symbol}
+                      interval={indicatorData.interval}
+                      indicators={indicatorData.indicators}
+                      series={indicatorData.series}
+                      insights={indicatorInsights}
+                      loading={indicatorLoading}
+                      error={indicatorError}
+                      history={historicalData}
+                      historyError={historicalError?.message ?? null}
+                      historyLoading={historicalLoading || historicalValidating}
+                    />
+                  )}
+                  {!indicatorData && !indicatorError && (
+                    <p className="text-sm text-muted-foreground">
+                      {indicatorLoading
+                        ? "Cargando indicadores en tiempo real..."
+                        : "Aún no se han cargado indicadores."}
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+            <div className="h-full animate-in fade-in-50" style={{ animationDelay: "160ms" }}>
+              <Card className="surface-card flex flex-col" data-testid="dashboard-chat">
+                <CardHeader className="pb-4">
+                  <CardTitle className="flex items-center gap-2 text-lg font-sans font-medium tracking-tight">
+                    <Bot className="h-5 w-5 text-primary" /> Asistente estratégico
+                  </CardTitle>
+                  <CardDescription>
+                    Conversa con el bot para contextualizar las señales del mercado.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="flex h-full flex-col gap-4">
+                  <ChatPanel token={token ?? undefined} />
+                </CardContent>
+              </Card>
+            </div>
           </div>
-          <div className="grid auto-rows-min gap-6">
-            <AlertsPanel token={token ?? undefined} />
-            <NewsPanel token={token ?? undefined} />
+          <div className="grid auto-rows-min gap-4">
+            <div className="h-full animate-in fade-in-50" style={{ animationDelay: "80ms" }}>
+              <AlertsPanel token={token ?? undefined} />
+            </div>
+            <div className="h-full animate-in fade-in-50" style={{ animationDelay: "120ms" }}>
+              <NewsPanel token={token ?? undefined} />
+            </div>
           </div>
         </section>
       </main>
