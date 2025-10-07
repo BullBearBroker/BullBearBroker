@@ -3,7 +3,7 @@ import useSWR from "swr";
 import { customRender, screen, within } from "@/tests/utils/renderWithProviders";
 import { axe } from "jest-axe";
 
-import { NewsPanel } from "../news-panel";
+import { NewsPanel } from "../NewsPanel";
 
 jest.mock("swr", () => {
   const actual = jest.requireActual("swr");

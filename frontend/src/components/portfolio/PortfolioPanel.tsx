@@ -1,6 +1,6 @@
 "use client";
 
-import { type ChangeEvent, useCallback, useMemo, useRef, useState } from "react";
+import { memo, type ChangeEvent, useCallback, useMemo, useRef, useState } from "react";
 import useSWR from "swr";
 import { BriefcaseBusiness, PlusCircle, Trash2 } from "lucide-react";
 
@@ -57,6 +57,7 @@ function PortfolioPanelContent({ token }: PortfolioPanelProps) {
 
   const totalValue = data?.total_value ?? 0;
   const formattedTotal = useMemo(() => currencyFormatter.format(totalValue), [totalValue]);
+  const portfolioItems = useMemo(() => data?.items ?? [], [data?.items]);
 
   const handleSubmit = useCallback(
     async (event: React.FormEvent<HTMLFormElement>) => {
@@ -323,7 +324,7 @@ function PortfolioPanelContent({ token }: PortfolioPanelProps) {
               Error al cargar el portafolio: {error instanceof Error ? error.message : "Desconocido"}
             </p>
           )}
-          {!isLoading && !error && (!data || data.items.length === 0) && (
+          {!isLoading && !error && portfolioItems.length === 0 && (
             <EmptyState
               title="Tu portafolio está vacío"
               description="Agrega un activo para visualizar su valoración estimada."
@@ -331,49 +332,63 @@ function PortfolioPanelContent({ token }: PortfolioPanelProps) {
             />
           )}
 
-          {data?.items.map((item) => {
-            const priceLabel =
-              typeof item.price === "number"
-                ? currencyFormatter.format(item.price)
-                : "Sin datos";
-            const valueLabel =
-              typeof item.value === "number"
-                ? currencyFormatter.format(item.value)
-                : "-";
-
-            return (
-              <div
-                key={item.id}
-                className="flex flex-col gap-3 rounded-2xl border border-border/40 bg-[hsl(var(--surface))] p-4 transition-all duration-300 hover:border-border hover:bg-[hsl(var(--surface-hover))] md:flex-row md:items-center md:justify-between"
-              >
-                <div>
-                  <p className="text-sm font-medium text-card-foreground">{item.symbol}</p>
-                  <p className="text-xs text-muted-foreground">
-                    Cantidad: {item.amount.toLocaleString("en-US")}
-                  </p>
-                  <p className="text-xs text-muted-foreground">Precio: {priceLabel}</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <p className="text-sm font-semibold text-card-foreground">{valueLabel}</p>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    size="icon"
-                    disabled={!token}
-                    aria-label={`Eliminar ${item.symbol}`}
-                    onClick={() => handleDelete(item)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
+          <PortfolioItemsList items={portfolioItems} token={token} onDelete={handleDelete} />
         </div>
       </CardContent>
     </Card>
   );
 }
+
+interface PortfolioItemsListProps {
+  items: PortfolioItem[];
+  token?: string;
+  onDelete: (item: PortfolioItem) => void;
+}
+
+const PortfolioItemsList = memo(function PortfolioItemsList({
+  items,
+  token,
+  onDelete,
+}: PortfolioItemsListProps) {
+  return (
+    <>
+      {items.map((item) => {
+        const priceLabel =
+          typeof item.price === "number" ? currencyFormatter.format(item.price) : "Sin datos";
+        const valueLabel =
+          typeof item.value === "number" ? currencyFormatter.format(item.value) : "-";
+
+        return (
+          <div
+            key={item.id}
+            className="flex flex-col gap-3 rounded-2xl border border-border/40 bg-[hsl(var(--surface))] p-4 transition-all duration-300 hover:border-border hover:bg-[hsl(var(--surface-hover))] md:flex-row md:items-center md:justify-between"
+          >
+            <div>
+              <p className="text-sm font-medium text-card-foreground">{item.symbol}</p>
+              <p className="text-xs text-muted-foreground">
+                Cantidad: {item.amount.toLocaleString("en-US")}
+              </p>
+              <p className="text-xs text-muted-foreground">Precio: {priceLabel}</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <p className="text-sm font-semibold text-card-foreground">{valueLabel}</p>
+              <Button
+                type="button"
+                variant="destructive"
+                size="icon"
+                disabled={!token}
+                aria-label={`Eliminar ${item.symbol}`}
+                onClick={() => onDelete(item)}
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+});
 
 function PortfolioPanelFallback() {
   return (
@@ -401,3 +416,5 @@ export function PortfolioPanel(props: PortfolioPanelProps) {
     </ErrorBoundary>
   );
 }
+
+export default PortfolioPanel;

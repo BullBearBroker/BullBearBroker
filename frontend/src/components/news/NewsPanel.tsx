@@ -1,5 +1,6 @@
 "use client";
 
+import { memo, useMemo } from "react";
 import useSWR from "swr";
 import { Newspaper } from "lucide-react";
 import Link from "next/link";
@@ -21,13 +22,16 @@ function NewsPanelContent({ token }: NewsPanelProps) {
     () => listNews(token)
   );
 
-  const sortedNews = data
-    ?.slice()
-    .sort((a, b) => {
-      const dateA = a.published_at ? new Date(a.published_at).getTime() : 0;
-      const dateB = b.published_at ? new Date(b.published_at).getTime() : 0;
-      return dateB - dateA;
-    });
+  const sortedNews = useMemo(() => {
+    if (!data?.length) return [] as NewsItem[];
+    return data
+      .slice()
+      .sort((a, b) => {
+        const dateA = a.published_at ? new Date(a.published_at).getTime() : 0;
+        const dateB = b.published_at ? new Date(b.published_at).getTime() : 0;
+        return dateB - dateA;
+      });
+  }, [data]);
 
   return (
     <Card className="surface-card flex flex-col">
@@ -61,14 +65,14 @@ function NewsPanelContent({ token }: NewsPanelProps) {
             icon={<Newspaper className="h-5 w-5" />}
           />
         )}
-        {!error && !isLoading && (!sortedNews || sortedNews.length === 0) && (
+        {!error && !isLoading && sortedNews.length === 0 && (
           <EmptyState
             title="No hay noticias disponibles"
             description="Vuelve más tarde para descubrir las últimas novedades del mercado."
             icon={<Newspaper className="h-5 w-5" />}
           />
         )}
-        {sortedNews?.slice(0, 6).map((item) => (
+        {sortedNews.slice(0, 6).map((item) => (
           <article
             key={item.id}
             className="space-y-2 rounded-2xl border border-border/40 bg-[hsl(var(--surface))] p-4 transition-all duration-300 hover:border-border hover:bg-[hsl(var(--surface-hover))]"
@@ -118,10 +122,13 @@ function NewsPanelFallback() {
   );
 }
 
-export function NewsPanel(props: NewsPanelProps) {
+const NewsPanelComponent = memo(function NewsPanel(props: NewsPanelProps) {
   return (
     <ErrorBoundary fallback={<NewsPanelFallback />} resetKeys={[props.token]}>
       <NewsPanelContent {...props} />
     </ErrorBoundary>
   );
-}
+});
+
+export { NewsPanelComponent as NewsPanel };
+export default NewsPanelComponent;

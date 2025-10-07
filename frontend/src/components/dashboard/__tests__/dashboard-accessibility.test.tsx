@@ -25,8 +25,10 @@ jest.mock("@/components/sidebar/market-sidebar", () => ({
   ),
 }));
 
-jest.mock("@/components/news/news-panel", () => ({
+jest.mock("@/components/news/NewsPanel", () => ({
+  __esModule: true,
   NewsPanel: () => <section>news</section>,
+  default: () => <section>news</section>,
 }));
 
 jest.mock("@/components/alerts/alerts-panel", () => ({
@@ -38,7 +40,9 @@ jest.mock("@/components/chat/chat-panel", () => ({
 }));
 
 jest.mock("@/components/indicators/IndicatorsChart", () => ({
+  __esModule: true,
   IndicatorsChart: () => <div>chart</div>,
+  default: () => <div>chart</div>,
 }));
 
 jest.mock("@/components/ui/card", () => ({
