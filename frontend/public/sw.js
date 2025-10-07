@@ -88,16 +88,26 @@ self.addEventListener('fetch', (event) => {
 });
 
 self.addEventListener('push', (event) => {
-  let data = {};
-  try {
-    data = event.data?.json?.() ?? {};
-  } catch (error) {
-    data = {};
-  }
+  const data = (() => {
+    if (!event.data) {
+      return {};
+    }
+    try {
+      return event.data.json();
+    } catch (error) {
+      return {};
+    }
+  })();
 
-  const title = data.title || 'BullBear';
-  const body = data.body || 'Ping!';
-  const payload = data.payload || data;
+  const title =
+    typeof data.title === 'string' && data.title.trim().length > 0
+      ? data.title
+      : 'BullBear';
+  const body = typeof data.body === 'string' ? data.body : 'Ping!';
+  const payload =
+    data && typeof data.payload === 'object' && data.payload !== null
+      ? data.payload
+      : data;
 
   const broadcastToClients = async () => {
     const clients = await self.clients.matchAll({
@@ -113,11 +123,12 @@ self.addEventListener('push', (event) => {
       receivedAt: new Date().toISOString(),
     };
 
-    await Promise.all(
-      clients.map((client) => client.postMessage(message)),
-    );
+    await Promise.all(clients.map((client) => client.postMessage(message)));
 
-    await self.registration.showNotification(title, { body });
+    await self.registration.showNotification(title, {
+      body,
+      data: payload,
+    });
   };
 
   event.waitUntil(broadcastToClients());
@@ -125,4 +136,20 @@ self.addEventListener('push', (event) => {
 
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
+  const targetUrl =
+    (event.notification.data && event.notification.data.url) || '/';
+  const absoluteUrl = new URL(targetUrl, self.location.origin).href;
+
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: 'window', includeUncontrolled: true })
+      .then((clientList) => {
+        for (const client of clientList) {
+          if (client.url === absoluteUrl) {
+            return client.focus();
+          }
+        }
+        return self.clients.openWindow(absoluteUrl);
+      })
+  );
 });

@@ -81,6 +81,10 @@ describe("usePushNotifications integration", () => {
       configurable: true,
       value: {
         register: jest.fn().mockResolvedValue(registration),
+        ready: Promise.resolve(registration),
+        getRegistration: jest
+          .fn()
+          .mockResolvedValue(registration),
         addEventListener: eventTarget.addEventListener.bind(eventTarget),
         removeEventListener: eventTarget.removeEventListener.bind(eventTarget),
       },

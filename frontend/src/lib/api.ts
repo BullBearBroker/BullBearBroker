@@ -514,13 +514,25 @@ export interface PushSubscriptionResponse {
 }
 
 // 🧩 Bloque 8A
-export async function fetchVapidPublicKey(): Promise<string> {
-  const res = await fetch("/api/notifications/vapid-key");
-  if (!res.ok) {
-    throw new Error("Failed to fetch VAPID public key");
+export interface PushConfigResponse {
+  vapidPublicKey?: string | null;
+}
+
+export async function fetchVapidPublicKey(): Promise<string | null> {
+  try {
+    const { vapidPublicKey } = await request<PushConfigResponse>(
+      "/api/config/push-key"
+    );
+    if (typeof vapidPublicKey === "string" && vapidPublicKey.length > 0) {
+      return vapidPublicKey;
+    }
+    return null;
+  } catch (error) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("Failed to retrieve VAPID public key from backend", error);
+    }
+    return null;
   }
-  const data = await res.json();
-  return data.vapidPublicKey;
 }
 
 export function subscribePush(
