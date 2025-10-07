@@ -37,6 +37,8 @@ pnpm-debug.log*
 .env
 .env.local
 .env.staging
+!backend/.env.staging
+!frontend/.env.staging
 .env.supabase
 .env.production
 *.secret
