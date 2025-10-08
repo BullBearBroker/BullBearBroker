@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+@font-face {
+  font-family: "InterFallback";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/Inter-VariableFont_slnt,wght.ttf") format("truetype");
+}
+
+.font-inter-fallback {
+  --font-inter: "InterFallback", system-ui, -apple-system, sans-serif;
+  font-family: "InterFallback", system-ui, -apple-system, sans-serif;
+}
+
 :root {
   --background: 0 0% 100%;
   --foreground: 224 71.4% 4.1%;

@@ -6,6 +6,35 @@ import { ThemeProvider } from "@/components/providers/theme-provider";
 import { ServiceWorkerProvider } from "@/components/providers/service-worker-provider";
 import { AppChrome } from "@/components/layout/app-chrome";
 import { cn } from "@/lib/utils";
+import { inter as sharedInter } from "@/utils/fonts";
+
+const fallbackAppUrl = "https://bullbearbroker.app";
+const metadataBase = (() => {
+  try {
+    const configuredUrl = process.env.NEXT_PUBLIC_APP_URL ?? fallbackAppUrl;
+    return new URL(configuredUrl);
+  } catch (error) {
+    if (process.env.NODE_ENV !== "production") {
+      console.error("Invalid NEXT_PUBLIC_APP_URL provided", error);
+    }
+    return new URL(fallbackAppUrl);
+  }
+})();
+
+const inter = process.env.ANALYZE === "true" ? { className: "" } : sharedInter;
+
+const apiPreconnectOrigin = (() => {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
+  if (!apiUrl) return null;
+  try {
+    return new URL(apiUrl).origin;
+  } catch (error) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn("Invalid NEXT_PUBLIC_API_URL provided for preconnect", error);
+    }
+    return null;
+  }
+})();
 
 const fallbackAppUrl = "https://bullbearbroker.app";
 const metadataBase = (() => {

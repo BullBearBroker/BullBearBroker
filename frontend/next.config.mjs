@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 let bundleAnalyzerModule;
 
 try {
@@ -14,6 +15,9 @@ try {
 
 const bundleAnalyzer =
   bundleAnalyzerModule?.default ?? bundleAnalyzerModule ?? ((options = {}) => () => options);
+=======
+import bundleAnalyzer from "@next/bundle-analyzer";
+>>>>>>> Stashed changes
 
 const withBundleAnalyzer = bundleAnalyzer({
   enabled: process.env.ANALYZE === "true",
@@ -35,12 +39,17 @@ const remoteImagePatterns = [
   },
 ];
 
+<<<<<<< Updated upstream
 export default withBundleAnalyzer({
   reactStrictMode: true,
   experimental: {
     optimizeCss: true,
   },
   // ✅ Mantener Babel activo, pero asegurarse de ignorar next/font cuando ANALYZE=true
+=======
+const nextConfig = {
+  reactStrictMode: true,
+>>>>>>> Stashed changes
   compress: true,
   poweredByHeader: false,
   eslint: {
@@ -61,4 +70,10 @@ export default withBundleAnalyzer({
     // 🧩 Bloque 8A
     NEXT_PUBLIC_VAPID_KEY: process.env.NEXT_PUBLIC_VAPID_KEY,
   },
+<<<<<<< Updated upstream
 });
+=======
+};
+
+export default withBundleAnalyzer(nextConfig);
+>>>>>>> Stashed changes

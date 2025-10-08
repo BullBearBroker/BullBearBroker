@@ -25,8 +25,14 @@
     "test:watch": "jest --config jest.config.dev.cjs --watch",
     "test:alerts": "jest --config jest.config.dev.cjs src/components/alerts/__tests__/alerts-panel.test.tsx",
     "test:esm": "NODE_OPTIONS=--experimental-vm-modules jest",
+<<<<<<< Updated upstream
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui"
+=======
+    "test:e2e": "playwright test --config=playwright.config.ts",
+    "test:e2e:ui": "playwright test --ui --config=playwright.config.ts",
+    "test:e2e:report": "playwright show-report"
+>>>>>>> Stashed changes
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -58,7 +64,7 @@
     "@eslint/js": "^9.36.0",
     "@next/bundle-analyzer": "^15.2.0",
     "@next/eslint-plugin-next": "15.5.4",
-    "@playwright/test": "^1.51.1",
+    "@playwright/test": "1.56.0",
     "@testing-library/jest-dom": "^6.8.0",
     "@testing-library/react": "^14.3.1",
     "@testing-library/user-event": "^14.6.1",
