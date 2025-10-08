@@ -25,7 +25,8 @@
     "test:watch": "jest --config jest.config.dev.cjs --watch",
     "test:alerts": "jest --config jest.config.dev.cjs src/components/alerts/__tests__/alerts-panel.test.tsx",
     "test:esm": "NODE_OPTIONS=--experimental-vm-modules jest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",
@@ -85,6 +86,7 @@
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.44.1",
     "web-push": "^3.6.7",
-    "whatwg-fetch": "^3.6.20"
+    "whatwg-fetch": "^3.6.20",
+    "playwright": "^1.51.1"
   }
 }
