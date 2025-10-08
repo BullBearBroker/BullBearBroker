@@ -63,3 +63,9 @@ logs/
 .vscode/
 .idea/
 vapid_keys.json
+
+# Playwright & Jest outputs
+frontend/playwright-report/
+frontend/test-results/
+frontend/package.json.bak
+
