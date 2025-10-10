@@ -37,7 +37,7 @@ function renderPortfolioPage() {
   return render(
     <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
       <PortfolioPage />
-    </SWRConfig>
+    </SWRConfig>,
   );
 }
 
@@ -49,10 +49,8 @@ describe("PortfolioPage", () => {
   it("renderiza el panel de portafolio con datos iniciales", async () => {
     server.use(
       ...createMockPortfolioHandlers({
-        initialItems: [
-          { symbol: "ETHUSDT", amount: 2 },
-        ],
-      })
+        initialItems: [{ symbol: "ETHUSDT", amount: 2 }],
+      }),
     );
 
     renderPortfolioPage();
@@ -67,11 +65,9 @@ describe("PortfolioPage", () => {
   it("permite agregar y eliminar activos desde la interfaz", async () => {
     server.use(
       ...createMockPortfolioHandlers({
-        initialItems: [
-          { id: "1", symbol: "BTCUSDT", amount: 0.5, price: 50000, value: 25000 },
-        ],
+        initialItems: [{ id: "1", symbol: "BTCUSDT", amount: 0.5, price: 50000, value: 25000 }],
         defaultPrice: 100,
-      })
+      }),
     );
 
     const user = userEvent.setup();

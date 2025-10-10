@@ -4,7 +4,7 @@ import { Server } from "jest-websocket-mock";
 import { useRealtime } from "../useRealtime";
 
 describe("useRealtime", () => {
-  let server: Server;
+  let server: InstanceType<typeof Server>;
 
   beforeEach(() => {
     server = new Server("ws://localhost:8000/api/realtime/ws");
@@ -44,7 +44,7 @@ describe("useRealtime", () => {
 
     await waitFor(() => {
       expect(result.current.data).toEqual(
-        expect.objectContaining({ type: "price", symbol: "BTCUSDT" })
+        expect.objectContaining({ type: "price", symbol: "BTCUSDT" }),
       );
     });
   });

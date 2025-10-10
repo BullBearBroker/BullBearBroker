@@ -1,36 +1,18 @@
 "use client";
 
-import {
-  AuthResponse,
-  UserProfile,
-  getProfile,
-  login,
-  register,
-  refreshToken
-} from "@/lib/api";
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState
-} from "react";
+import { AuthResponse, UserProfile, getProfile, login, register, refreshToken } from "@/lib/api";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 
 interface AuthContextProps {
   user: UserProfile | null;
   token: string | null;
   loading: boolean;
-  loginUser: (
-    email: string,
-    password: string,
-    options?: { signal?: AbortSignal }
-  ) => Promise<void>;
+  loginUser: (email: string, password: string, options?: { signal?: AbortSignal }) => Promise<void>;
   registerUser: (
     email: string,
     password: string,
     name?: string,
-    riskProfile?: "conservador" | "moderado" | "agresivo"
+    riskProfile?: "conservador" | "moderado" | "agresivo",
   ) => Promise<void>;
   logout: () => void;
 }
@@ -117,7 +99,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
       }
     },
-    [persistSession]
+    [persistSession],
   );
 
   const registerUser = useCallback(
@@ -125,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       email: string,
       password: string,
       name?: string,
-      riskProfile?: "conservador" | "moderado" | "agresivo"
+      riskProfile?: "conservador" | "moderado" | "agresivo",
     ) => {
       setLoading(true);
       try {
@@ -142,7 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setLoading(false);
       }
     },
-    [persistSession]
+    [persistSession],
   );
 
   const logout = useCallback(() => {
@@ -153,7 +135,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const value = useMemo(
     () => ({ user, token, loading, loginUser, registerUser, logout }),
-    [loading, loginUser, logout, registerUser, token, user]
+    [loading, loginUser, logout, registerUser, token, user],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

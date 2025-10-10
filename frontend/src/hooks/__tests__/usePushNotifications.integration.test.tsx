@@ -10,11 +10,7 @@ import {
 } from "@/tests/utils/renderWithProviders";
 
 import { usePushNotifications } from "../usePushNotifications";
-import {
-  fetchVapidPublicKey,
-  subscribePush,
-  testNotificationDispatcher,
-} from "@/lib/api";
+import { fetchVapidPublicKey, subscribePush, testNotificationDispatcher } from "@/lib/api";
 
 jest.mock("@/lib/api", () => ({
   fetchVapidPublicKey: jest.fn(),
@@ -23,10 +19,12 @@ jest.mock("@/lib/api", () => ({
 }));
 
 const mockedSubscribePush = subscribePush as jest.MockedFunction<typeof subscribePush>;
-const mockedTestNotificationDispatcher =
-  testNotificationDispatcher as jest.MockedFunction<typeof testNotificationDispatcher>;
-const mockedFetchVapidPublicKey =
-  fetchVapidPublicKey as jest.MockedFunction<typeof fetchVapidPublicKey>;
+const mockedTestNotificationDispatcher = testNotificationDispatcher as jest.MockedFunction<
+  typeof testNotificationDispatcher
+>;
+const mockedFetchVapidPublicKey = fetchVapidPublicKey as jest.MockedFunction<
+  typeof fetchVapidPublicKey
+>;
 
 describe("usePushNotifications integration", () => {
   const originalNotification = window.Notification;
@@ -69,7 +67,7 @@ describe("usePushNotifications integration", () => {
       endpoint: "https://example.com/push",
       expirationTime: null,
       toJSON: () => ({ keys: { auth: "auth", p256dh: "p256dh" } }),
-    } as PushSubscription;
+    } as unknown as PushSubscription;
 
     const registration = {
       pushManager: {
@@ -82,9 +80,7 @@ describe("usePushNotifications integration", () => {
       value: {
         register: jest.fn().mockResolvedValue(registration),
         ready: Promise.resolve(registration),
-        getRegistration: jest
-          .fn()
-          .mockResolvedValue(registration),
+        getRegistration: jest.fn().mockResolvedValue(registration),
         addEventListener: eventTarget.addEventListener.bind(eventTarget),
         removeEventListener: eventTarget.removeEventListener.bind(eventTarget),
       },
@@ -161,12 +157,16 @@ describe("usePushNotifications integration", () => {
       });
     }
     await waitFor(() =>
-      expect(within(screen.getByTestId("events")).getByText("BullBearBroker Test")).toBeInTheDocument()
+      expect(
+        within(screen.getByTestId("events")).getByText("BullBearBroker Test"),
+      ).toBeInTheDocument(),
     );
 
     const logsList = within(screen.getByTestId("logs"));
     expect(
-      logsList.getAllByRole("listitem").some((item) => item.textContent?.includes("Evento recibido"))
+      logsList
+        .getAllByRole("listitem")
+        .some((item) => item.textContent?.includes("Evento recibido")),
     ).toBe(true);
 
     const trigger = screen.getByTestId("send-test");
@@ -177,7 +177,7 @@ describe("usePushNotifications integration", () => {
     expect(
       logsList
         .getAllByRole("listitem")
-        .some((item) => item.textContent?.includes("Push recibido correctamente"))
+        .some((item) => item.textContent?.includes("Push recibido correctamente")),
     ).toBe(true);
   });
 

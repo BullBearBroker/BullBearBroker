@@ -10,6 +10,7 @@ jest.mock("@/hooks/usePushNotifications", () => ({
 import React from "react";
 import { act, customRender, screen, waitFor } from "@/tests/utils/renderWithProviders";
 import userEvent from "@testing-library/user-event";
+import type { MockNotificationEvent } from "@/tests/mocks/notifications";
 
 jest.mock("@/components/providers/auth-provider", () => {
   const actual = jest.requireActual("@/components/providers/auth-provider");
@@ -37,8 +38,7 @@ const mockIndicatorsChart = jest.fn((props) => (
   <div data-testid="indicators-chart">{props.symbol}</div>
 ));
 
-const mockUseLiveNotifications = jest
-  .fn(() => ({ events: [], status: "connected" as const })); // # QA fix: mock estable para live notifications
+const mockUseLiveNotifications = jest.fn(() => ({ events: [], status: "connected" as const })); // # QA fix: mock estable para live notifications
 
 const mockHistoricalRefresh = jest.fn();
 const mockUseHistoricalData = jest.fn(() => ({
@@ -58,12 +58,12 @@ type PushMockState = {
   permission: NotificationPermission;
   loading: boolean;
   testing: boolean;
-  events: Array<{ id: string; title: string; body?: string; receivedAt: string }>;
+  events: MockNotificationEvent[];
   logs: string[];
   sendTestNotification: jest.Mock;
   requestPermission: jest.Mock;
   dismissEvent: jest.Mock;
-  notificationHistory: Array<{ id: string; title: string; body?: string; timestamp: number }>;
+  notificationHistory: MockNotificationEvent[];
   clearLogs: jest.Mock;
 };
 
@@ -91,37 +91,43 @@ const createPushMockState = (overrides: Partial<PushMockState> = {}): PushMockSt
 const mockUsePushNotifications = jest.fn(() => createPushMockState());
 
 jest.mock("@/components/sidebar/market-sidebar", () => ({
-  MarketSidebar: (props: any) => mockMarketSidebar(props),
+  __esModule: true,
+  MarketSidebar: mockMarketSidebar,
 }));
 
 jest.mock("@/components/alerts/alerts-panel", () => ({
-  AlertsPanel: (props: any) => mockAlertsPanel(props),
+  __esModule: true,
+  AlertsPanel: mockAlertsPanel,
+  default: mockAlertsPanel,
 }));
 
 jest.mock("@/components/news/NewsPanel", () => ({
   __esModule: true,
-  NewsPanel: (props: any) => mockNewsPanel(props),
-  default: (props: any) => mockNewsPanel(props),
+  NewsPanel: mockNewsPanel,
+  default: mockNewsPanel,
 }));
 
 jest.mock("@/components/chat/chat-panel", () => ({
-  ChatPanel: (props: any) => mockChatPanel(props),
+  __esModule: true,
+  ChatPanel: mockChatPanel,
+  default: mockChatPanel,
 }));
 
 jest.mock("@/components/portfolio/PortfolioPanel", () => ({
   __esModule: true,
-  PortfolioPanel: (props: any) => mockPortfolioPanel(props),
-  default: (props: any) => mockPortfolioPanel(props),
+  PortfolioPanel: mockPortfolioPanel,
+  default: mockPortfolioPanel,
 }));
 
 jest.mock("@/components/indicators/IndicatorsChart", () => ({
   __esModule: true,
-  IndicatorsChart: (props: any) => mockIndicatorsChart(props),
-  default: (props: any) => mockIndicatorsChart(props),
+  IndicatorsChart: mockIndicatorsChart,
+  default: mockIndicatorsChart,
 }));
 
 jest.mock("@/hooks/useLiveNotifications", () => ({
-  useLiveNotifications: (token?: string) => mockUseLiveNotifications(token),
+  __esModule: true,
+  useLiveNotifications: mockUseLiveNotifications,
 })); // # QA fix: estabilizar hook de notificaciones en pruebas
 
 jest.mock("@/components/dashboard/theme-toggle", () => ({
@@ -129,11 +135,13 @@ jest.mock("@/components/dashboard/theme-toggle", () => ({
 }));
 
 jest.mock("@/hooks/usePushNotifications", () => ({
-  usePushNotifications: (token: string | undefined) => mockUsePushNotifications(token),
+  __esModule: true,
+  usePushNotifications: mockUsePushNotifications,
 }));
 
 jest.mock("@/hooks/useHistoricalData", () => ({
-  useHistoricalData: (symbol: string, options: any) => mockUseHistoricalData(symbol, options),
+  __esModule: true,
+  useHistoricalData: mockUseHistoricalData,
 }));
 
 jest.mock("next/navigation", () => ({
@@ -242,12 +250,10 @@ describe("DashboardPage", () => {
     });
 
     expect(await screen.findByText(/bienvenido de vuelta/i)).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { level: 1, name: /Ana/i })
-    ).toBeInTheDocument(); // # QA fix: evitar coincidencias parciales con el texto
+    expect(screen.getByRole("heading", { level: 1, name: /Ana/i })).toBeInTheDocument(); // # QA fix: evitar coincidencias parciales con el texto
     expect(mockMarketSidebar).toHaveBeenCalled();
     expect(mockPortfolioPanel).toHaveBeenCalledWith(
-      expect.objectContaining({ token: baseAuth.token })
+      expect.objectContaining({ token: baseAuth.token }),
     );
     expect(mockAlertsPanel).toHaveBeenCalled();
     expect(mockNewsPanel).toHaveBeenCalled();
@@ -268,7 +274,7 @@ describe("DashboardPage", () => {
           interval: "1h",
           indicators: expect.any(Object),
           history: expect.objectContaining({ symbol: "BTCUSDT" }),
-        })
+        }),
       );
     });
 
@@ -318,7 +324,7 @@ describe("DashboardPage", () => {
         symbol: "ETHUSDT",
         interval: "4h",
         insights: "Insight generado",
-      })
+      }),
     );
   });
 
@@ -356,7 +362,7 @@ describe("DashboardPage", () => {
 
   it("muestra el estado de notificaciones push activas", async () => {
     mockUsePushNotifications.mockReturnValue(
-      createPushMockState({ enabled: true, permission: "granted", loading: false })
+      createPushMockState({ enabled: true, permission: "granted", loading: false }),
     ); // # QA fix: estado habilitado consistente para las pruebas
     mockUseAuth.mockReturnValue({ ...baseAuth, loading: false });
     mockUseRouter.mockReturnValue({ replace: jest.fn() });
@@ -399,9 +405,9 @@ describe("DashboardPage", () => {
     const shell = await screen.findByTestId("dashboard-shell");
     const content = screen.getByTestId("dashboard-content");
     const modules = screen.getByTestId("dashboard-modules");
-    const cards = Array.from(
-      content.querySelectorAll('[data-testid^="dashboard-"]')
-    ).map((node) => node.getAttribute("data-testid"));
+    const cards = Array.from(content.querySelectorAll('[data-testid^="dashboard-"]')).map((node) =>
+      node.getAttribute("data-testid"),
+    );
 
     const summary = {
       shellClass: shell.className,
@@ -412,17 +418,9 @@ describe("DashboardPage", () => {
       pushStatus: screen.getByText(/Push inactivo/i).textContent,
     };
 
-    expect(summary.cards).toEqual([
-      "dashboard-modules",
-      "dashboard-indicators",
-      "dashboard-chat",
-    ]);
-    expect(summary.contentClass).toBe(
-      "flex flex-col gap-6 p-4 md:p-6",
-    );
-    expect(summary.modulesClass).toBe(
-      "grid flex-1 gap-4 lg:grid-cols-2 xl:grid-cols-[2fr_1fr]",
-    );
+    expect(summary.cards).toEqual(["dashboard-modules", "dashboard-indicators", "dashboard-chat"]);
+    expect(summary.contentClass).toBe("flex flex-col gap-6 p-4 md:p-6");
+    expect(summary.modulesClass).toBe("grid flex-1 gap-4 lg:grid-cols-2 xl:grid-cols-[2fr_1fr]");
     expect(summary.shellClass).toBe(
       "grid min-h-screen bg-background text-foreground md:grid-cols-[280px_1fr]",
     );
@@ -443,9 +441,7 @@ describe("DashboardPage", () => {
         customRender(<DashboardPage />);
       });
 
-      expect(
-        await screen.findByText("Aún no se han cargado indicadores.")
-      ).toBeInTheDocument();
+      expect(await screen.findByText("Aún no se han cargado indicadores.")).toBeInTheDocument();
       expect(mockIndicatorsChart).not.toHaveBeenCalled();
     } finally {
       consoleSpy.mockRestore();
@@ -478,7 +474,7 @@ describe("DashboardPage", () => {
         error: "No se pudo registrar push",
         permission: "denied",
         loading: false,
-      })
+      }),
     ); // # QA fix: estado de error controlado para notificaciones push
     mockUseAuth.mockReturnValue({ ...baseAuth, loading: false });
     mockUseRouter.mockReturnValue({ replace: jest.fn() });

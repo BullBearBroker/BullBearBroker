@@ -2,8 +2,9 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { SWRConfig } from "swr";
 import NotificationCenterCard from "../notification-center-card";
-import { useLiveNotifications } from "@/hooks/useLiveNotifications";
+import { useLiveNotifications, type NotificationEvent } from "@/hooks/useLiveNotifications";
 import * as pushHook from "@/hooks/usePushNotifications";
+import { createMockNotificationEvent } from "@/tests/mocks/notifications";
 
 jest.mock("@/hooks/useLiveNotifications", () => ({
   __esModule: true,
@@ -20,8 +21,9 @@ jest.mock("@/components/providers/auth-provider", () => ({
     logout: jest.fn(),
   }),
 }));
-const mockedUseLiveNotifications =
-  useLiveNotifications as jest.MockedFunction<typeof useLiveNotifications>;
+const mockedUseLiveNotifications = useLiveNotifications as jest.MockedFunction<
+  typeof useLiveNotifications
+>;
 
 jest.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -52,12 +54,12 @@ describe("🔔 NotificationCenterCard (WebSocket integration)", () => {
   it("muestra un toast al recibir un evento WS simulado", async () => {
     mockedUseLiveNotifications.mockReturnValue({
       events: [
-        {
+        createMockNotificationEvent({
           id: "test-ws-001",
           title: "🚀 Notificación de prueba",
           body: "Emitida en test simulado",
           type: "test",
-        },
+        }) as NotificationEvent,
       ],
       status: "connected",
     });
@@ -65,17 +67,13 @@ describe("🔔 NotificationCenterCard (WebSocket integration)", () => {
     render(
       <SWRConfig value={{ provider: () => new Map() }}>
         <NotificationCenterCard />
-      </SWRConfig>
+      </SWRConfig>,
     );
 
     await waitFor(() => {
-      expect(
-        screen.getByText("🚀 Notificación de prueba")
-      ).toBeInTheDocument();
+      expect(screen.getByText("🚀 Notificación de prueba")).toBeInTheDocument();
     });
 
-    expect(
-      screen.getByText(/Emitida en test simulado/)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Emitida en test simulado/)).toBeInTheDocument();
   });
 });

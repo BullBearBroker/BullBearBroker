@@ -6,8 +6,12 @@ type MotionProps = Record<string, unknown> & { children?: ReactNode };
 
 type MotionLikeComponent = ComponentType<MotionProps>;
 
+type AnimatePresenceLikeProps = { children?: ReactNode } & Record<string, unknown>;
+
+type AnimatePresenceLike = ComponentType<AnimatePresenceLikeProps>;
+
 type FramerExports = {
-  AnimatePresence?: ComponentType<{ children?: ReactNode }>;
+  AnimatePresence?: AnimatePresenceLike;
   motion?: Record<string, MotionLikeComponent>;
 };
 
@@ -24,7 +28,8 @@ const createMotionElement = (element: string) =>
       ...domProps
     } = rest;
 
-    return createElement(element, { ...domProps, ref }, children);
+    const elementProps = { ...domProps, ref } as Record<string, unknown>;
+    return createElement(element, elementProps, children as ReactNode);
   });
 
 const createFallbackMotion = () => {
@@ -50,7 +55,7 @@ const createFallbackMotion = () => {
   ) as Record<string, MotionLikeComponent>;
 };
 
-const fallbackAnimatePresence: ComponentType<{ children?: ReactNode }> = ({ children }) => <>{children}</>;
+const fallbackAnimatePresence: AnimatePresenceLike = ({ children }) => <>{children}</>;
 
 const optionalRequire = (() => {
   try {

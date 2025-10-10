@@ -11,7 +11,10 @@ class ResizeObserverMock {
   }
 
   observe() {
-    this.callback([{ contentRect: { width: 420, height: 300 } } as ResizeObserverEntry], this as any);
+    this.callback(
+      [{ contentRect: { width: 420, height: 300 } } as ResizeObserverEntry],
+      this as any,
+    );
   }
 
   unobserve() {}
@@ -74,7 +77,7 @@ describe("IndicatorsChart visual", () => {
     const { container, rerender } = customRender(
       <div style={{ width: 480, height: 320 }}>
         <IndicatorsChart {...baseProps} />
-      </div>
+      </div>,
     );
 
     await act(async () => {
@@ -93,13 +96,13 @@ describe("IndicatorsChart visual", () => {
             atr: { period: 10, value: 1.2 },
           }}
         />
-      </div>
+      </div>,
     );
 
     await act(async () => {
       resizeInstance?.callback(
         [{ contentRect: { width: 360, height: 240 } } as ResizeObserverEntry],
-        resizeInstance as unknown as ResizeObserver
+        resizeInstance as unknown as ResizeObserver,
       );
     });
 

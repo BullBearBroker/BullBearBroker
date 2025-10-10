@@ -65,7 +65,7 @@ async def realtime_server(
 
 @pytest.mark.asyncio
 async def test_realtime_websocket_connects_and_disconnects(
-    realtime_server: dict[str, str]
+    realtime_server: dict[str, str],
 ) -> None:
     """Verifica handshake 101 y mensaje de bienvenida."""
 
@@ -92,7 +92,7 @@ async def test_realtime_websocket_connects_and_disconnects(
 
 @pytest.mark.asyncio
 async def test_realtime_streams_prices_and_insights(
-    realtime_server: dict[str, str]
+    realtime_server: dict[str, str],
 ) -> None:
     """Recibe precios periódicos y contenidos IA desde el gateway."""
 
@@ -131,7 +131,7 @@ async def test_realtime_streams_prices_and_insights(
 
 @pytest.mark.asyncio
 async def test_realtime_handles_invalid_payload(
-    realtime_server: dict[str, str]
+    realtime_server: dict[str, str],
 ) -> None:
     """El gateway responde con error controlado ante cargas inválidas."""
 

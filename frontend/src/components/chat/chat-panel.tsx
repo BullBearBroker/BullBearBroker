@@ -1,22 +1,10 @@
 "use client";
 
-import React, {
-  FormEvent,
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState
-} from "react";
+import React, { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { SendHorizontal } from "lucide-react";
 import useSWR, { useSWRConfig } from "swr";
 
-import {
-  MessagePayload,
-  sendChatMessage,
-  getChatHistory,
-  ChatHistory
-} from "@/lib/api";
+import { MessagePayload, sendChatMessage, getChatHistory, ChatHistory } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -38,7 +26,7 @@ const SOURCE_LABELS: Record<string, string> = {
 
 const GREETING_MESSAGE: MessagePayload = {
   role: "assistant",
-  content: "Hola, soy tu asistente financiero BullBear. ¿En qué puedo ayudarte hoy?"
+  content: "Hola, soy tu asistente financiero BullBear. ¿En qué puedo ayudarte hoy?",
 };
 
 export function ChatPanel({ token }: ChatPanelProps) {
@@ -54,25 +42,19 @@ export function ChatPanel({ token }: ChatPanelProps) {
   const [usedData, setUsedData] = useState(false); // [Codex] nuevo - bandera de datos reales
   const { data: realtimePayload } = useRealtime(); // ✅ Codex fix: recibir mensajes realtime
 
-  const handleRealtimeInsight = useCallback(
-    (insight: AIInsight) => {
-      setMessages((prev) => {
-        const alreadyPresent = prev.some(
-          (item) => item.role === "assistant" && item.content === insight.message
-        );
-        if (alreadyPresent) {
-          return prev;
-        }
-        return [
-          ...prev,
-          { role: "assistant", content: insight.message },
-        ];
-      });
-      setSources((prev) => (prev.includes("insights") ? prev : [...prev, "insights"]));
-      setUsedData(true);
-    },
-    []
-  ); // ✅ Codex fix: agregar insight IA al historial
+  const handleRealtimeInsight = useCallback((insight: AIInsight) => {
+    setMessages((prev) => {
+      const alreadyPresent = prev.some(
+        (item) => item.role === "assistant" && item.content === insight.message,
+      );
+      if (alreadyPresent) {
+        return prev;
+      }
+      return [...prev, { role: "assistant", content: insight.message }];
+    });
+    setSources((prev) => (prev.includes("insights") ? prev : [...prev, "insights"]));
+    setUsedData(true);
+  }, []); // ✅ Codex fix: agregar insight IA al historial
 
   useAIStream({
     enabled: true,
@@ -96,7 +78,9 @@ export function ChatPanel({ token }: ChatPanelProps) {
   useSWR<ChatHistory | null>(
     historyKey,
     async ([, id, authToken]) => {
-      const history = await getChatHistory(id, authToken);
+      const sessionKey = typeof id === "string" ? id : String(id ?? "");
+      const tokenValue = typeof authToken === "string" ? authToken : String(authToken ?? "");
+      const history = await getChatHistory(sessionKey, tokenValue);
       setHistoryError(null);
       if (history.messages.length) {
         const restored = history.messages.map((message) => ({
@@ -113,12 +97,10 @@ export function ChatPanel({ token }: ChatPanelProps) {
       revalidateOnFocus: false,
       shouldRetryOnError: false,
       onError(err) {
-        const message = err instanceof Error
-          ? err.message
-          : "No se pudo recuperar el historial.";
+        const message = err instanceof Error ? err.message : "No se pudo recuperar el historial.";
         setHistoryError(message);
       },
-    }
+    },
   );
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
@@ -157,9 +139,7 @@ export function ChatPanel({ token }: ChatPanelProps) {
     } catch (err) {
       console.error(err);
       const message =
-        err instanceof Error
-          ? err.message
-          : "No se pudo enviar el mensaje. Inténtalo de nuevo.";
+        err instanceof Error ? err.message : "No se pudo enviar el mensaje. Inténtalo de nuevo.";
       setError(message);
       setMessages(pendingConversation);
       setSources([]); // [Codex] nuevo - limpiar fuentes ante error
@@ -205,9 +185,7 @@ export function ChatPanel({ token }: ChatPanelProps) {
         </div>
       </ScrollArea>
       {historyError && (
-        <p className="text-sm text-muted-foreground">
-          Historial no disponible: {historyError}
-        </p>
+        <p className="text-sm text-muted-foreground">Historial no disponible: {historyError}</p>
       )}
       {error && <p className="text-sm text-destructive">{error}</p>}
       <form onSubmit={handleSubmit} className="space-y-2">

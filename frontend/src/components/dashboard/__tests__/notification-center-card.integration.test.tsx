@@ -6,9 +6,7 @@ jest.mock("@/components/providers/auth-provider", () => ({
   useAuth: jest.fn(() => ({ token: null })),
 }));
 // 🧩 Bloque 9B
-const { useAuth: mockUseAuth } = jest.requireMock(
-  "@/components/providers/auth-provider"
-) as {
+const { useAuth: mockUseAuth } = jest.requireMock("@/components/providers/auth-provider") as {
   useAuth: jest.Mock;
 };
 // 🧩 Bloque 9B
@@ -17,7 +15,7 @@ jest.mock("@/hooks/useLiveNotifications", () => ({
 }));
 // 🧩 Bloque 9B
 const { useLiveNotifications: mockUseLiveNotifications } = jest.requireMock(
-  "@/hooks/useLiveNotifications"
+  "@/hooks/useLiveNotifications",
 ) as {
   useLiveNotifications: jest.Mock;
 };

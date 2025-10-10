@@ -11,9 +11,7 @@ import {
 } from "@/tests/msw/handlers";
 
 const wrapper = ({ children }: { children: React.ReactNode }) => (
-  <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
-    {children}
-  </SWRConfig>
+  <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig>
 );
 
 describe("useMarketData", () => {
@@ -24,7 +22,7 @@ describe("useMarketData", () => {
   it("retorna datos cuando la API responde", async () => {
     const { result } = renderHook(
       () => useMarketData({ type: "crypto", symbol: "BTC", token: "token" }),
-      { wrapper }
+      { wrapper },
     );
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -39,7 +37,7 @@ describe("useMarketData", () => {
 
     const { result } = renderHook(
       () => useMarketData({ type: "crypto", symbol: "BTC", token: "token" }),
-      { wrapper }
+      { wrapper },
     );
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -53,7 +51,7 @@ describe("useMarketData", () => {
 
     const { result } = renderHook(
       () => useMarketData({ type: "crypto", symbol: "BTC", token: "token" }),
-      { wrapper }
+      { wrapper },
     );
 
     await waitFor(() => expect(result.current.isLoading).toBe(false));
@@ -66,7 +64,7 @@ describe("useMarketData", () => {
 
     const { result } = renderHook(
       () => useMarketData({ type: "crypto", symbol: "BTC", token: "token" }),
-      { wrapper }
+      { wrapper },
     );
 
     await waitFor(() => expect(result.current.data?.price).toBe(50_000));
@@ -82,18 +80,15 @@ describe("useMarketData", () => {
   it("no realiza consultas cuando está deshabilitado", async () => {
     const abortHandler = jest.fn();
     server.use(
-      http.get(
-        "*/api/markets/crypto/prices",
-        ({ request }) => {
-          abortHandler(request.url);
-          return HttpResponse.json({ quotes: [] });
-        }
-      )
+      http.get("*/api/markets/crypto/prices", ({ request }) => {
+        abortHandler(request.url);
+        return HttpResponse.json({ quotes: [] });
+      }),
     );
 
     const { result } = renderHook(
       () => useMarketData({ type: "crypto", symbol: "BTC", enabled: false }),
-      { wrapper }
+      { wrapper },
     );
 
     expect(result.current.isLoading).toBe(false);

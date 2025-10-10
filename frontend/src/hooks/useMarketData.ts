@@ -33,7 +33,7 @@ export function useMarketData({
     () => getMarketQuote(type, symbol, token ?? undefined),
     {
       revalidateOnFocus: false,
-    }
+    },
   );
 
   return {

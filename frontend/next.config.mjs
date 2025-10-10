@@ -4,16 +4,17 @@ try {
   bundleAnalyzerModule = await import("@next/bundle-analyzer");
 } catch (error) {
   if (process.env.ANALYZE === "true") {
-    console.warn(
-      "@next/bundle-analyzer no está disponible, usando implementación interna",
-      error
-    );
+    console.warn("@next/bundle-analyzer no está disponible, usando implementación interna", error);
   }
   bundleAnalyzerModule = await import("./config/simple-bundle-analyzer.mjs"); // CODEx: fallback local cuando el paquete no está instalado
 }
 
 const bundleAnalyzer =
-  bundleAnalyzerModule?.default ?? bundleAnalyzerModule ?? ((options = {}) => () => options);
+  bundleAnalyzerModule?.default ??
+  bundleAnalyzerModule ??
+  ((options = {}) =>
+    () =>
+      options);
 
 const withBundleAnalyzer = bundleAnalyzer({
   enabled: process.env.ANALYZE === "true",
@@ -55,8 +56,7 @@ const nextConfig = {
   },
   env: {
     // 👇 aseguramos compatibilidad con ESLint flat config: process como global
-    NEXT_PUBLIC_API_URL:
-      process.env.NEXT_PUBLIC_API_URL ?? "http://backend:8000",
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL ?? "http://backend:8000",
     // 🧩 Bloque 8A
     NEXT_PUBLIC_VAPID_KEY: process.env.NEXT_PUBLIC_VAPID_KEY,
   },

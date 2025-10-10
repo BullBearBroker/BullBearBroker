@@ -3,18 +3,13 @@
 // 🧩 Bloque 8B
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import {
-  fetchVapidPublicKey,
-  subscribePush,
-  testNotificationDispatcher,
-} from "@/lib/api";
+import { fetchVapidPublicKey, subscribePush, testNotificationDispatcher } from "@/lib/api";
 
 const isTestEnvironment =
   typeof process !== "undefined" &&
   (process.env.NODE_ENV === "test" || process.env.JEST_WORKER_ID !== undefined);
 
-export const PERMISSION_DENIED_MESSAGE =
-  "Debes permitir notificaciones para recibir alertas.";
+export const PERMISSION_DENIED_MESSAGE = "Debes permitir notificaciones para recibir alertas.";
 
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -74,14 +69,15 @@ function nowLabel() {
 // 🧩 Bloque 8A - Validar coincidencia de claves
 export async function registerPushSubscription(
   registration?: ServiceWorkerRegistration,
-  vapidPublicKey?: string | null
+  vapidPublicKey?: string | null,
 ): Promise<PushSubscription> {
-  const toastApi = (globalThis as {
-    toast?: { error?: (message: string) => void };
-  }).toast;
+  const toastApi = (
+    globalThis as {
+      toast?: { error?: (message: string) => void };
+    }
+  ).toast;
 
-  const normalizeKey = (key?: string | null) =>
-    typeof key === "string" ? key.trim() : "";
+  const normalizeKey = (key?: string | null) => (typeof key === "string" ? key.trim() : "");
 
   let serverKey = normalizeKey(vapidPublicKey);
   if (!serverKey) {
@@ -109,9 +105,7 @@ export async function registerPushSubscription(
   const swContainer = navigator.serviceWorker;
   const swReg =
     registration ??
-    ("ready" in swContainer && swContainer.ready
-      ? await swContainer.ready
-      : undefined);
+    ("ready" in swContainer && swContainer.ready ? await swContainer.ready : undefined);
 
   if (!swReg) {
     throw new Error("Service worker registration unavailable.");
@@ -124,7 +118,7 @@ export async function registerPushSubscription(
 
   const applicationServerKey = urlBase64ToUint8Array(serverKey);
   return swReg.pushManager.subscribe({
-    applicationServerKey,
+    applicationServerKey: applicationServerKey as unknown as BufferSource,
     userVisibleOnly: true,
   });
 }
@@ -155,9 +149,7 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
       return [];
     }
   });
-  const [permission, setPermission] = useState<
-    NotificationPermission | "unsupported"
-  >(() => {
+  const [permission, setPermission] = useState<NotificationPermission | "unsupported">(() => {
     if (typeof window === "undefined" || !("Notification" in window)) {
       return "unsupported";
     }
@@ -172,15 +164,12 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
   }, []);
 
   // 🧩 Bloque 8B
-  const appendNotificationHistory = useCallback(
-    (entry: NotificationHistoryEntry) => {
-      setNotificationHistory((prev) => {
-        const next = [...prev, entry];
-        return next.slice(-100);
-      });
-    },
-    []
-  );
+  const appendNotificationHistory = useCallback((entry: NotificationHistoryEntry) => {
+    setNotificationHistory((prev) => {
+      const next = [...prev, entry];
+      return next.slice(-100);
+    });
+  }, []);
 
   // 🧩 Bloque 8B
   const clearLogs = useCallback(() => {
@@ -200,10 +189,7 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
       window.localStorage.removeItem("notificationHistory");
       return;
     }
-    window.localStorage.setItem(
-      "notificationHistory",
-      JSON.stringify(notificationHistory)
-    );
+    window.localStorage.setItem("notificationHistory", JSON.stringify(notificationHistory));
   }, [notificationHistory]);
 
   const dismissEvent = useCallback((id: string) => {
@@ -234,8 +220,8 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
       result === "granted"
         ? "Permiso de notificaciones concedido"
         : result === "denied"
-        ? "Permiso de notificaciones denegado"
-        : "Permiso de notificaciones pendiente"
+          ? "Permiso de notificaciones denegado"
+          : "Permiso de notificaciones pendiente",
     );
     if (result === "denied") {
       setError(PERMISSION_DENIED_MESSAGE);
@@ -295,8 +281,8 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
             permissionState === "granted"
               ? "Permiso de notificaciones concedido"
               : permissionState === "denied"
-              ? "Permiso de notificaciones denegado"
-              : "Permiso de notificaciones pendiente"
+                ? "Permiso de notificaciones denegado"
+                : "Permiso de notificaciones pendiente",
           );
         }
 
@@ -318,10 +304,7 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
           return;
         }
 
-        const subscription = await registerPushSubscription(
-          registration,
-          vapidPublicKey
-        );
+        const subscription = await registerPushSubscription(registration, vapidPublicKey);
         appendLog("Clave pública VAPID validada correctamente");
 
         const json = subscription.toJSON();
@@ -339,7 +322,7 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
             expirationTime,
             keys: { auth, p256dh },
           },
-          token
+          token,
         );
 
         if (active) {

@@ -23,6 +23,4 @@ export const authMessages = {
   },
 };
 
-export type AuthRateLimitMessageParams = Parameters<
-  typeof authMessages.errors.rateLimited
->[0];
+export type AuthRateLimitMessageParams = Parameters<typeof authMessages.errors.rateLimited>[0];

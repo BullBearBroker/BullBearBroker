@@ -1,12 +1,12 @@
-const STATIC_CACHE = 'bullbear-static-v1';
-const RUNTIME_CACHE = 'bullbear-runtime-v1';
+const STATIC_CACHE = "bullbear-static-v1";
+const RUNTIME_CACHE = "bullbear-runtime-v1";
 const STATIC_FILE_REGEX = /\.(?:js|css|ico|png|svg|jpg|jpeg|gif|webp|avif|woff2?)$/i;
 
-self.addEventListener('install', (event) => {
+self.addEventListener("install", (event) => {
   event.waitUntil(self.skipWaiting());
 });
 
-self.addEventListener('activate', (event) => {
+self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches
       .keys()
@@ -24,8 +24,8 @@ self.addEventListener('activate', (event) => {
   );
 });
 
-self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') {
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") {
     self.skipWaiting();
   }
 });
@@ -62,12 +62,12 @@ const networkFirst = async (request) => {
   }
 };
 
-self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') {
+self.addEventListener("fetch", (event) => {
+  if (event.request.method !== "GET") {
     return;
   }
 
-  if (event.request.cache === 'only-if-cached' && event.request.mode !== 'same-origin') {
+  if (event.request.cache === "only-if-cached" && event.request.mode !== "same-origin") {
     return;
   }
 
@@ -82,12 +82,12 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  if (requestUrl.pathname.startsWith('/api/')) {
+  if (requestUrl.pathname.startsWith("/api/")) {
     event.respondWith(networkFirst(event.request));
   }
 });
 
-self.addEventListener('push', (event) => {
+self.addEventListener("push", (event) => {
   const data = (() => {
     if (!event.data) {
       return {};
@@ -100,23 +100,19 @@ self.addEventListener('push', (event) => {
   })();
 
   const title =
-    typeof data.title === 'string' && data.title.trim().length > 0
-      ? data.title
-      : 'BullBear';
-  const body = typeof data.body === 'string' ? data.body : 'Ping!';
+    typeof data.title === "string" && data.title.trim().length > 0 ? data.title : "BullBear";
+  const body = typeof data.body === "string" ? data.body : "Ping!";
   const payload =
-    data && typeof data.payload === 'object' && data.payload !== null
-      ? data.payload
-      : data;
+    data && typeof data.payload === "object" && data.payload !== null ? data.payload : data;
 
   const broadcastToClients = async () => {
     const clients = await self.clients.matchAll({
-      type: 'window',
+      type: "window",
       includeUncontrolled: true,
     });
 
     const message = {
-      type: 'notification:dispatcher',
+      type: "notification:dispatcher",
       title,
       body,
       payload,
@@ -134,22 +130,19 @@ self.addEventListener('push', (event) => {
   event.waitUntil(broadcastToClients());
 });
 
-self.addEventListener('notificationclick', (event) => {
+self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const targetUrl =
-    (event.notification.data && event.notification.data.url) || '/';
+  const targetUrl = (event.notification.data && event.notification.data.url) || "/";
   const absoluteUrl = new URL(targetUrl, self.location.origin).href;
 
   event.waitUntil(
-    self.clients
-      .matchAll({ type: 'window', includeUncontrolled: true })
-      .then((clientList) => {
-        for (const client of clientList) {
-          if (client.url === absoluteUrl) {
-            return client.focus();
-          }
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      for (const client of clientList) {
+        if (client.url === absoluteUrl) {
+          return client.focus();
         }
-        return self.clients.openWindow(absoluteUrl);
-      })
+      }
+      return self.clients.openWindow(absoluteUrl);
+    }),
   );
 });

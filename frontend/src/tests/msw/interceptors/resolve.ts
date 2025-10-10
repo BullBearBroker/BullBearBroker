@@ -11,7 +11,7 @@ const candidates = [
     "interceptors",
     "lib",
     "node",
-    "interceptors"
+    "interceptors",
   ),
   path.resolve(
     __dirname,
@@ -23,7 +23,7 @@ const candidates = [
     "interceptors",
     "lib",
     "node",
-    "interceptors"
+    "interceptors",
   ),
 ];
 

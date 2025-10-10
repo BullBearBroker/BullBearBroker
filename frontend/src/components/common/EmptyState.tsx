@@ -18,11 +18,15 @@ export function EmptyState({ title, description, icon, action, className }: Empt
       role="status"
       className={cn(
         "flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border/60 bg-muted/30 p-6 text-center",
-        className
+        className,
       )}
       data-testid="empty-state"
     >
-      {icon && <div className="text-muted-foreground" aria-hidden="true">{icon}</div>}
+      {icon && (
+        <div className="text-muted-foreground" aria-hidden="true">
+          {icon}
+        </div>
+      )}
       <h3 className="text-sm font-semibold text-foreground">{title}</h3>
       {description && <p className="text-sm text-muted-foreground">{description}</p>}
       {action}

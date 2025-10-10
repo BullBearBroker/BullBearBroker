@@ -98,7 +98,7 @@ describe("AuthProvider", () => {
     customRender(
       <AuthProvider>
         <Consumer />
-      </AuthProvider>
+      </AuthProvider>,
     );
 
     expect(screen.getByTestId("loading-state")).toHaveTextContent("loading");
@@ -111,7 +111,10 @@ describe("AuthProvider", () => {
 
     expect(await screen.findByTestId("user-email")).toHaveTextContent(MOCK_PROFILE.email);
     expect(screen.getByTestId("loading-state")).toHaveTextContent("loaded");
-    expect(localStorageMock.setItem).toHaveBeenCalledWith("refresh_token", MOCK_REFRESH_RESPONSE.refresh_token);
+    expect(localStorageMock.setItem).toHaveBeenCalledWith(
+      "refresh_token",
+      MOCK_REFRESH_RESPONSE.refresh_token,
+    );
   });
 
   it("inicia sin usuario cuando no hay sesión previa", async () => {
@@ -129,7 +132,7 @@ describe("AuthProvider", () => {
     customRender(
       <AuthProvider>
         <Consumer />
-      </AuthProvider>
+      </AuthProvider>,
     );
 
     await waitFor(() => {
@@ -160,7 +163,7 @@ describe("AuthProvider", () => {
     customRender(
       <AuthProvider>
         <Consumer />
-      </AuthProvider>
+      </AuthProvider>,
     );
 
     await act(async () => {
@@ -173,7 +176,7 @@ describe("AuthProvider", () => {
     expect(screen.getByTestId("token")).toHaveTextContent(MOCK_AUTH_RESPONSE.access_token);
     expect(localStorageMock.setItem).toHaveBeenCalledWith(
       "refresh_token",
-      MOCK_AUTH_RESPONSE.refresh_token
+      MOCK_AUTH_RESPONSE.refresh_token,
     );
     expect(screen.getByTestId("loading")).toHaveTextContent("idle");
   });
@@ -208,7 +211,7 @@ describe("AuthProvider", () => {
     customRender(
       <AuthProvider>
         <Consumer />
-      </AuthProvider>
+      </AuthProvider>,
     );
 
     await act(async () => {
@@ -242,7 +245,7 @@ describe("AuthProvider", () => {
     customRender(
       <AuthProvider>
         <Consumer />
-      </AuthProvider>
+      </AuthProvider>,
     );
 
     await act(async () => {
@@ -272,9 +275,7 @@ describe("AuthProvider", () => {
       logout: jest.fn(),
     } satisfies ReturnType<typeof useAuth>;
 
-    const spy = jest
-      .spyOn(AuthProviderModule, "useAuth")
-      .mockReturnValue(fixture);
+    const spy = jest.spyOn(AuthProviderModule, "useAuth").mockReturnValue(fixture);
 
     const Consumer = () => {
       const { user } = AuthProviderModule.useAuth();
@@ -307,7 +308,7 @@ describe("AuthProvider", () => {
       customRender(
         <AuthProvider>
           <Consumer />
-        </AuthProvider>
+        </AuthProvider>,
       );
 
       expect(screen.getByTestId("loading")).toHaveTextContent("loading");
@@ -335,7 +336,9 @@ describe("AuthProvider", () => {
         <div>
           <span data-testid="token">{token ?? "no-token"}</span>
           <span data-testid="user">{currentUser?.email ?? "anon"}</span>
-          <button onClick={() => registerUser("user@example.com", "secret", "User")}>Registrar</button>
+          <button onClick={() => registerUser("user@example.com", "secret", "User")}>
+            Registrar
+          </button>
         </div>
       );
     };
@@ -343,7 +346,7 @@ describe("AuthProvider", () => {
     customRender(
       <AuthProvider>
         <Consumer />
-      </AuthProvider>
+      </AuthProvider>,
     );
 
     await act(async () => {
@@ -356,7 +359,7 @@ describe("AuthProvider", () => {
     expect(screen.getByTestId("token")).toHaveTextContent(MOCK_AUTH_RESPONSE.access_token);
     expect(localStorageMock.setItem).toHaveBeenCalledWith(
       "refresh_token",
-      MOCK_AUTH_RESPONSE.refresh_token
+      MOCK_AUTH_RESPONSE.refresh_token,
     );
   });
 
@@ -389,7 +392,7 @@ describe("AuthProvider", () => {
     customRender(
       <AuthProvider>
         <Consumer />
-      </AuthProvider>
+      </AuthProvider>,
     );
 
     await act(async () => {
@@ -403,10 +406,7 @@ describe("AuthProvider", () => {
   });
 
   it("omite hidratar sesión cuando window no está disponible", () => {
-    const originalWindowDescriptor = Object.getOwnPropertyDescriptor(
-      globalThis,
-      "window"
-    );
+    const originalWindowDescriptor = Object.getOwnPropertyDescriptor(globalThis, "window");
 
     Object.defineProperty(globalThis, "window", {
       configurable: true,
@@ -416,7 +416,7 @@ describe("AuthProvider", () => {
     try {
       expect(AuthProviderModule.authProviderTestUtils).toBeDefined();
       expect(() =>
-        AuthProviderModule.authProviderTestUtils.persistRefreshToken("token")
+        AuthProviderModule.authProviderTestUtils.persistRefreshToken("token"),
       ).not.toThrow();
       expect(localStorageMock.setItem).not.toHaveBeenCalled();
     } finally {
@@ -437,9 +437,7 @@ describe("AuthProvider", () => {
     const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
 
     try {
-      expect(() => render(<Consumer />)).toThrow(
-        "useAuth must be used within AuthProvider"
-      );
+      expect(() => render(<Consumer />)).toThrow("useAuth must be used within AuthProvider");
     } finally {
       consoleSpy.mockRestore();
     }

@@ -10,11 +10,9 @@ const DEFAULT_WIDTH = 800;
 const DEFAULT_HEIGHT = 400;
 
 const createMockComponent = (name: string) => {
-  const MockComponent: React.FC<React.PropsWithChildren<{ className?: string; style?: React.CSSProperties }>> = ({
-    children,
-    className,
-    style,
-  }) => (
+  const MockComponent: React.FC<
+    React.PropsWithChildren<{ className?: string; style?: React.CSSProperties }>
+  > = ({ children, className, style }) => (
     <div data-recharts-mock={name} className={className} style={style}>
       {typeof children === "function" ? (children as () => React.ReactNode)() : children}
     </div>
@@ -52,8 +50,9 @@ export const ResponsiveContainer: React.FC<ResponsiveContainerProps> = ({
         })
       : children;
 
-  const resolvedWidth = typeof width === "number" ? `${width}px` : width ?? "100%";
-  const resolvedHeight = typeof height === "number" ? `${height}px` : height ?? `${DEFAULT_HEIGHT}px`;
+  const resolvedWidth = typeof width === "number" ? `${width}px` : (width ?? "100%");
+  const resolvedHeight =
+    typeof height === "number" ? `${height}px` : (height ?? `${DEFAULT_HEIGHT}px`);
 
   return (
     <div

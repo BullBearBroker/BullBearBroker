@@ -2,4 +2,4 @@ import { loadInterceptor } from "./resolve";
 
 const interceptor = loadInterceptor("ClientRequest");
 
-export = interceptor;
+export default interceptor;

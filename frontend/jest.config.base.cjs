@@ -8,10 +8,7 @@ const baseConfig = {
   testEnvironmentOptions: {
     url: "http://localhost",
   },
-  setupFilesAfterEnv: [
-    "<rootDir>/jest.setup.ts",
-    "<rootDir>/src/tests/msw/setup.ts",
-  ],
+  setupFilesAfterEnv: ["<rootDir>/jest.setup.ts", "<rootDir>/src/tests/msw/setup.ts"],
   moduleNameMapper: {
     "^.+\\.(css|less|scss|sass)$": "identity-obj-proxy",
     "^@/styles/globals\\.css$": "identity-obj-proxy",
@@ -19,8 +16,7 @@ const baseConfig = {
     "^@/(.*)$": "<rootDir>/src/$1",
     "^recharts$": "<rootDir>/__mocks__/recharts.tsx",
     "^msw/node$": "<rootDir>/node_modules/msw/lib/node/index.js",
-    "^@mswjs/interceptors/WebSocket$":
-      "<rootDir>/src/tests/msw/websocket-interceptor.ts",
+    "^@mswjs/interceptors/WebSocket$": "<rootDir>/src/tests/msw/websocket-interceptor.ts",
     "^@mswjs/interceptors/(.*)$": "<rootDir>/src/tests/msw/interceptors/$1.ts",
     "^jest-websocket-mock$": "<rootDir>/src/tests/mocks/jest-websocket-mock.ts", // ✅ Codex fix: mock consistente para WebSocket
   },
@@ -43,6 +39,8 @@ const baseConfig = {
   ],
   moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json", "node"],
   testMatch: [
+    "<rootDir>/app/**/*.test.(ts|tsx|js|jsx)",
+    "<rootDir>/app/**/__tests__/**/*.(ts|tsx|js|jsx)",
     "<rootDir>/src/**/*.test.(ts|tsx|js|jsx)",
     "<rootDir>/src/**/__tests__/**/*.(ts|tsx|js|jsx)",
   ],
@@ -50,13 +48,14 @@ const baseConfig = {
   clearMocks: true,
   collectCoverage: false,
   collectCoverageFrom: [
+    "<rootDir>/app/**/*.{ts,tsx}",
     "<rootDir>/src/**/*.{ts,tsx}",
     "<rootDir>/src/components/forms/**/*.{ts,tsx}",
     "<rootDir>/src/components/sidebar/**/*.{ts,tsx}",
     "<rootDir>/src/components/news/**/*.{ts,tsx}",
+    "!<rootDir>/app/**/__tests__/**",
     "!<rootDir>/src/**/__tests__/**",
     "!<rootDir>/src/**/stories/**",
-    "!<rootDir>/src/app/**",
   ],
 };
 

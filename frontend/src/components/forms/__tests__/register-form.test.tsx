@@ -5,9 +5,7 @@ import RegisterForm from "../register-form";
 
 // Mock de useAuth
 jest.mock("@/components/providers/auth-provider", () => {
-  (global as any).registerUserMock = jest
-    .fn()
-    .mockResolvedValue(undefined);
+  (global as any).registerUserMock = jest.fn().mockResolvedValue(undefined);
 
   return {
     __esModule: true,
@@ -47,9 +45,7 @@ describe("RegisterForm", () => {
     expect(form).toBeTruthy();
     fireEvent.submit(form!);
 
-    expect(
-      await screen.findByText(/el nombre es obligatorio/i)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/el nombre es obligatorio/i)).toBeInTheDocument();
     expect((global as any).registerUserMock).not.toHaveBeenCalled();
   });
 
@@ -75,9 +71,7 @@ describe("RegisterForm", () => {
     fireEvent.submit(form!);
 
     await waitFor(() => {
-      expect(
-        screen.getByText(/debe ingresar un correo válido/i)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/debe ingresar un correo válido/i)).toBeInTheDocument();
     });
     expect((global as any).registerUserMock).not.toHaveBeenCalled();
   });
@@ -103,9 +97,7 @@ describe("RegisterForm", () => {
     expect(form).toBeTruthy();
     fireEvent.submit(form!);
 
-    expect(
-      screen.getByText(/las contraseñas no coinciden/i)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/las contraseñas no coinciden/i)).toBeInTheDocument();
   });
 
   it("envía los datos válidos", async () => {
@@ -139,16 +131,14 @@ describe("RegisterForm", () => {
         "user@example.com",
         "secret123",
         "Jane",
-        "agresivo"
-      )
+        "agresivo",
+      ),
     );
     expect((global as any).pushMock).toHaveBeenCalledWith("/");
   });
 
   it("muestra mensaje de error cuando el registro falla", async () => {
-    (global as any).registerUserMock.mockRejectedValueOnce(
-      new Error("Duplicado")
-    );
+    (global as any).registerUserMock.mockRejectedValueOnce(new Error("Duplicado"));
 
     customRender(<RegisterForm />);
 
@@ -192,18 +182,14 @@ describe("RegisterForm", () => {
 
     fireEvent.submit(screen.getByRole("button", { name: /registrarse/i }).closest("form")!);
 
-    expect(
-      await screen.findByText(/las contraseñas no coinciden/i)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/las contraseñas no coinciden/i)).toBeInTheDocument();
 
     fireEvent.input(screen.getByPlaceholderText(/confirmar contraseña/i), {
       target: { value: "secret123" },
     });
 
     await waitFor(() => {
-      expect(
-        screen.queryByText(/las contraseñas no coinciden/i)
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText(/las contraseñas no coinciden/i)).not.toBeInTheDocument();
     });
   });
 
@@ -232,13 +218,11 @@ describe("RegisterForm", () => {
         "user@example.com",
         "secret123",
         "Jane Doe",
-        "moderado"
+        "moderado",
       );
     });
 
-    expect(
-      await screen.findByText(/error al registrar la cuenta/i)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/error al registrar la cuenta/i)).toBeInTheDocument();
   });
 
   it("deshabilita el botón mientras se registra al usuario", async () => {
@@ -269,9 +253,7 @@ describe("RegisterForm", () => {
 
     resolvePromise();
 
-    await waitFor(() =>
-      expect(screen.getByRole("button", { name: /registrarse/i })).toBeEnabled()
-    );
+    await waitFor(() => expect(screen.getByRole("button", { name: /registrarse/i })).toBeEnabled());
   });
 
   it("no presenta violaciones de accesibilidad básicas", async () => {

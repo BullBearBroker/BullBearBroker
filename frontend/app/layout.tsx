@@ -36,25 +36,26 @@ const apiPreconnectOrigin = (() => {
   }
 })();
 
+export const viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0f172a" },
+  ],
+};
+
 export const metadata: Metadata = {
   metadataBase,
   title: {
     default: "BullBearBroker Dashboard",
     template: "%s | BullBearBroker",
   },
-  description: "Panel financiero inteligente impulsado por IA para monitorear mercados en tiempo real.",
+  description:
+    "Panel financiero inteligente impulsado por IA para monitorear mercados en tiempo real.",
   applicationName: "BullBearBroker",
   alternates: {
     canonical: "/",
   },
-  keywords: [
-    "trading",
-    "finanzas",
-    "criptomonedas",
-    "acciones",
-    "inversiones",
-    "dashboard",
-  ],
+  keywords: ["trading", "finanzas", "criptomonedas", "acciones", "inversiones", "dashboard"],
   category: "finance",
   openGraph: {
     title: "BullBearBroker Dashboard",
@@ -71,10 +72,6 @@ export const metadata: Metadata = {
     description:
       "Supervisa indicadores clave, noticias y alertas inteligentes para tomar mejores decisiones de inversión.",
   },
-  themeColor: [
-    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
-    { media: "(prefers-color-scheme: dark)", color: "#0f172a" },
-  ],
   robots: {
     index: true,
     follow: true,
@@ -82,7 +79,7 @@ export const metadata: Metadata = {
 };
 
 export default function RootLayout({
-  children
+  children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
@@ -97,12 +94,7 @@ export default function RootLayout({
         <link rel="prefetch" href="/portfolio" as="document" />
         <link rel="prefetch" href="/test-indicators" as="document" />
       </head>
-      <body
-        className={cn(
-          inter.className,
-          "min-h-screen bg-background font-sans antialiased"
-        )}
-      >
+      <body className={cn(inter.className, "min-h-screen bg-background font-sans antialiased")}>
         <ThemeProvider>
           <AuthProvider>
             <ServiceWorkerProvider />

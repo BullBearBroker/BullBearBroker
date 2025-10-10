@@ -93,7 +93,7 @@ try {
       return React.createElement(
         "div",
         { style: { width: resolvedWidth, height: resolvedHeight }, ...rest },
-        React.createElement("svg", { width: resolvedWidth, height: resolvedHeight }, content)
+        React.createElement("svg", { width: resolvedWidth, height: resolvedHeight }, content),
       );
     };
 
@@ -151,7 +151,7 @@ if (!globalThis.BroadcastChannel) {
 if (typeof window !== "undefined" && window.HTMLElement) {
   const descriptor = Object.getOwnPropertyDescriptor(
     window.HTMLElement.prototype,
-    "scrollIntoView"
+    "scrollIntoView",
   );
 
   if (!descriptor || descriptor.value === undefined) {
@@ -182,11 +182,7 @@ jest.mock("next/link", () => {
   return {
     __esModule: true,
     default: ({ children, href, ...props }: any) =>
-      React.createElement(
-        "a",
-        { href: href ?? props?.href ?? "#", ...props },
-        children
-      ),
+      React.createElement("a", { href: href ?? props?.href ?? "#", ...props }, children),
   };
 });
 
@@ -206,8 +202,7 @@ jest.mock("next-themes", () => {
 jest.mock("@radix-ui/react-scroll-area", () => {
   const React = require("react");
 
-  const Root = ({ children, ...props }: any) =>
-    React.createElement("div", { ...props }, children);
+  const Root = ({ children, ...props }: any) => React.createElement("div", { ...props }, children);
   Root.displayName = "ScrollAreaRoot";
 
   const Viewport = ({ children, ...props }: any) =>
@@ -226,8 +221,7 @@ jest.mock("@radix-ui/react-scroll-area", () => {
 
   const Scrollbar = ScrollAreaScrollbar;
 
-  const ScrollAreaThumb = (props: any) =>
-    React.createElement("div", { ...props });
+  const ScrollAreaThumb = (props: any) => React.createElement("div", { ...props });
   ScrollAreaThumb.displayName = "ScrollAreaThumb";
 
   const Thumb = ScrollAreaThumb;

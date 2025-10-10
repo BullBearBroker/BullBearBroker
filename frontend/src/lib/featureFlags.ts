@@ -29,7 +29,7 @@ function normalizeFlags(raw: unknown): FeatureFlags {
         }
         return acc;
       },
-      {}
+      {},
     );
   }
 

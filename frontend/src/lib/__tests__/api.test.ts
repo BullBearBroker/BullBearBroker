@@ -26,7 +26,7 @@ describe("request", () => {
 
     expect(global.fetch).toHaveBeenCalledWith(
       `${API_BASE_URL}/demo`,
-      expect.objectContaining({ method: "GET", credentials: "include" })
+      expect.objectContaining({ method: "GET", credentials: "include" }),
     );
     expect(data.result).toBe("ok");
   });
@@ -70,15 +70,11 @@ describe("request", () => {
       status: 500,
       json: jest.fn(),
       statusText: "Internal Server Error",
-      text: jest
-        .fn()
-        .mockResolvedValue(JSON.stringify({ detail: "Fallo interno" })),
+      text: jest.fn().mockResolvedValue(JSON.stringify({ detail: "Fallo interno" })),
       headers: new Headers({ "Content-Type": "application/json" }),
     });
 
-    await expect(request("/demo", { method: "GET" })).rejects.toThrow(
-      "Fallo interno"
-    );
+    await expect(request("/demo", { method: "GET" })).rejects.toThrow("Fallo interno");
   });
 
   it("propaga un error cuando el JSON no es válido", async () => {
@@ -90,9 +86,7 @@ describe("request", () => {
       headers: new Headers(),
     });
 
-    await expect(request("/demo", { method: "GET" })).rejects.toThrow(
-      "Invalid JSON response"
-    );
+    await expect(request("/demo", { method: "GET" })).rejects.toThrow("Invalid JSON response");
     expect(consoleSpy).toHaveBeenCalled();
     consoleSpy.mockRestore();
   });
@@ -116,15 +110,11 @@ describe("request", () => {
       status: 422,
       json: jest.fn(),
       statusText: "Unprocessable Entity",
-      text: jest
-        .fn()
-        .mockResolvedValue(JSON.stringify({ message: "Mensaje amigable" })),
+      text: jest.fn().mockResolvedValue(JSON.stringify({ message: "Mensaje amigable" })),
       headers: new Headers({ "Content-Type": "application/json" }),
     });
 
-    await expect(request("/demo", { method: "GET" })).rejects.toThrow(
-      "Mensaje amigable"
-    );
+    await expect(request("/demo", { method: "GET" })).rejects.toThrow("Mensaje amigable");
   });
 
   it("serializa el detalle cuando no es un string", async () => {
@@ -133,14 +123,12 @@ describe("request", () => {
       status: 409,
       json: jest.fn(),
       statusText: "Conflict",
-      text: jest
-        .fn()
-        .mockResolvedValue(JSON.stringify({ detail: { code: "duplicated" } })),
+      text: jest.fn().mockResolvedValue(JSON.stringify({ detail: { code: "duplicated" } })),
       headers: new Headers({ "Content-Type": "application/json" }),
     });
 
     await expect(request("/demo", { method: "GET" })).rejects.toThrow(
-      "Request failed with status 409"
+      "Request failed with status 409",
     );
   });
 });
@@ -194,17 +182,13 @@ describe("API wrappers", () => {
     expect(calls[2][0]).toBe(`${API_BASE_URL}/api/auth/refresh`);
     expect(JSON.parse(calls[2][1].body)).toEqual({ refresh_token: "refresh-value" });
     expect(calls[3][0]).toBe(`${API_BASE_URL}/api/auth/me`);
-    expect((calls[3][1].headers as Headers).get("Authorization")).toBe(
-      "Bearer token-123"
-    );
+    expect((calls[3][1].headers as Headers).get("Authorization")).toBe("Bearer token-123");
   });
 
   it("administra operaciones CRUD de alertas", async () => {
     (global.fetch as jest.Mock)
       .mockResolvedValueOnce(createResponse([{ id: "1" }]))
-      .mockResolvedValueOnce(
-        createResponse({ id: "2", title: "Alerta", active: true })
-      )
+      .mockResolvedValueOnce(createResponse({ id: "2", title: "Alerta", active: true }))
       .mockResolvedValueOnce(createResponse({ id: "3", active: false }))
       .mockResolvedValueOnce({
         ok: true,
@@ -280,7 +264,7 @@ describe("API wrappers", () => {
           used_data: true,
           sources: ["prices"],
           session_id: "chat-1",
-        })
+        }),
       );
     const onChunk = jest.fn();
 
@@ -288,7 +272,7 @@ describe("API wrappers", () => {
       [{ role: "user", content: "Hola" }],
       "token",
       onChunk,
-      { symbol: "BTC", interval: "4h" }
+      { symbol: "BTC", interval: "4h" },
     );
 
     const calls = (global.fetch as jest.Mock).mock.calls;
@@ -313,13 +297,11 @@ describe("API wrappers", () => {
       ],
       undefined,
       undefined,
-      { symbol: "ETH", sessionId: "persisted" }
+      { symbol: "ETH", sessionId: "persisted" },
     );
 
     expect(errorSpy).toHaveBeenCalled();
-    expect((global.fetch as jest.Mock).mock.calls[1][0]).toBe(
-      `${API_BASE_URL}/api/ai/chat`
-    );
+    expect((global.fetch as jest.Mock).mock.calls[1][0]).toBe(`${API_BASE_URL}/api/ai/chat`);
     expect(result.messages[result.messages.length - 1].content).toBe("Ok");
     expect(result.sessionId).toBe("persisted");
     errorSpy.mockRestore();
@@ -327,17 +309,15 @@ describe("API wrappers", () => {
 
   it("lanza error cuando el tipo de mercado no es soportado", async () => {
     await expect(api.getMarketQuote("commodities" as any, "OIL")).rejects.toThrow(
-      "Tipo de mercado no soportado: commodities"
+      "Tipo de mercado no soportado: commodities",
     );
   });
 
   it("avisa cuando no hay cotizaciones disponibles", async () => {
-    (global.fetch as jest.Mock).mockResolvedValueOnce(
-      createResponse({ quotes: [] }, 200)
-    );
+    (global.fetch as jest.Mock).mockResolvedValueOnce(createResponse({ quotes: [] }, 200));
 
     await expect(api.getMarketQuote("crypto", "btc", "token")).rejects.toThrow(
-      "No se encontró información para BTC"
+      "No se encontró información para BTC",
     );
   });
 });

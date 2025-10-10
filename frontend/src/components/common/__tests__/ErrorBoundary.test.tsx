@@ -6,7 +6,7 @@ describe("ErrorBoundary", () => {
   it("muestra el fallback cuando un componente lanza un error", () => {
     const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
 
-    function Problematic() {
+    function Problematic(): JSX.Element {
       throw new Error("boom");
     }
 
@@ -14,7 +14,7 @@ describe("ErrorBoundary", () => {
       customRender(
         <ErrorBoundary fallback={<span>Ha ocurrido un error crítico</span>}>
           <Problematic />
-        </ErrorBoundary>
+        </ErrorBoundary>,
       );
     } finally {
       consoleSpy.mockRestore();
@@ -37,17 +37,17 @@ describe("ErrorBoundary", () => {
     const { rerender } = customRender(
       <ErrorBoundary resetKeys={["v1"]}>
         <Thrower shouldThrow />
-      </ErrorBoundary>
+      </ErrorBoundary>,
     );
 
     expect(
-      screen.getByText("Ha ocurrido un error inesperado. Intenta recargar esta sección.")
+      screen.getByText("Ha ocurrido un error inesperado. Intenta recargar esta sección."),
     ).toBeInTheDocument();
 
     rerender(
       <ErrorBoundary resetKeys={["v2"]}>
         <Thrower shouldThrow={false} />
-      </ErrorBoundary>
+      </ErrorBoundary>,
     );
 
     expect(screen.getByText("Recuperado")).toBeInTheDocument();

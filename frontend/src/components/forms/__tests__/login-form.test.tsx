@@ -1,10 +1,5 @@
 // [Codex] nuevo - Ajustes para los placeholders y mock de Auth
-import {
-  customRender,
-  screen,
-  fireEvent,
-  waitFor,
-} from "@/tests/utils/renderWithProviders";
+import { customRender, screen, fireEvent, waitFor } from "@/tests/utils/renderWithProviders";
 import { axe } from "jest-axe";
 import LoginForm from "../login-form";
 import { authMessages } from "@/lib/i18n/auth";
@@ -26,8 +21,7 @@ jest.mock("@/lib/analytics", () => ({
   trackEvent: jest.fn(),
 }));
 
-const getTrackEventMock = () =>
-  jest.requireMock("@/lib/analytics").trackEvent as jest.Mock;
+const getTrackEventMock = () => jest.requireMock("@/lib/analytics").trackEvent as jest.Mock;
 
 jest.mock("next/navigation", () => {
   (global as any).pushMock = jest.fn();
@@ -55,9 +49,7 @@ describe("LoginForm", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /iniciar sesión/i }));
 
-    expect(
-      await screen.findByText(authMessages.validation.email)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(authMessages.validation.email)).toBeInTheDocument();
     expect((global as any).loginUserMock).not.toHaveBeenCalled();
   });
 
@@ -73,9 +65,7 @@ describe("LoginForm", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /iniciar sesión/i }));
 
-    expect(
-      await screen.findByText(authMessages.validation.password)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(authMessages.validation.password)).toBeInTheDocument();
     expect((global as any).loginUserMock).not.toHaveBeenCalled();
   });
 
@@ -95,20 +85,18 @@ describe("LoginForm", () => {
       expect((global as any).loginUserMock).toHaveBeenCalledWith(
         "user@example.com",
         "secret123",
-        expect.objectContaining({ signal: expect.any(AbortSignal) })
-      )
+        expect.objectContaining({ signal: expect.any(AbortSignal) }),
+      ),
     );
     expect((global as any).pushMock).toHaveBeenCalledWith("/");
 
     // No hay validación de UI en este form; validamos que NO haya mensaje de error inmediato
-    expect(
-      screen.queryByText(/error al iniciar sesión/i)
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/error al iniciar sesión/i)).not.toBeInTheDocument();
   });
 
   it("muestra mensaje de error cuando la autenticación falla", async () => {
     (global as any).loginUserMock.mockRejectedValueOnce(
-      new HttpError(authMessages.errors.invalidCredentials, { status: 401 })
+      new HttpError(authMessages.errors.invalidCredentials, { status: 401 }),
     );
 
     customRender(<LoginForm />);
@@ -122,15 +110,13 @@ describe("LoginForm", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /iniciar sesión/i }));
 
-    expect(
-      await screen.findByText(authMessages.errors.invalidCredentials)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(authMessages.errors.invalidCredentials)).toBeInTheDocument();
     expect((global as any).pushMock).not.toHaveBeenCalled();
   });
 
   it("limpia los errores del formulario al corregir los campos", async () => {
     (global as any).loginUserMock.mockRejectedValueOnce(
-      new HttpError(authMessages.errors.invalidCredentials, { status: 401 })
+      new HttpError(authMessages.errors.invalidCredentials, { status: 401 }),
     );
 
     customRender(<LoginForm />);
@@ -144,18 +130,14 @@ describe("LoginForm", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /iniciar sesión/i }));
 
-    expect(
-      await screen.findByText(/credenciales inválidas/i)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/credenciales inválidas/i)).toBeInTheDocument();
 
     fireEvent.input(screen.getByPlaceholderText(/correo electrónico/i), {
       target: { value: "nuevo@example.com" },
     });
 
     await waitFor(() => {
-      expect(
-        screen.queryByText(authMessages.errors.invalidCredentials)
-      ).not.toBeInTheDocument();
+      expect(screen.queryByText(authMessages.errors.invalidCredentials)).not.toBeInTheDocument();
     });
   });
 
@@ -177,13 +159,11 @@ describe("LoginForm", () => {
       expect((global as any).loginUserMock).toHaveBeenCalledWith(
         "user@example.com",
         "secret123",
-        expect.objectContaining({ signal: expect.any(Object) })
+        expect.objectContaining({ signal: expect.any(Object) }),
       );
     });
 
-    expect(
-      await screen.findByText(authMessages.errors.generic)
-    ).toBeInTheDocument();
+    expect(await screen.findByText(authMessages.errors.generic)).toBeInTheDocument();
   });
 
   it("deshabilita el botón mientras se envían las credenciales", async () => {
@@ -204,16 +184,12 @@ describe("LoginForm", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /iniciar sesión/i }));
 
-    expect(
-      screen.getByRole("button", { name: authMessages.actions.submitting })
-    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: authMessages.actions.submitting })).toBeDisabled();
 
     resolvePromise();
 
     await waitFor(() =>
-      expect(
-        screen.getByRole("button", { name: /iniciar sesión/i })
-      ).toBeEnabled()
+      expect(screen.getByRole("button", { name: /iniciar sesión/i })).toBeEnabled(),
     );
   });
 
@@ -232,24 +208,19 @@ describe("LoginForm", () => {
     fireEvent.input(screen.getByPlaceholderText(authMessages.placeholders.email), {
       target: { value: "user@example.com" },
     });
-    fireEvent.input(
-      screen.getByPlaceholderText(authMessages.placeholders.password),
-      {
-        target: { value: "secret123" },
-      }
-    );
+    fireEvent.input(screen.getByPlaceholderText(authMessages.placeholders.password), {
+      target: { value: "secret123" },
+    });
 
     fireEvent.click(screen.getByRole("button", { name: authMessages.actions.submit }));
 
-    const messages = await screen.findAllByText(
-      authMessages.errors.rateLimited({ seconds: 8 })
-    );
+    const messages = await screen.findAllByText(authMessages.errors.rateLimited({ seconds: 8 }));
     expect(messages.length).toBeGreaterThanOrEqual(1);
 
     expect(
       screen.getByRole("button", {
         name: authMessages.errors.rateLimited({ seconds: 8 }),
-      })
+      }),
     ).toBeDisabled();
     const trackEvent = getTrackEventMock();
     expect(trackEvent).toHaveBeenCalledTimes(1);
@@ -271,12 +242,9 @@ describe("LoginForm", () => {
     fireEvent.input(screen.getByPlaceholderText(authMessages.placeholders.email), {
       target: { value: "user@example.com" },
     });
-    fireEvent.input(
-      screen.getByPlaceholderText(authMessages.placeholders.password),
-      {
-        target: { value: "secret123" },
-      }
-    );
+    fireEvent.input(screen.getByPlaceholderText(authMessages.placeholders.password), {
+      target: { value: "secret123" },
+    });
 
     fireEvent.click(screen.getByRole("button", { name: authMessages.actions.submit }));
     fireEvent.click(screen.getByRole("button", { name: authMessages.actions.submitting }));
@@ -286,7 +254,7 @@ describe("LoginForm", () => {
     resolvePromise();
 
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: authMessages.actions.submit })).toBeEnabled()
+      expect(screen.getByRole("button", { name: authMessages.actions.submit })).toBeEnabled(),
     );
   });
 });

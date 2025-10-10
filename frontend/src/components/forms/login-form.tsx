@@ -117,10 +117,7 @@ export default function LoginForm() {
       }
       if (error instanceof HttpError) {
         if (error.status === 429) {
-          const seconds = Math.max(
-            1,
-            Math.round((error.retryAfter ?? remainingSeconds) || 60)
-          );
+          const seconds = Math.max(1, Math.round((error.retryAfter ?? remainingSeconds) || 60));
           const nextUntil = Date.now() + seconds * 1000;
           setRateLimitUntil(nextUntil);
           setRemainingSeconds(seconds);
@@ -142,9 +139,7 @@ export default function LoginForm() {
         return;
       }
       const message =
-        error instanceof Error && error.message
-          ? error.message
-          : authMessages.errors.generic;
+        error instanceof Error && error.message ? error.message : authMessages.errors.generic;
       setFormError(message);
     } finally {
       setSubmitting(false);
@@ -227,11 +222,7 @@ export default function LoginForm() {
         </div>
       ) : null}
 
-      <Button
-        type="submit"
-        className="w-full"
-        disabled={submitting || remainingSeconds > 0}
-      >
+      <Button type="submit" className="w-full" disabled={submitting || remainingSeconds > 0}>
         {submitting
           ? authMessages.actions.submitting
           : remainingSeconds > 0

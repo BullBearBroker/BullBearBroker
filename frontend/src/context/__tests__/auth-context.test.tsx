@@ -3,11 +3,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
 import { ErrorBoundary } from "@/tests/utils/ErrorBoundary";
-import {
-  login as loginUser,
-  refreshToken as refreshTokenRequest,
-  getProfile,
-} from "@/lib/api";
+import { login as loginUser, refreshToken as refreshTokenRequest, getProfile } from "@/lib/api";
 
 jest.mock("@/lib/api", () => {
   const actual = jest.requireActual("@/lib/api");
@@ -28,8 +24,7 @@ let AuthContext: React.Context<AuthContextType | undefined>;
 
 describe("auth context", () => {
   const mockedLogin = loginUser as jest.MockedFunction<typeof loginUser>;
-  const mockedRefreshToken =
-    refreshTokenRequest as jest.MockedFunction<typeof refreshTokenRequest>;
+  const mockedRefreshToken = refreshTokenRequest as jest.MockedFunction<typeof refreshTokenRequest>;
   const mockedGetProfile = getProfile as jest.MockedFunction<typeof getProfile>;
 
   beforeAll(async () => {
@@ -68,7 +63,7 @@ describe("auth context", () => {
     render(
       <AuthContext.Provider value={mockValue}>
         <TestConsumer />
-      </AuthContext.Provider>
+      </AuthContext.Provider>,
     );
 
     expect(screen.getByTestId("user-name")).toHaveTextContent("Test User");
@@ -89,8 +84,8 @@ describe("auth context", () => {
         render(
           <ErrorBoundary fallback={<span>Error capturado</span>}>
             <WithoutProvider />
-          </ErrorBoundary>
-        )
+          </ErrorBoundary>,
+        ),
       ).not.toThrow();
 
       expect(screen.getByText("Error capturado")).toBeInTheDocument();
@@ -118,10 +113,7 @@ describe("auth context", () => {
         <div>
           <span data-testid="user-email">{auth.user?.email ?? "no-user"}</span>
           <span data-testid="loading">{auth.loading ? "loading" : "idle"}</span>
-          <button
-            onClick={() => auth.login("user@example.com", "secret")}
-            disabled={auth.loading}
-          >
+          <button onClick={() => auth.login("user@example.com", "secret")} disabled={auth.loading}>
             Ejecutar login
           </button>
         </div>
@@ -131,7 +123,7 @@ describe("auth context", () => {
     render(
       <AuthProvider>
         <TestComponent />
-      </AuthProvider>
+      </AuthProvider>,
     );
 
     expect(screen.getByTestId("user-email")).toHaveTextContent("no-user");
@@ -180,7 +172,7 @@ describe("auth context", () => {
     render(
       <AuthProvider>
         <TestComponent />
-      </AuthProvider>
+      </AuthProvider>,
     );
 
     await act(async () => {
@@ -226,7 +218,7 @@ describe("auth context", () => {
     render(
       <AuthProvider>
         <TestComponent />
-      </AuthProvider>
+      </AuthProvider>,
     );
 
     expect(screen.getByTestId("loading")).toHaveTextContent("loading");
@@ -270,7 +262,7 @@ describe("auth context", () => {
     render(
       <AuthProvider>
         <TestComponent />
-      </AuthProvider>
+      </AuthProvider>,
     );
 
     await act(async () => {

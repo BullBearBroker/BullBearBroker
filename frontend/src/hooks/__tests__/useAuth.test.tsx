@@ -4,10 +4,18 @@ import { useAuth } from "../useAuth";
 
 // QA: mock provider to validate context transitions without tocar lógica real.
 jest.mock("../../components/providers/auth-provider", () => {
-  const React = require("react");
+  const React = require("react") as typeof import("react");
 
-  type MockState = { user: any; token: string | null };
-  const AuthContext = React.createContext<any>(undefined);
+  type MockState = { user: { id: string; email: string } | null; token: string | null };
+  type MockContextValue = {
+    user: MockState["user"];
+    token: MockState["token"];
+    loading: boolean;
+    loginUser: (email: string, password: string) => Promise<void>;
+    registerUser: (email: string, password: string) => Promise<void>;
+    logout: () => void;
+  };
+  const AuthContext = React.createContext<MockContextValue | undefined>(undefined);
 
   function MockAuthProvider({ children }: PropsWithChildren) {
     const [state, setState] = React.useState<MockState>({ user: null, token: null });
@@ -30,7 +38,7 @@ jest.mock("../../components/providers/auth-provider", () => {
       });
     }, []);
 
-    const value = React.useMemo(
+    const value = React.useMemo<MockContextValue>(
       () => ({
         user: state.user,
         token: state.token,
@@ -39,7 +47,7 @@ jest.mock("../../components/providers/auth-provider", () => {
         registerUser,
         logout,
       }),
-      [loginUser, logout, registerUser, state.token, state.user]
+      [loginUser, logout, registerUser, state.token, state.user],
     );
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -62,9 +70,7 @@ const { AuthProvider } = jest.requireMock("../../components/providers/auth-provi
 
 describe("useAuth hook", () => {
   // QA: helper wrapper para reutilizar el provider fingido.
-  const wrapper = ({ children }: PropsWithChildren) => (
-    <AuthProvider>{children}</AuthProvider>
-  );
+  const wrapper = ({ children }: PropsWithChildren) => <AuthProvider>{children}</AuthProvider>;
 
   it("permite loguear y cerrar sesión actualizando el contexto", async () => {
     const { result } = renderHook(() => useAuth(), { wrapper });

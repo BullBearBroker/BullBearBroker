@@ -7,8 +7,6 @@ function HelloWorld() {
 describe("HelloWorld component", () => {
   it("renderiza el texto correctamente", () => {
     customRender(<HelloWorld />);
-    expect(
-      screen.getByText("Hola BullBearBroker 🚀")
-    ).toBeInTheDocument();
+    expect(screen.getByText("Hola BullBearBroker 🚀")).toBeInTheDocument();
   });
 });

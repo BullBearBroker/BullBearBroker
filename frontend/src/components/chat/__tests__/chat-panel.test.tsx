@@ -9,16 +9,13 @@ import { sendChatMessage, getChatHistory } from "@/lib/api";
 jest.mock("@radix-ui/react-scroll-area", () => {
   const React = require("react");
 
-  const Root = ({ children, ...props }: any) =>
-    React.createElement("div", props, children);
+  const Root = ({ children, ...props }: any) => React.createElement("div", props, children);
   Root.displayName = "ScrollAreaRoot";
 
-  const Viewport = ({ children, ...props }: any) =>
-    React.createElement("div", props, children);
+  const Viewport = ({ children, ...props }: any) => React.createElement("div", props, children);
   Viewport.displayName = "ScrollAreaViewport";
 
-  const Scrollbar = ({ children, ...props }: any) =>
-    React.createElement("div", props, children);
+  const Scrollbar = ({ children, ...props }: any) => React.createElement("div", props, children);
   Scrollbar.displayName = "ScrollAreaScrollbar";
 
   const ScrollAreaScrollbar = Scrollbar;
@@ -61,10 +58,8 @@ jest.mock("@/lib/api", () => ({
 
 describe("ChatPanel", () => {
   let scrollSpy: jest.SpyInstance;
-  const mockedSendChatMessage =
-    sendChatMessage as jest.MockedFunction<typeof sendChatMessage>;
-  const mockedGetChatHistory =
-    getChatHistory as jest.MockedFunction<typeof getChatHistory>;
+  const mockedSendChatMessage = sendChatMessage as jest.MockedFunction<typeof sendChatMessage>;
+  const mockedGetChatHistory = getChatHistory as jest.MockedFunction<typeof getChatHistory>;
 
   beforeAll(() => {
     if (!window.HTMLElement.prototype.scrollIntoView) {
@@ -95,9 +90,7 @@ describe("ChatPanel", () => {
     });
 
     expect(
-      screen.getByText(
-        "Hola, soy tu asistente financiero BullBear. ¿En qué puedo ayudarte hoy?"
-      )
+      screen.getByText("Hola, soy tu asistente financiero BullBear. ¿En qué puedo ayudarte hoy?"),
     ).toBeInTheDocument();
     expect(screen.getByText("IA")).toBeInTheDocument();
     expect(mockedSendChatMessage).not.toHaveBeenCalled();
@@ -121,10 +114,25 @@ describe("ChatPanel", () => {
       session_id: "session-123",
       created_at: new Date().toISOString(),
       messages: [
-        { id: "a", role: "assistant", content: "Saludo inicial", created_at: new Date().toISOString() },
+        {
+          id: "a",
+          role: "assistant",
+          content: "Saludo inicial",
+          created_at: new Date().toISOString(),
+        },
         { id: "b", role: "user", content: "Hola", created_at: new Date().toISOString() },
-        { id: "c", role: "assistant", content: "Respuesta 1", created_at: new Date().toISOString() },
-        { id: "d", role: "assistant", content: "Respuesta 2", created_at: new Date().toISOString() },
+        {
+          id: "c",
+          role: "assistant",
+          content: "Respuesta 1",
+          created_at: new Date().toISOString(),
+        },
+        {
+          id: "d",
+          role: "assistant",
+          content: "Respuesta 2",
+          created_at: new Date().toISOString(),
+        },
       ],
     } as any);
 
@@ -132,10 +140,8 @@ describe("ChatPanel", () => {
 
     await act(async () => {
       await user.type(
-        screen.getByPlaceholderText(
-          "Escribe tu consulta sobre mercados, trading o inversiones..."
-        ),
-        "Hola"
+        screen.getByPlaceholderText("Escribe tu consulta sobre mercados, trading o inversiones..."),
+        "Hola",
       );
       await user.click(screen.getByRole("button", { name: /enviar/i }));
     });
@@ -156,10 +162,8 @@ describe("ChatPanel", () => {
 
     await act(async () => {
       await user.type(
-        screen.getByPlaceholderText(
-          "Escribe tu consulta sobre mercados, trading o inversiones..."
-        ),
-        "   "
+        screen.getByPlaceholderText("Escribe tu consulta sobre mercados, trading o inversiones..."),
+        "   ",
       );
       await user.click(screen.getByRole("button", { name: /enviar/i }));
     });
@@ -178,9 +182,9 @@ describe("ChatPanel", () => {
       await act(async () => {
         await user.type(
           screen.getByPlaceholderText(
-            "Escribe tu consulta sobre mercados, trading o inversiones..."
+            "Escribe tu consulta sobre mercados, trading o inversiones...",
           ),
-          "Probemos"
+          "Probemos",
         );
         await user.click(screen.getByRole("button", { name: /enviar/i }));
       });
@@ -201,7 +205,12 @@ describe("ChatPanel", () => {
       session_id: "existing-session",
       created_at: new Date().toISOString(),
       messages: [
-        { id: "1", role: "assistant", content: "Historial previo", created_at: new Date().toISOString() },
+        {
+          id: "1",
+          role: "assistant",
+          content: "Historial previo",
+          created_at: new Date().toISOString(),
+        },
       ],
     } as any);
 
@@ -232,10 +241,8 @@ describe("ChatPanel", () => {
 
     await act(async () => {
       await user.type(
-        screen.getByPlaceholderText(
-          "Escribe tu consulta sobre mercados, trading o inversiones..."
-        ),
-        "Consulta"
+        screen.getByPlaceholderText("Escribe tu consulta sobre mercados, trading o inversiones..."),
+        "Consulta",
       );
       await user.click(screen.getByRole("button", { name: /enviar/i }));
     });
@@ -259,10 +266,8 @@ describe("ChatPanel", () => {
 
     await act(async () => {
       await user.type(
-        screen.getByPlaceholderText(
-          "Escribe tu consulta sobre mercados, trading o inversiones..."
-        ),
-        "Consulta sin respuesta"
+        screen.getByPlaceholderText("Escribe tu consulta sobre mercados, trading o inversiones..."),
+        "Consulta sin respuesta",
       );
       await user.click(screen.getByRole("button", { name: /enviar/i }));
     });
@@ -271,9 +276,7 @@ describe("ChatPanel", () => {
       expect(mockedSendChatMessage).toHaveBeenCalled();
     });
 
-    expect(
-      screen.getByText("Consulta sin respuesta", { selector: "div" })
-    ).toBeInTheDocument();
+    expect(screen.getByText("Consulta sin respuesta", { selector: "div" })).toBeInTheDocument();
     expect(screen.getByText("IA")).toBeInTheDocument();
   });
 
@@ -293,10 +296,8 @@ describe("ChatPanel", () => {
 
     await act(async () => {
       await user.type(
-        screen.getByPlaceholderText(
-          "Escribe tu consulta sobre mercados, trading o inversiones..."
-        ),
-        "Consulta"
+        screen.getByPlaceholderText("Escribe tu consulta sobre mercados, trading o inversiones..."),
+        "Consulta",
       );
       await user.click(screen.getByRole("button", { name: /enviar/i }));
     });

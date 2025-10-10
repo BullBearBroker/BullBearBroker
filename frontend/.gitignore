@@ -5,6 +5,7 @@ node_modules
 out
 .DS_Store
 .env.local
+tsconfig.tsbuildinfo
 
 # testing
 coverage

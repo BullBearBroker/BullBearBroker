@@ -6,9 +6,7 @@ import { server } from "@/tests/msw/server";
 import { newsEmptyHandler, newsErrorHandler, http, HttpResponse } from "@/tests/msw/handlers";
 
 const wrapper = ({ children }: { children: React.ReactNode }) => (
-  <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>
-    {children}
-  </SWRConfig>
+  <SWRConfig value={{ provider: () => new Map(), dedupingInterval: 0 }}>{children}</SWRConfig>
 );
 
 describe("useNewsFeed", () => {
@@ -58,7 +56,7 @@ describe("useNewsFeed", () => {
             source: "Ejemplo",
           },
         ],
-      })
+      }),
     );
     server.use(customHandler);
 
@@ -77,8 +75,8 @@ describe("useNewsFeed", () => {
               source: "Ejemplo",
             },
           ],
-        })
-      )
+        }),
+      ),
     );
 
     await act(async () => {

@@ -17,7 +17,7 @@ type MarketType = "crypto" | "stock" | "forex";
 const icons: Record<MarketType, typeof Coins> = {
   crypto: Coins,
   stock: LineChart,
-  forex: Wallet
+  forex: Wallet,
 };
 
 interface MarketSidebarProps {
@@ -40,45 +40,44 @@ const MARKET_WATCHLIST: MarketWatchConfig[] = [
     type: "crypto",
     requestSymbol: "BTC",
     displaySymbol: "BTCUSDT",
-    label: "Bitcoin"
+    label: "Bitcoin",
   },
   {
     id: "aapl",
     type: "stock",
     requestSymbol: "AAPL",
     displaySymbol: "AAPL",
-    label: "Apple Inc."
+    label: "Apple Inc.",
   },
   {
     id: "eurusd",
     type: "forex",
     requestSymbol: "EURUSD",
     displaySymbol: "EUR/USD",
-    label: "Euro vs Dólar"
-  }
+    label: "Euro vs Dólar",
+  },
 ];
 
 export function MarketSidebar({ token, user, onLogout }: MarketSidebarProps) {
   const marketGroups = useMemo(
-    () =>
-      [
-        {
-          key: "crypto" as MarketType,
-          label: "Cripto",
-          items: MARKET_WATCHLIST.filter((item) => item.type === "crypto")
-        },
-        {
-          key: "stock" as MarketType,
-          label: "Acciones",
-          items: MARKET_WATCHLIST.filter((item) => item.type === "stock")
-        },
-        {
-          key: "forex" as MarketType,
-          label: "Forex",
-          items: MARKET_WATCHLIST.filter((item) => item.type === "forex")
-        }
-      ],
-    []
+    () => [
+      {
+        key: "crypto" as MarketType,
+        label: "Cripto",
+        items: MARKET_WATCHLIST.filter((item) => item.type === "crypto"),
+      },
+      {
+        key: "stock" as MarketType,
+        label: "Acciones",
+        items: MARKET_WATCHLIST.filter((item) => item.type === "stock"),
+      },
+      {
+        key: "forex" as MarketType,
+        label: "Forex",
+        items: MARKET_WATCHLIST.filter((item) => item.type === "forex"),
+      },
+    ],
+    [],
   );
 
   return (
@@ -86,9 +85,16 @@ export function MarketSidebar({ token, user, onLogout }: MarketSidebarProps) {
       <Card className="surface-card">
         <CardContent className="space-y-4">
           <div className="space-y-3">
-            <h2 className="text-xl font-sans font-semibold tracking-tight text-card-foreground">BullBearBroker</h2>
+            <h2 className="text-xl font-sans font-semibold tracking-tight text-card-foreground">
+              BullBearBroker
+            </h2>
             <p className="text-sm text-muted-foreground">{user.email}</p>
-            <Button variant="outline" size="sm" className="w-full focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2" asChild>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              asChild
+            >
               <Link href="/portfolio" className="flex items-center justify-center gap-2">
                 <Wallet className="h-4 w-4" aria-hidden="true" />
                 <span>Ver portafolio</span>
@@ -137,7 +143,10 @@ function MarketSection({ label, items, token }: MarketSectionProps) {
             <Icon className="h-4 w-4 text-primary" />
             <h3 className="text-sm font-medium text-card-foreground">{label}</h3>
           </div>
-          <Badge variant="outline" className="rounded-full px-3 py-1 text-[10px] font-medium uppercase tracking-wide">
+          <Badge
+            variant="outline"
+            className="rounded-full px-3 py-1 text-[10px] font-medium uppercase tracking-wide"
+          >
             Tiempo real
           </Badge>
         </div>
@@ -162,8 +171,8 @@ function MarketRow({ config, token }: MarketRowProps) {
     () => getMarketQuote(config.type, config.requestSymbol, token),
     {
       refreshInterval: 1000 * 30,
-      revalidateOnFocus: false
-    }
+      revalidateOnFocus: false,
+    },
   );
 
   const dataType = (data?.type as MarketType | undefined) ?? config.type;
@@ -171,7 +180,7 @@ function MarketRow({ config, token }: MarketRowProps) {
   const priceText = data?.price
     ? new Intl.NumberFormat("es-ES", {
         minimumFractionDigits: dataType === "forex" ? 4 : 2,
-        maximumFractionDigits: dataType === "forex" ? 5 : 2
+        maximumFractionDigits: dataType === "forex" ? 5 : 2,
       }).format(data.price)
     : "--";
 
@@ -193,8 +202,18 @@ function MarketRow({ config, token }: MarketRowProps) {
         </div>
       </div>
       <div className="flex items-center justify-between text-xs text-muted-foreground">
-        {error ? <span>Error</span> : isLoading ? <span>Actualizando...</span> : <span>{data?.source ?? ""}</span>}
-        <Sparkline change={change ?? 0} positive={change !== null ? change >= 0 : undefined} loading={isLoading} />
+        {error ? (
+          <span>Error</span>
+        ) : isLoading ? (
+          <span>Actualizando...</span>
+        ) : (
+          <span>{data?.source ?? ""}</span>
+        )}
+        <Sparkline
+          change={change ?? 0}
+          positive={change !== null ? change >= 0 : undefined}
+          loading={isLoading}
+        />
       </div>
     </div>
   );
@@ -220,8 +239,8 @@ function Sparkline({ change, positive, loading }: SparklineProps) {
     positive === undefined
       ? "hsl(var(--muted-foreground))"
       : positive
-      ? "hsl(var(--success))"
-      : "hsl(var(--destructive))";
+        ? "hsl(var(--success))"
+        : "hsl(var(--destructive))";
 
   return (
     <svg viewBox="0 0 100 32" className="h-6 w-16">

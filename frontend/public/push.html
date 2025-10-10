@@ -4,7 +4,18 @@
     <meta charset="utf-8" />
     <title>BullBear Push Test</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>body{font-family:system-ui,Arial,sans-serif;max-width:720px;margin:40px auto;padding:0 16px} button{padding:10px 14px;margin:6px 0}</style>
+    <style>
+      body {
+        font-family: system-ui, Arial, sans-serif;
+        max-width: 720px;
+        margin: 40px auto;
+        padding: 0 16px;
+      }
+      button {
+        padding: 10px 14px;
+        margin: 6px 0;
+      }
+    </style>
   </head>
   <body>
     <h1>Test de Push Web</h1>
@@ -13,15 +24,20 @@
     <button id="btn-test" disabled>2) Enviar push de prueba</button>
 
     <script type="module">
-      const BACKEND = 'http://127.0.0.1:8000';
-      const VAPID = (await (await fetch('/env.json').catch(()=>({ok:false}))).json().catch(()=>({})))?.VITE_VAPID_PUBLIC_KEY
-                   || (typeof import.meta!=='undefined' && import.meta.env?.VITE_VAPID_PUBLIC_KEY) || '';
-      const TOKEN = (localStorage.getItem('BULLBEAR_TOKEN') || prompt('Pega tu Bearer token')).trim();
-      localStorage.setItem('BULLBEAR_TOKEN', TOKEN);
+      const BACKEND = "http://127.0.0.1:8000";
+      const VAPID =
+        (await (await fetch("/env.json").catch(() => ({ ok: false }))).json().catch(() => ({})))
+          ?.VITE_VAPID_PUBLIC_KEY ||
+        (typeof import.meta !== "undefined" && import.meta.env?.VITE_VAPID_PUBLIC_KEY) ||
+        "";
+      const TOKEN = (
+        localStorage.getItem("BULLBEAR_TOKEN") || prompt("Pega tu Bearer token")
+      ).trim();
+      localStorage.setItem("BULLBEAR_TOKEN", TOKEN);
 
       function urlBase64ToUint8Array(base64String) {
-        const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
-        const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+        const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+        const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
         const raw = atob(base64);
         const output = new Uint8Array(raw.length);
         for (let i = 0; i < raw.length; ++i) output[i] = raw.charCodeAt(i);
@@ -29,17 +45,17 @@
       }
 
       async function ensureSW() {
-        if (!('serviceWorker' in navigator)) throw new Error('Service Worker no soportado');
-        const reg = await navigator.serviceWorker.register('/sw.js');
+        if (!("serviceWorker" in navigator)) throw new Error("Service Worker no soportado");
+        const reg = await navigator.serviceWorker.register("/sw.js");
         return reg;
       }
 
-      document.getElementById('btn-subscribe').addEventListener('click', async () => {
-        const p = document.getElementById('status');
+      document.getElementById("btn-subscribe").addEventListener("click", async () => {
+        const p = document.getElementById("status");
         try {
           // Permisos
           const perm = await Notification.requestPermission();
-          if (perm !== 'granted') throw new Error('Permiso de notificaciones denegado');
+          if (perm !== "granted") throw new Error("Permiso de notificaciones denegado");
 
           // SW + suscripción
           const reg = await ensureSW();
@@ -49,28 +65,28 @@
           });
 
           // Enviar la suscripción al backend
-          p.textContent = 'Suscrito en navegador. Enviando al backend…';
+          p.textContent = "Suscrito en navegador. Enviando al backend…";
           const res = await fetch(`${BACKEND}/api/push/subscribe`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${TOKEN}` },
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN}` },
             body: JSON.stringify(sub),
           });
-          if (!res.ok) throw new Error('Backend /subscribe falló ' + res.status);
-          p.textContent = 'Suscripción guardada ✔️';
-          document.getElementById('btn-test').disabled = false;
+          if (!res.ok) throw new Error("Backend /subscribe falló " + res.status);
+          p.textContent = "Suscripción guardada ✔️";
+          document.getElementById("btn-test").disabled = false;
         } catch (e) {
-          p.textContent = 'Error al suscribir: ' + (e?.message || e);
+          p.textContent = "Error al suscribir: " + (e?.message || e);
         }
       });
 
-      document.getElementById('btn-test').addEventListener('click', async () => {
-        const p = document.getElementById('status');
-        p.textContent = 'Enviando push de prueba…';
+      document.getElementById("btn-test").addEventListener("click", async () => {
+        const p = document.getElementById("status");
+        p.textContent = "Enviando push de prueba…";
         const res = await fetch(`${BACKEND}/api/push/send-test`, {
-          method: 'POST',
+          method: "POST",
           headers: { Authorization: `Bearer ${TOKEN}` },
         });
-        p.textContent = res.ok ? 'Envío aceptado (revisa notificación) ✅' : ('Fallo: ' + res.status);
+        p.textContent = res.ok ? "Envío aceptado (revisa notificación) ✅" : "Fallo: " + res.status;
       });
     </script>
   </body>
