@@ -2,6 +2,9 @@
 
 import asyncio
 
+from backend.schemas.notifications import (  # CODEx: reutilizamos el esquema oficial de eventos
+    NotificationEvent,
+)
 from backend.services.audit_service import AuditService
 from backend.services.notification_dispatcher import (
     NotificationDispatcher,
@@ -18,14 +21,22 @@ async def main() -> None:
         audit_service=AuditService(),
     )
 
-    payload = {
-        "title": "🚀 Notificación de prueba",
-        "body": "Push activo",
-        "type": "test",
-    }
+    event = NotificationEvent(
+        title="🚀 Notificación de prueba",
+        body="Push activo",
+        meta={
+            "source": "cli",
+            "intent": "diagnostic",
+        },  # CODEx: metadatos para auditoría
+    )
+    payload = event.model_dump(
+        mode="json"
+    )  # CODEx: serializamos con Pydantic para reutilizar validaciones
 
-    await dispatcher.broadcast_test(payload)
-    print("✅ Notificación enviada vía WebSocket y Push")
+    await dispatcher.broadcast_event(
+        "test_cli", payload
+    )  # CODEx: difunde evento estructurado en todos los canales
+    print(f"✅ Notificación enviada vía WebSocket y Push (id={event.id})")
 
 
 if __name__ == "__main__":

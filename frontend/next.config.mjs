@@ -1,4 +1,3 @@
-<<<<<<< Updated upstream
 let bundleAnalyzerModule;
 
 try {
@@ -10,14 +9,11 @@ try {
       error
     );
   }
-  bundleAnalyzerModule = await import("./config/simple-bundle-analyzer.mjs");
+  bundleAnalyzerModule = await import("./config/simple-bundle-analyzer.mjs"); // CODEx: fallback local cuando el paquete no está instalado
 }
 
 const bundleAnalyzer =
   bundleAnalyzerModule?.default ?? bundleAnalyzerModule ?? ((options = {}) => () => options);
-=======
-import bundleAnalyzer from "@next/bundle-analyzer";
->>>>>>> Stashed changes
 
 const withBundleAnalyzer = bundleAnalyzer({
   enabled: process.env.ANALYZE === "true",
@@ -39,17 +35,11 @@ const remoteImagePatterns = [
   },
 ];
 
-<<<<<<< Updated upstream
-export default withBundleAnalyzer({
+const nextConfig = {
   reactStrictMode: true,
   experimental: {
     optimizeCss: true,
-  },
-  // ✅ Mantener Babel activo, pero asegurarse de ignorar next/font cuando ANALYZE=true
-=======
-const nextConfig = {
-  reactStrictMode: true,
->>>>>>> Stashed changes
+  }, // CODEx: mantenemos optimización de CSS solicitada en la rama previa
   compress: true,
   poweredByHeader: false,
   eslint: {
@@ -70,10 +60,6 @@ const nextConfig = {
     // 🧩 Bloque 8A
     NEXT_PUBLIC_VAPID_KEY: process.env.NEXT_PUBLIC_VAPID_KEY,
   },
-<<<<<<< Updated upstream
-});
-=======
 };
 
 export default withBundleAnalyzer(nextConfig);
->>>>>>> Stashed changes

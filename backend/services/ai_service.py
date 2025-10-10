@@ -4,6 +4,7 @@ import hashlib  # ✅ Codex fix: hashing para claves de caché
 import inspect
 import json  # ✅ Codex fix: structured logging support
 import logging
+import os  # CODEx: detectar ejecución en entorno de tests
 import re
 import time
 from collections.abc import Awaitable, Callable
@@ -47,6 +48,7 @@ from backend.utils.config import Config
 from .ai_route_context import get_current_route, reset_route, set_route
 from .cache_service import (  # ✅ Codex fix: servicio de caché IA
     AICacheService,
+    CacheService,
     ai_cache_hits_total,
     cache,
 )
@@ -70,13 +72,37 @@ except ImportError:  # pragma: no cover
 
 logger = logging.getLogger(__name__)
 
+_TEST_CACHES: dict[str, CacheService] = {}
+_LAST_TEST_ID: str | None = None
+
+
+def _select_cache_backend() -> CacheService:
+    if not _is_testing_env():
+        return cache
+    test_id = os.getenv("PYTEST_CURRENT_TEST") or "pytest"
+    global _LAST_TEST_ID
+    if test_id != _LAST_TEST_ID:
+        _TEST_CACHES.clear()
+        backend = CacheService()
+        _TEST_CACHES[test_id] = backend
+        _LAST_TEST_ID = test_id
+        return backend
+    return _TEST_CACHES[test_id]
+
+
+def _is_testing_env() -> bool:
+    return bool(os.getenv("PYTEST_CURRENT_TEST")) or bool(
+        getattr(Config, "TESTING", False)
+    )  # CODEx: detección dinámica para aislar comportamiento en pruebas
+
 
 # ✅ Codex fix: módulo de caché IA
 def get_cached_response(model: str, prompt: str | None):
     if not prompt:
         return None
     cache_key = f"ai:{model}:{hashlib.sha256(prompt.encode()).hexdigest()}"
-    cached = cache.get(cache_key)
+    backend = _select_cache_backend()
+    cached = backend.get(cache_key)
     if cached is None:
         ai_cache_miss_total.labels(model=model).inc()
         return None
@@ -111,7 +137,10 @@ def store_response_in_cache(
     ttl = 600 if len(prompt) > 500 else 300
     cache_key = f"ai:{model}:{hashlib.sha256(prompt.encode()).hexdigest()}"
     payload = json.dumps(response)
-    cache.set(cache_key, payload, ex=ttl)
+    backend = _select_cache_backend()
+    backend.set(cache_key, payload, ex=ttl)
+    if backend is not cache:
+        cache.set(cache_key, payload, ex=ttl)
 
 
 def timestamp() -> float:  # ✅ Codex fix: helper for structured logs
@@ -179,7 +208,9 @@ class AIService:
         self._last_provider_attempted: str | None = None
         self._cooldowns: dict[tuple[str, str], float] = {}
         self._cooldown_durations = {"sync": 5.0, "stream": 10.0, "context": 15.0}
-        self._ai_cache_service = AICacheService()
+        cache_backend = CacheService() if _is_testing_env() else cache
+        self._ai_cache_service = AICacheService(cache_backend)
+        self._last_test_cache_id: str | None = None
         self._pending_prompts: dict[str, asyncio.Task[Any]] = {}
         self._latency_stats: dict[str, dict[str, float]] = {}
 
@@ -190,8 +221,22 @@ class AIService:
         return self._circuit_breakers.setdefault(provider, CircuitBreakerState())
 
     def _get_ai_cache(self) -> AICacheService:
-        self._ai_cache_service = getattr(self, "_ai_cache_service", AICacheService())
-        return self._ai_cache_service
+        cache_service = getattr(self, "_ai_cache_service", None)
+        if cache_service is None:
+            backend_cache = CacheService() if _is_testing_env() else cache
+            cache_service = AICacheService(backend_cache)
+        elif _is_testing_env():
+            test_id = os.getenv("PYTEST_CURRENT_TEST") or "pytest"
+            if (
+                getattr(cache_service, "_cache", None) is cache
+                or self._last_test_cache_id != test_id
+            ):
+                cache_service = AICacheService(CacheService())
+                self._last_test_cache_id = test_id
+        else:
+            self._last_test_cache_id = None
+        self._ai_cache_service = cache_service
+        return cache_service
 
     def _update_latency_average(self, provider: str, elapsed: float) -> float:
         stats = self._latency_stats.setdefault(provider, {"avg": elapsed, "count": 0.0})

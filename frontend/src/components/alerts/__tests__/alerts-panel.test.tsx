@@ -1,6 +1,6 @@
 import { act, customRender, screen, waitFor } from "@/tests/utils/renderWithProviders";
 import userEvent from "@testing-library/user-event";
-import useSWR from "swr";
+import useSWR, { type SWRResponse } from "swr";
 
 import {
   createAlert,
@@ -58,6 +58,18 @@ const mockedSuggestAlertCondition =
 const mockedDeleteAlert = deleteAlert as jest.MockedFunction<typeof deleteAlert>;
 const mockedListAlerts = listAlerts as jest.MockedFunction<typeof listAlerts>;
 
+const createSWRMock = (
+  overrides: Partial<SWRResponse<unknown>> = {}
+): SWRResponse<unknown> =>
+  ({
+    data: undefined,
+    error: undefined,
+    mutate: jest.fn().mockResolvedValue(undefined),
+    isLoading: false,
+    isValidating: false,
+    ...overrides,
+  } as SWRResponse<unknown>); // CODEx: helper para incluir campos obligatorios de SWR
+
 describe("AlertsPanel", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -68,12 +80,7 @@ describe("AlertsPanel", () => {
       reconnect: jest.fn(),
       disconnect: jest.fn(),
     }));
-    mockedUseSWR.mockReturnValue({
-      data: [],
-      error: undefined,
-      mutate: jest.fn().mockResolvedValue(undefined),
-      isLoading: false,
-    });
+    mockedUseSWR.mockReturnValue(createSWRMock({ data: [] }));
   });
 
   afterEach(() => {
@@ -90,12 +97,7 @@ describe("AlertsPanel", () => {
   it("creates an alert with the expected payload", async () => {
     const user = userEvent.setup();
     const mutate = jest.fn().mockResolvedValue(undefined);
-    mockedUseSWR.mockReturnValue({
-      data: [],
-      error: undefined,
-      mutate,
-      isLoading: false,
-    });
+    mockedUseSWR.mockReturnValue(createSWRMock({ data: [], mutate }));
 
     mockedCreateAlert.mockResolvedValue({
       id: "1",
@@ -170,21 +172,21 @@ describe("AlertsPanel", () => {
   it("toggles an alert to inactive", async () => {
     const user = userEvent.setup();
     const mutate = jest.fn().mockResolvedValue(undefined);
-    mockedUseSWR.mockReturnValue({
-      data: [
-        {
-          id: "alert-1",
-          title: "Cruz dorada",
-          asset: "BTCUSDT",
-          condition: "Cruce EMA 50/200",
-          value: 50000,
-          active: true,
-        },
-      ],
-      error: undefined,
-      mutate,
-      isLoading: false,
-    });
+    mockedUseSWR.mockReturnValue(
+      createSWRMock({
+        data: [
+          {
+            id: "alert-1",
+            title: "Cruz dorada",
+            asset: "BTCUSDT",
+            condition: "Cruce EMA 50/200",
+            value: 50000,
+            active: true,
+          },
+        ],
+        mutate,
+      })
+    );
 
     mockedUpdateAlert.mockResolvedValue({
       id: "alert-1",
@@ -267,12 +269,7 @@ describe("AlertsPanel", () => {
   });
 
   it("muestra el estado de carga cuando SWR está cargando", () => {
-    mockedUseSWR.mockReturnValue({
-      data: undefined,
-      error: undefined,
-      mutate: jest.fn().mockResolvedValue(undefined),
-      isLoading: true,
-    });
+    mockedUseSWR.mockReturnValue(createSWRMock({ isLoading: true }));
 
     customRender(<AlertsPanel token="token" />);
 
@@ -280,12 +277,11 @@ describe("AlertsPanel", () => {
   });
 
   it("muestra un mensaje de error cuando la carga falla", () => {
-    mockedUseSWR.mockReturnValue({
-      data: undefined,
-      error: new Error("Fallo en SWR"),
-      mutate: jest.fn().mockResolvedValue(undefined),
-      isLoading: false,
-    });
+    mockedUseSWR.mockReturnValue(
+      createSWRMock({
+        error: new Error("Fallo en SWR"),
+      })
+    );
 
     customRender(<AlertsPanel token="token" />);
 
@@ -293,12 +289,7 @@ describe("AlertsPanel", () => {
   });
 
   it("indica cuando no hay alertas disponibles", () => {
-    mockedUseSWR.mockReturnValue({
-      data: [],
-      error: undefined,
-      mutate: jest.fn().mockResolvedValue(undefined),
-      isLoading: false,
-    });
+    mockedUseSWR.mockReturnValue(createSWRMock({ data: [] }));
 
     customRender(<AlertsPanel token="token" />);
 
@@ -308,29 +299,28 @@ describe("AlertsPanel", () => {
   });
 
   it("renderiza la lista con múltiples alertas", () => {
-    mockedUseSWR.mockReturnValue({
-      data: [
-        {
-          id: "a-1",
-          title: "Alerta 1",
-          asset: "BTCUSDT",
-          condition: "Precio > 50k",
-          value: 50000,
-          active: true,
-        },
-        {
-          id: "a-2",
-          title: "Alerta 2",
-          asset: "ETHUSDT",
-          condition: "Precio < 2k",
-          value: 2000,
-          active: false,
-        },
-      ],
-      error: undefined,
-      mutate: jest.fn().mockResolvedValue(undefined),
-      isLoading: false,
-    });
+    mockedUseSWR.mockReturnValue(
+      createSWRMock({
+        data: [
+          {
+            id: "a-1",
+            title: "Alerta 1",
+            asset: "BTCUSDT",
+            condition: "Precio > 50k",
+            value: 50000,
+            active: true,
+          },
+          {
+            id: "a-2",
+            title: "Alerta 2",
+            asset: "ETHUSDT",
+            condition: "Precio < 2k",
+            value: 2000,
+            active: false,
+          },
+        ],
+      })
+    );
 
     customRender(<AlertsPanel token="token" />);
 
@@ -343,21 +333,21 @@ describe("AlertsPanel", () => {
   it("elimina una alerta y refresca la lista", async () => {
     const user = userEvent.setup();
     const mutate = jest.fn().mockResolvedValue(undefined);
-    mockedUseSWR.mockReturnValue({
-      data: [
-        {
-          id: "alert-1",
-          title: "Alerta 1",
-          asset: "BTCUSDT",
-          condition: "Precio > 50k",
-          value: 50000,
-          active: true,
-        },
-      ],
-      error: undefined,
-      mutate,
-      isLoading: false,
-    });
+    mockedUseSWR.mockReturnValue(
+      createSWRMock({
+        data: [
+          {
+            id: "alert-1",
+            title: "Alerta 1",
+            asset: "BTCUSDT",
+            condition: "Precio > 50k",
+            value: 50000,
+            active: true,
+          },
+        ],
+        mutate,
+      })
+    );
     mockedDeleteAlert.mockResolvedValueOnce(undefined as never);
 
     customRender(<AlertsPanel token="token" />);
@@ -716,21 +706,21 @@ describe("AlertsPanel", () => {
   it("muestra un error si la API falla al actualizar", async () => {
     const user = userEvent.setup();
     const mutate = jest.fn().mockResolvedValue(undefined);
-    mockedUseSWR.mockReturnValue({
-      data: [
-        {
-          id: "alert-1",
-          title: "Alerta",
-          asset: "BTCUSDT",
-          condition: "Precio > 50k",
-          value: 50000,
-          active: true,
-        },
-      ],
-      error: undefined,
-      mutate,
-      isLoading: false,
-    });
+    mockedUseSWR.mockReturnValue(
+      createSWRMock({
+        data: [
+          {
+            id: "alert-1",
+            title: "Alerta",
+            asset: "BTCUSDT",
+            condition: "Precio > 50k",
+            value: 50000,
+            active: true,
+          },
+        ],
+        mutate,
+      })
+    );
     mockedUpdateAlert.mockRejectedValueOnce(new Error("No se pudo pausar"));
     const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
 

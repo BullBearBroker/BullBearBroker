@@ -164,7 +164,6 @@ if (typeof window !== "undefined" && window.HTMLElement) {
 }
 
 if (typeof window !== "undefined" && !window.matchMedia) {
-  // @ts-expect-error - polyfill para entorno de pruebas
   window.matchMedia = jest.fn().mockImplementation((query: string) => ({
     matches: false,
     media: query,

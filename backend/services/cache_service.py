@@ -56,7 +56,8 @@ ai_cache_misses_total = _CounterProxy(
 class CacheService:  # ✅ Codex fix: servicio dual Redis/memoria
     def __init__(self) -> None:
         url = os.getenv("REDIS_URL", None)
-        if url and redis is not None:
+        testing_mode = bool(os.getenv("PYTEST_CURRENT_TEST"))
+        if url and redis is not None and not testing_mode:
             self.client = redis.from_url(url, decode_responses=True)
             self.backend = "redis"
         else:

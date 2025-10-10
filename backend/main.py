@@ -37,6 +37,7 @@ from backend.routers import (  # ✅ Codex fix: registrar gateway WebSocket real
     metrics,
     news,
     notifications,
+    notifications_ws,
     portfolio,
     push,
     realtime,
@@ -47,10 +48,9 @@ from backend.services.notification_dispatcher import notification_dispatcher
 from backend.services.websocket_manager import AlertWebSocketManager
 from backend.utils.config import APP_ENV, Config
 
-# Routers de la app
-# ✅ Codex fix: Import Prometheus metrics router
-# nuevo router de salud
-from backend.routers import notifications_ws  # 🧩 Bloque 9A  # isort: skip
+ENV = getattr(
+    Config, "ENV", APP_ENV
+)  # CODEx: exponer alias legado requerido por la suite de tests
 
 try:  # pragma: no cover - user service puede no estar disponible en algunos tests
     from backend.services.user_service import InvalidTokenError, user_service
@@ -109,7 +109,10 @@ async def lifespan(app: FastAPI):
 
         database_engine = getattr(database_module, "engine", None)
         database_ready = True
-        if APP_ENV == "local":
+        active_env = (
+            ENV or APP_ENV or "local"
+        ).lower()  # CODEx: unificar prioridad entre ENV y APP_ENV
+        if active_env == "local":
             try:
                 if database_engine is None:
                     raise RuntimeError("database engine is not configured")
@@ -127,7 +130,7 @@ async def lifespan(app: FastAPI):
                     error=database_setup_error_message,
                 )
         else:
-            logger.info("database_migrations_required", env=APP_ENV)
+            logger.info("database_migrations_required", env=active_env)
 
         if database_ready:
             default_email = os.environ.get("BULLBEAR_DEFAULT_USER", "test@bullbear.ai")

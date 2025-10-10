@@ -60,12 +60,12 @@ _SUPPORTED_ENVIRONMENTS = {"local", "staging", "production"}
 _ENVIRONMENT_DEFAULTS = {
     # 🧩 Codex fix: valores por defecto seguros por entorno
     "local": {
-        "DATABASE_URL": "sqlite+aiosqlite:///./app.db",
+        "DATABASE_URL": "sqlite+aiosqlite:///./app.db",  # pragma: allowlist secret
         "SUPABASE_URL": "http://localhost:54321",
         "SUPABASE_KEY": "local_supabase_key",
     },
     "staging": {
-        "DATABASE_URL": "postgresql+asyncpg://user:pass@host:5432/bullbearbroker",
+        "DATABASE_URL": "postgresql+asyncpg://user:pass@host:5432/bullbearbroker",  # pragma: allowlist secret
         "SUPABASE_URL": "https://staging.supabase.co",
         "SUPABASE_KEY": "staging_supabase_key",
     },

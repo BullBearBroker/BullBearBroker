@@ -45,8 +45,12 @@ class PushService:
         override_private: str | None = None,
         override_public: str | None = None,
     ) -> tuple[str | None, str | None]:
-        vapid_private = override_private or settings.VAPID_PRIVATE_KEY or self._vapid_private_key
-        vapid_public = override_public or settings.VAPID_PUBLIC_KEY or self._vapid_public_key
+        vapid_private = (
+            override_private or settings.VAPID_PRIVATE_KEY or self._vapid_private_key
+        )
+        vapid_public = (
+            override_public or settings.VAPID_PUBLIC_KEY or self._vapid_public_key
+        )
         return vapid_private, vapid_public
 
     def has_vapid_keys(self) -> bool:
@@ -138,22 +142,51 @@ class PushService:
 
         return delivered
 
-    def broadcast(self, payload: dict[str, Any]) -> None:
-        """Send ``payload`` to every registered subscription."""
+    def broadcast(
+        self,
+        payload_or_subscriptions: dict[str, Any] | Iterable[PushSubscription],
+        maybe_payload: dict[str, Any] | None = None,
+        *,
+        category: str | None = None,
+    ) -> int:
+        """
+        Send ``payload`` to subscriptions, optionally providing a pre-filtered iterable.
+
+        - ``broadcast(payload)`` preserves el comportamiento previo.
+        - ``broadcast(subscriptions, payload, category=...)`` permite a servicios como
+          alerts_service reutilizar la misma ruta manteniendo compatibilidad con los tests.
+        """
+
+        if isinstance(payload_or_subscriptions, dict):
+            payload = payload_or_subscriptions
+            subscriptions: Iterable[PushSubscription] | None = None
+        else:
+            subscriptions = list(payload_or_subscriptions)
+            payload = maybe_payload or {}
 
         vapid_private = settings.VAPID_PRIVATE_KEY or self._vapid_private_key
         vapid_public = settings.VAPID_PUBLIC_KEY or self._vapid_public_key
         if not vapid_public or not vapid_private:
             self.logger.warning("VAPID keys missing — skipping push")
-            return
+            return 0
 
-        subscriptions = self.get_all_subscriptions()
-        category = payload.get("category") if isinstance(payload, dict) else None
-        self.broadcast_to_subscriptions(
-            subscriptions,
-            payload,
-            category=category,
+        target_subscriptions = (
+            list(subscriptions)
+            if subscriptions is not None
+            else self.get_all_subscriptions()
         )
+        if not target_subscriptions:
+            return 0
+
+        effective_category = category
+        if effective_category is None and isinstance(payload, dict):
+            effective_category = payload.get("category")
+
+        return self.broadcast_to_subscriptions(
+            target_subscriptions,
+            payload,
+            category=effective_category,
+        )  # CODEx: reutilizamos la lógica central respetando filtros por categoría
 
 
 push_service = PushService()

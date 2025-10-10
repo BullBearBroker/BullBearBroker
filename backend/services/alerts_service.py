@@ -504,11 +504,11 @@ class AlertsService:
             "name": alert.name,
             "condition": alert.condition,
         }
-        delivered = push_service.broadcast_to_subscriptions(
+        delivered = push_service.broadcast(
             subscriptions,
             payload,
             category="alerts",
-        )
+        )  # CODEx: usar nueva firma de broadcast compatible con tests
         alert.pending_delivery = delivered > 0
         return delivered
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect  # CODEx: detectar comportamiento síncrono/asíncrono en canales push
 import json
 from asyncio import Lock  # 🧩 Bloque 9A
 from typing import Any  # 🧩 Bloque 9A
@@ -48,7 +49,9 @@ class NotificationDispatcher:
     ) -> None:
         self.realtime = realtime_service
         self.push = push_service_channel
-        self.push_service = getattr(push_service_channel, "_service", push_service_channel)
+        self.push_service = getattr(
+            push_service_channel, "_service", push_service_channel
+        )
         self.audit = audit_service
         self._logger = get_logger(service="notification_dispatcher")
 
@@ -93,8 +96,32 @@ class NotificationDispatcher:
             )
         else:
             try:
-                await asyncio.to_thread(self.push_service.broadcast, push_payload)
-                push_status = "sent"
+                push_callable = None
+                if callable(getattr(self.push, "broadcast", None)):
+                    push_callable = self.push.broadcast
+                elif callable(getattr(self.push_service, "broadcast", None)):
+                    push_callable = self.push_service.broadcast
+
+                if push_callable is None:
+                    self._logger.info(
+                        {
+                            "service": "notification_dispatcher",
+                            "event": "push_skipped_missing_callable",
+                            "type": event_type,
+                        }
+                    )
+                elif inspect.iscoroutinefunction(
+                    push_callable
+                ) or asyncio.iscoroutinefunction(push_callable):
+                    await push_callable(
+                        push_payload
+                    )  # CODEx: compatibilidad con canales asíncronos usados en tests
+                    push_status = "sent"
+                else:
+                    await asyncio.to_thread(
+                        push_callable, push_payload
+                    )  # CODEx: mantener envío síncrono sin bloquear el loop
+                    push_status = "sent"
             except Exception as exc:  # pragma: no cover - defensive logging
                 self._logger.warning(
                     {

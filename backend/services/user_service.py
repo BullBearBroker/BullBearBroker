@@ -409,6 +409,10 @@ class UserService:
             # No bloquear guardado si no pudimos decodificar por alguna razón
             expires_dt = None
 
+        expires_dt = (
+            _as_aware_utc(expires_dt) if expires_dt is not None else None
+        )  # CODEx: normalizamos expiraciones a UTC consciente antes de persistir
+
         with SessionLocal() as db:
             data = {
                 "id": uuid4(),

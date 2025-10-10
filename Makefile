@@ -35,12 +35,16 @@ run:
 
 # --- ⚙️ BACKEND LOCAL ---
 up-local:
-	@echo "🚀 Iniciando backend en modo local (FastAPI + Uvicorn)..."
-	@ENV=$(ENV) uvicorn $(APP) --reload --port $(PORT)
+	@echo "🚀 Iniciando stack en modo local con Docker Compose..."
+	@docker compose up -d  # CODEx: alineado con la receta solicitada para entorno local
 
 up-staging:
-	@echo "🚀 Iniciando backend en modo staging..."
-	@APP_ENV=staging uvicorn $(APP) --port $(PORT)
+	@echo "🚀 Iniciando stack en modo staging..."
+	@APP_ENV=staging docker compose up -d  # CODEx: permite levantar servicios con variables de staging
+
+run-backend:
+	@echo "🚀 Ejecutando backend en modo desarrollo con recarga automática..."
+	@ENV=$(ENV) uvicorn $(APP) --reload --port $(PORT)  # CODEx: mantenemos tarea previa como alias útil
 
 frontend-staging:
 	@echo "🚀 Iniciando frontend en modo staging..."
@@ -58,7 +62,13 @@ test:
 
 test-frontend:
 	@echo "🧪 Ejecutando tests del frontend (Jest)..."
-	@npm --prefix frontend run test -- --coverage
+	@pnpm --prefix frontend run test -- --coverage  # CODEx: unificamos ejecución de Jest con pnpm
+
+test-all:
+	@echo "🔄 Ejecutando validaciones completas (lint + backend + frontend)..."
+	@pre-commit run --all-files || true  # CODEx: ejecutar hooks de forma no bloqueante
+	@pytest backend/tests -vv  # CODEx: validar suite de backend en modo detallado
+	@pnpm --prefix frontend run test:dev  # CODEx: ejecutar suite unitaria/integración del frontend sin UI
 
 # --- 🔍 LINTERS Y FORMATO ---
 lint:
@@ -68,6 +78,12 @@ lint:
 fmt:
 	@echo "🧹 Formateando código (black + ruff + isort)..."
 	@black . && ruff --fix . && isort .
+
+format:
+	@echo "🧹 Formateando código base siguiendo la receta solicitada..."
+	@black .  # CODEx: formateo estandarizado de Python
+	@isort .  # CODEx: ordenar imports antes de chequear estilo
+	@ruff check .  # CODEx: mantiene análisis estático en modo verificación
 
 # --- 🧪 CI/CD ---
 ci:

@@ -36,44 +36,6 @@ const apiPreconnectOrigin = (() => {
   }
 })();
 
-const fallbackAppUrl = "https://bullbearbroker.app";
-const metadataBase = (() => {
-  try {
-    const configuredUrl = process.env.NEXT_PUBLIC_APP_URL ?? fallbackAppUrl;
-    return new URL(configuredUrl);
-  } catch (error) {
-    if (process.env.NODE_ENV !== "production") {
-      console.error("Invalid NEXT_PUBLIC_APP_URL provided", error);
-    }
-    return new URL(fallbackAppUrl);
-  }
-})();
-
-let inter: { className: string };
-
-if (process.env.ANALYZE === "true") {
-  inter = { className: "" };
-} else {
-  const { Inter } = require("next/font/google") as typeof import("next/font/google");
-  inter = Inter({
-    subsets: ["latin"],
-    display: "swap",
-  });
-}
-
-const apiPreconnectOrigin = (() => {
-  const apiUrl = process.env.NEXT_PUBLIC_API_URL;
-  if (!apiUrl) return null;
-  try {
-    return new URL(apiUrl).origin;
-  } catch (error) {
-    if (process.env.NODE_ENV !== "production") {
-      console.warn("Invalid NEXT_PUBLIC_API_URL provided for preconnect", error);
-    }
-    return null;
-  }
-})();
-
 export const metadata: Metadata = {
   metadataBase,
   title: {

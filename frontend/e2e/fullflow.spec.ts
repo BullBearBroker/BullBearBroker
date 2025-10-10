@@ -1,15 +1,6 @@
 import { test, expect } from "@playwright/test";
 
 test("flujo completo: login → dashboard → notificaciones → logout", async ({ page }) => {
-<<<<<<< Updated upstream
-  await page.goto("/");
-  await page.getByPlaceholder("Email").fill("test@bullbear.ai");
-  await page.getByPlaceholder("Contraseña").fill("123456");
-  await page.getByRole("button", { name: "Iniciar sesión" }).click();
-  await expect(page).toHaveURL(/dashboard/);
-  await expect(page.getByText("Notificaciones en vivo")).toBeVisible();
-  await page.getByRole("button", { name: "Cerrar sesión" }).click();
-=======
   await page.route("**/api/**", async (route) => {
     const request = route.request();
     const { pathname } = new URL(request.url());
@@ -51,12 +42,11 @@ test("flujo completo: login → dashboard → notificaciones → logout", async 
   });
 
   await page.goto("/");
-  await page.getByPlaceholder("Correo electrónico").fill("test@bullbear.ai");
+  await page.getByPlaceholder("Correo electrónico").fill("test@bullbear.ai"); // CODEx: sincronizamos placeholder con i18n actual
   await page.getByPlaceholder("Contraseña").fill("123456");
   await page.getByRole("button", { name: "Iniciar sesión" }).click();
   await expect(page).toHaveURL(/(dashboard|\/)$/);
   await expect(page.getByText("Notificaciones en vivo")).toBeVisible();
   await page.getByRole("button", { name: "Cerrar sesión" }).first().click();
->>>>>>> Stashed changes
   await expect(page).toHaveURL("/");
 });
