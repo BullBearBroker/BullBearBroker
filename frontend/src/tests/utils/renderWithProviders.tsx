@@ -25,11 +25,11 @@ function withSafeProvider(Component: ProviderComponent | undefined): ProviderCom
 }
 
 const ResolvedThemeProvider = withSafeProvider(
-  ThemeProvider as unknown as ProviderComponent | undefined
+  ThemeProvider as unknown as ProviderComponent | undefined,
 );
 
 const ResolvedAuthProvider = withSafeProvider(
-  AuthProvider as unknown as ProviderComponent | undefined
+  AuthProvider as unknown as ProviderComponent | undefined,
 );
 
 interface WrapperProps {
@@ -47,11 +47,7 @@ function Providers({ children, swrConfig }: WrapperProps) {
 
   return (
     <SWRConfig value={value}>
-      <ResolvedThemeProvider
-        attribute="class"
-        defaultTheme="system"
-        enableSystem
-      >
+      <ResolvedThemeProvider attribute="class" defaultTheme="system" enableSystem>
         <ResolvedAuthProvider>{children}</ResolvedAuthProvider>
       </ResolvedThemeProvider>
     </SWRConfig>
@@ -66,7 +62,7 @@ type CustomRenderOptions = Omit<RenderOptions, "wrapper"> & {
 
 export function customRender(
   ui: ReactElement,
-  { providerProps, ...renderOptions }: CustomRenderOptions = {}
+  { providerProps, ...renderOptions }: CustomRenderOptions = {},
 ) {
   const Wrapper = ({ children }: { children: ReactNode }) => (
     <Providers swrConfig={providerProps?.swrConfig}>{children}</Providers>

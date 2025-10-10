@@ -12,7 +12,11 @@
 
 .font-inter-fallback {
   --font-inter: "InterFallback", system-ui, -apple-system, sans-serif;
-  font-family: "InterFallback", system-ui, -apple-system, sans-serif;
+  font-family:
+    "InterFallback",
+    system-ui,
+    -apple-system,
+    sans-serif;
 }
 
 :root {

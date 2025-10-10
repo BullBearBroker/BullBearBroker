@@ -1,5 +1,4 @@
-const envApiUrl =
-  process.env.NEXT_PUBLIC_API_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL;
+const envApiUrl = process.env.NEXT_PUBLIC_API_URL ?? process.env.NEXT_PUBLIC_API_BASE_URL;
 
 if (!envApiUrl) {
   throw new Error("NEXT_PUBLIC_API_URL is not defined");
@@ -165,7 +164,7 @@ export class HttpError extends Error {
       detail?: unknown;
       retryAfter?: number;
       cause?: unknown;
-    } = {}
+    } = {},
   ) {
     super(message, options.cause ? { cause: options.cause } : undefined);
     this.name = "HttpError";
@@ -178,7 +177,7 @@ export class HttpError extends Error {
 export async function request<T>(
   path: string,
   init: RequestInit = {},
-  withAuthToken?: string | null
+  withAuthToken?: string | null,
 ): Promise<T> {
   const headers = new Headers(init.headers);
   if (!headers.has("Content-Type") && init.body) {
@@ -251,8 +250,7 @@ async function readErrorResponse(response: Response): Promise<{
         if (parsed && typeof parsed === "object") {
           const detail = (parsed as { detail?: unknown; message?: unknown }).detail;
           const message = (() => {
-            const candidate = (parsed as { detail?: unknown; message?: unknown })
-              .message;
+            const candidate = (parsed as { detail?: unknown; message?: unknown }).message;
             if (typeof candidate === "string") return candidate;
             if (typeof detail === "string") return detail;
             return undefined;
@@ -271,19 +269,21 @@ async function readErrorResponse(response: Response): Promise<{
   }
 }
 
+async function safeReadError(response: Response): Promise<string | undefined> {
+  const { message } = await readErrorResponse(response);
+  return message;
+}
+
 /* ===========
    AUTH
    =========== */
 
 export function login(payload: LoginPayload, options: { signal?: AbortSignal } = {}) {
-  return request<AuthResponse>(
-    "/api/auth/login",
-    {
-      method: "POST",
-      body: JSON.stringify(payload),
-      signal: options.signal,
-    }
-  );
+  return request<AuthResponse>("/api/auth/login", {
+    method: "POST",
+    body: JSON.stringify(payload),
+    signal: options.signal,
+  });
 }
 
 export function register(payload: RegisterPayload) {
@@ -309,7 +309,7 @@ export interface HistoricalQuery {
 export function getHistoricalData(
   symbol: string,
   params: HistoricalQuery = {},
-  token?: string | null
+  token?: string | null,
 ) {
   const searchParams = new URLSearchParams();
   if (params.interval) {
@@ -323,9 +323,7 @@ export function getHistoricalData(
   }
 
   const query = searchParams.toString();
-  const path = `/api/markets/history/${encodeURIComponent(symbol)}${
-    query ? `?${query}` : ""
-  }`;
+  const path = `/api/markets/history/${encodeURIComponent(symbol)}${query ? `?${query}` : ""}`;
 
   return request<HistoricalDataResponse>(path, {}, token ?? undefined);
 }
@@ -341,7 +339,7 @@ export function getProfile(token: string) {
 export async function getMarketQuote(
   type: "crypto" | "stock" | "forex",
   symbol: string,
-  token?: string
+  token?: string,
 ) {
   const normalizedSymbol = symbol.trim().toUpperCase();
   const encodedSymbol = encodeURIComponent(normalizedSymbol);
@@ -364,7 +362,7 @@ export async function getMarketQuote(
   const payload = await request<{ quotes: MarketQuote[]; missing?: string[] }>(
     path,
     { method: "GET" },
-    token
+    token,
   );
 
   const firstQuote = payload.quotes?.[0];
@@ -383,18 +381,13 @@ export async function sendChatMessage(
   messages: MessagePayload[],
   token?: string,
   onStreamChunk?: (partial: string) => void,
-  options?: { symbol?: string; interval?: "1h" | "4h" | "1d"; sessionId?: string }
+  options?: { symbol?: string; interval?: "1h" | "4h" | "1d"; sessionId?: string },
 ): Promise<ChatResponse> {
   // 🔹 Obtener indicadores si hay símbolo
   let indicators: any = null;
   if (options?.symbol) {
     try {
-      indicators = await getIndicators(
-        "crypto",
-        options.symbol,
-        options.interval || "1h",
-        token
-      );
+      indicators = await getIndicators("crypto", options.symbol, options.interval || "1h", token);
     } catch (err) {
       if (process.env.NODE_ENV !== "production") {
         console.error("No se pudieron obtener indicadores:", err);
@@ -426,7 +419,7 @@ export async function sendChatMessage(
       method: "POST",
       body: JSON.stringify(body),
     },
-    token
+    token,
   );
 
   const assistantMessage: MessagePayload = {
@@ -469,7 +462,7 @@ export function createAlert(
     condition: string;
     value: number;
     active: boolean;
-  }
+  },
 ) {
   return request<Alert>(
     "/api/alerts",
@@ -477,22 +470,18 @@ export function createAlert(
       method: "POST",
       body: JSON.stringify(payload),
     },
-    token
+    token,
   );
 }
 
-export function updateAlert(
-  token: string,
-  id: string | number,
-  payload: Partial<Alert>
-) {
+export function updateAlert(token: string, id: string | number, payload: Partial<Alert>) {
   return request<Alert>(
     `/api/alerts/${id}`,
     {
       method: "PUT",
       body: JSON.stringify(payload),
     },
-    token
+    token,
   );
 }
 
@@ -521,7 +510,7 @@ export interface PushConfigResponse {
 export async function fetchVapidPublicKey(): Promise<string | null> {
   try {
     const { vapidPublicKey } = await request<PushConfigResponse>(
-      "/api/notifications/vapid-public-key"
+      "/api/notifications/vapid-public-key",
     );
     if (typeof vapidPublicKey === "string" && vapidPublicKey.length > 0) {
       return vapidPublicKey;
@@ -535,17 +524,14 @@ export async function fetchVapidPublicKey(): Promise<string | null> {
   }
 }
 
-export function subscribePush(
-  payload: PushSubscriptionPayload,
-  token: string
-) {
+export function subscribePush(payload: PushSubscriptionPayload, token: string) {
   return request<PushSubscriptionResponse>(
     "/api/notifications/subscribe", // ✅ Codex fix: usamos el endpoint final consolidado para las suscripciones push.
     {
       method: "POST",
       body: JSON.stringify(payload),
     },
-    token
+    token,
   );
 }
 
@@ -553,23 +539,16 @@ export function testNotificationDispatcher(token: string) {
   return request<{ sent?: number; status?: string }>(
     "/api/notifications/test",
     { method: "POST" },
-    token
+    token,
   );
 }
 
 export function sendTestPush(token: string) {
-  return request<{ delivered: number }>(
-    "/api/push/send-test",
-    { method: "POST" },
-    token
-  );
+  return request<{ delivered: number }>("/api/push/send-test", { method: "POST" }, token);
 }
 
 export function triggerGlobalTestNotification() {
-  return request<{ delivered: number }>(
-    "/api/notify/test",
-    { method: "POST" }
-  ); // ✅ Codex fix: nuevo endpoint de verificación global solicitado en la tarea.
+  return request<{ delivered: number }>("/api/notify/test", { method: "POST" }); // ✅ Codex fix: nuevo endpoint de verificación global solicitado en la tarea.
 }
 
 export function deleteAlert(token: string, id: string | number) {
@@ -578,7 +557,7 @@ export function deleteAlert(token: string, id: string | number) {
     {
       method: "DELETE",
     },
-    token
+    token,
   );
 }
 
@@ -588,23 +567,21 @@ export function sendAlertNotification(
     message: string;
     telegram_chat_id?: string;
     discord_channel_id?: string;
-  }
+  },
 ) {
-  return request<
-    Record<string, { status: string; target: string; error?: string }>
-  >(
+  return request<Record<string, { status: string; target: string; error?: string }>>(
     "/api/alerts/send",
     {
       method: "POST",
       body: JSON.stringify(payload),
     },
-    token
+    token,
   );
 }
 
 export function suggestAlertCondition(
   token: string,
-  payload: { asset: string; interval?: "1h" | "4h" | "1d" }
+  payload: { asset: string; interval?: "1h" | "4h" | "1d" },
 ) {
   // [Codex] nuevo - endpoint para sugerencias impulsadas por IA
   return request<{ suggestion: string; notes?: string }>(
@@ -613,7 +590,7 @@ export function suggestAlertCondition(
       method: "POST",
       body: JSON.stringify(payload),
     },
-    token
+    token,
   );
 }
 
@@ -625,17 +602,14 @@ export function listPortfolio(token: string) {
   return request<PortfolioSummary>("/api/portfolio", { method: "GET" }, token);
 }
 
-export function createPortfolioItem(
-  token: string,
-  payload: { symbol: string; amount: number }
-) {
+export function createPortfolioItem(token: string, payload: { symbol: string; amount: number }) {
   return request<PortfolioItem>(
     "/api/portfolio",
     {
       method: "POST",
       body: JSON.stringify(payload),
     },
-    token
+    token,
   );
 }
 
@@ -645,7 +619,7 @@ export function deletePortfolioItem(token: string, id: string | number) {
     {
       method: "DELETE",
     },
-    token
+    token,
   );
 }
 
@@ -669,7 +643,7 @@ export async function exportPortfolioCsv(token: string): Promise<string> {
 
 export async function importPortfolioCsv(
   token: string,
-  file: File
+  file: File,
 ): Promise<PortfolioImportResult> {
   const formData = new FormData();
   formData.append("file", file);
@@ -704,7 +678,7 @@ export async function listNews(token?: string) {
   const payload = await request<{ articles: NewsItem[] }>(
     "/api/news/latest",
     { method: "GET" },
-    token
+    token,
   );
 
   return (
@@ -730,7 +704,7 @@ export async function getIndicators(
     includeStochRsi?: boolean;
     includeIchimoku?: boolean;
     includeVwap?: boolean;
-  }
+  },
 ) {
   const query = new URLSearchParams({
     type,

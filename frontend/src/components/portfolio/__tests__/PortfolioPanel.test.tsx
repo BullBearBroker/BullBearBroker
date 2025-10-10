@@ -35,14 +35,18 @@ jest.mock("@/lib/featureFlags", () => ({
 }));
 
 const mockedUseSWR = useSWR as jest.MockedFunction<typeof useSWR>;
-const mockedCreatePortfolioItem =
-  createPortfolioItem as jest.MockedFunction<typeof createPortfolioItem>;
-const mockedDeletePortfolioItem =
-  deletePortfolioItem as jest.MockedFunction<typeof deletePortfolioItem>;
-const mockedExportPortfolioCsv =
-  exportPortfolioCsv as jest.MockedFunction<typeof exportPortfolioCsv>;
-const mockedImportPortfolioCsv =
-  importPortfolioCsv as jest.MockedFunction<typeof importPortfolioCsv>;
+const mockedCreatePortfolioItem = createPortfolioItem as jest.MockedFunction<
+  typeof createPortfolioItem
+>;
+const mockedDeletePortfolioItem = deletePortfolioItem as jest.MockedFunction<
+  typeof deletePortfolioItem
+>;
+const mockedExportPortfolioCsv = exportPortfolioCsv as jest.MockedFunction<
+  typeof exportPortfolioCsv
+>;
+const mockedImportPortfolioCsv = importPortfolioCsv as jest.MockedFunction<
+  typeof importPortfolioCsv
+>;
 const mockedListPortfolio = listPortfolio as jest.MockedFunction<typeof listPortfolio>;
 const mockedGetFeatureFlag = getFeatureFlag as jest.MockedFunction<typeof getFeatureFlag>;
 
@@ -164,7 +168,7 @@ describe("PortfolioPanel", () => {
     await act(async () => {
       await user.type(
         screen.getByPlaceholderText("Activo (ej. BTCUSDT, AAPL, EURUSD)"),
-        " btcusdt "
+        " btcusdt ",
       );
       await user.type(screen.getByPlaceholderText("Cantidad"), "0.5");
       await user.click(screen.getByRole("button", { name: /agregar activo/i }));
@@ -199,10 +203,7 @@ describe("PortfolioPanel", () => {
       customRender(<PortfolioPanel token="secure" />);
 
       await act(async () => {
-        await user.type(
-          screen.getByPlaceholderText("Activo (ej. BTCUSDT, AAPL, EURUSD)"),
-          "AAPL"
-        );
+        await user.type(screen.getByPlaceholderText("Activo (ej. BTCUSDT, AAPL, EURUSD)"), "AAPL");
         await user.type(screen.getByPlaceholderText("Cantidad"), "2");
         await user.click(screen.getByRole("button", { name: /agregar activo/i }));
       });
@@ -218,17 +219,12 @@ describe("PortfolioPanel", () => {
     customRender(<PortfolioPanel token="secure" />);
 
     await act(async () => {
-      await user.type(
-        screen.getByPlaceholderText("Activo (ej. BTCUSDT, AAPL, EURUSD)"),
-        "AAPL"
-      );
+      await user.type(screen.getByPlaceholderText("Activo (ej. BTCUSDT, AAPL, EURUSD)"), "AAPL");
       await user.type(screen.getByPlaceholderText("Cantidad"), "0");
       await user.click(screen.getByRole("button", { name: /agregar activo/i }));
     });
 
-    expect(
-      screen.getByText("La cantidad debe ser mayor que cero.")
-    ).toBeInTheDocument();
+    expect(screen.getByText("La cantidad debe ser mayor que cero.")).toBeInTheDocument();
     expect(mockedCreatePortfolioItem).not.toHaveBeenCalled();
   });
 
@@ -340,43 +336,34 @@ describe("PortfolioPanel", () => {
     const originalCreateElement = document.createElement.bind(document);
     const clickSpy = jest.fn();
     const anchorClickSpies: jest.SpyInstance[] = [];
-    const createSpy = jest
-      .spyOn(document, "createElement")
-      .mockImplementation(
-        ((tagName: string, options?: any) => {
-          const element = originalCreateElement(tagName, options);
-          if (tagName.toLowerCase() === "a" && typeof element.click === "function") {
-            const anchorClickSpy = jest
-              .spyOn(element, "click")
-              .mockImplementation(() => clickSpy());
-            anchorClickSpies.push(anchorClickSpy);
-          }
-          return element;
-        }) as typeof document.createElement
-      );
+    const createSpy = jest.spyOn(document, "createElement").mockImplementation(((
+      tagName: string,
+      options?: any,
+    ) => {
+      const element = originalCreateElement(tagName, options);
+      if (tagName.toLowerCase() === "a" && typeof element.click === "function") {
+        const anchorClickSpy = jest.spyOn(element, "click").mockImplementation(() => clickSpy());
+        anchorClickSpies.push(anchorClickSpy);
+      }
+      return element;
+    }) as typeof document.createElement);
     const originalAppendChild = document.body.appendChild.bind(document.body);
     const originalRemoveChild = document.body.removeChild.bind(document.body);
-    const appendSpy = jest
-      .spyOn(document.body, "appendChild")
-      .mockImplementation((node: Node) => {
-        try {
-          return originalAppendChild(node);
-        } catch {
-          return node;
-        }
-      });
-    const removeSpy = jest
-      .spyOn(document.body, "removeChild")
-      .mockImplementation((node: Node) => {
-        try {
-          return originalRemoveChild(node);
-        } catch {
-          return node;
-        }
-      });
-    const urlCreateSpy = jest
-      .spyOn(URL, "createObjectURL")
-      .mockReturnValue("blob:mock-url");
+    const appendSpy = jest.spyOn(document.body, "appendChild").mockImplementation((node: Node) => {
+      try {
+        return originalAppendChild(node);
+      } catch {
+        return node;
+      }
+    });
+    const removeSpy = jest.spyOn(document.body, "removeChild").mockImplementation((node: Node) => {
+      try {
+        return originalRemoveChild(node);
+      } catch {
+        return node;
+      }
+    });
+    const urlCreateSpy = jest.spyOn(URL, "createObjectURL").mockReturnValue("blob:mock-url");
     const urlRevokeSpy = jest.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
 
     const user = userEvent.setup();

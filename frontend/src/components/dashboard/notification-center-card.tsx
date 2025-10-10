@@ -9,10 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  PERMISSION_DENIED_MESSAGE,
-  usePushNotifications,
-} from "@/hooks/usePushNotifications";
+import { PERMISSION_DENIED_MESSAGE, usePushNotifications } from "@/hooks/usePushNotifications";
 // 🧩 Bloque 9B
 import { useLiveNotifications } from "@/hooks/useLiveNotifications";
 // 🧩 Bloque 9B
@@ -138,13 +135,12 @@ export default function NotificationCenterCard() {
 
       for (const event of events) {
         const rawTimestamp = event.timestamp;
-        const numericTimestamp = (
+        const numericTimestamp =
           typeof rawTimestamp === "number"
             ? rawTimestamp
             : Number.isFinite(Date.parse(rawTimestamp))
-            ? Date.parse(rawTimestamp)
-            : Date.now()
-        );
+              ? Date.parse(rawTimestamp)
+              : Date.now();
 
         const entry: NotificationLog = {
           id: event.id,
@@ -285,7 +281,9 @@ export default function NotificationCenterCard() {
                         </span>
                       </div>
                       {n.body && (
-                        <p className="mt-1 text-xs text-muted-foreground leading-relaxed">{n.body}</p>
+                        <p className="mt-1 text-xs text-muted-foreground leading-relaxed">
+                          {n.body}
+                        </p>
                       )}
                     </div>
                   ))
@@ -304,7 +302,10 @@ export default function NotificationCenterCard() {
             </Badge>
           </div>
           <p>
-            Canal actual: <span className="font-medium text-card-foreground">{isRealtime ? "Tiempo real" : "Fallback"}</span>
+            Canal actual:{" "}
+            <span className="font-medium text-card-foreground">
+              {isRealtime ? "Tiempo real" : "Fallback"}
+            </span>
           </p>
         </div>
       </CardContent>

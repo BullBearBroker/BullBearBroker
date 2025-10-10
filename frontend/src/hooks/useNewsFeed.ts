@@ -24,7 +24,7 @@ export function useNewsFeed({ token, enabled = true }: UseNewsFeedOptions = {}):
     () => listNews(token ?? undefined),
     {
       revalidateOnFocus: false,
-    }
+    },
   );
 
   return {

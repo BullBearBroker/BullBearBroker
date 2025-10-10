@@ -9,12 +9,7 @@ export type AlertWebSocketEvent = {
   [key: string]: unknown;
 };
 
-export type AlertWebSocketStatus =
-  | "idle"
-  | "connecting"
-  | "open"
-  | "closed"
-  | "error";
+export type AlertWebSocketStatus = "idle" | "connecting" | "open" | "closed" | "error";
 
 interface UseAlertsWebSocketOptions {
   token?: string | null;
@@ -38,8 +33,7 @@ export function useAlertsWebSocket({
   onSystemMessage,
 }: UseAlertsWebSocketOptions = {}): UseAlertsWebSocketResult {
   const [status, setStatus] = useState<AlertWebSocketStatus>("idle");
-  const [lastMessage, setLastMessage] =
-    useState<AlertWebSocketEvent | null>(null);
+  const [lastMessage, setLastMessage] = useState<AlertWebSocketEvent | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
@@ -124,10 +118,7 @@ export function useAlertsWebSocket({
       wsRef.current = null;
       if (!manualClose.current) {
         reconnectAttempts.current += 1;
-        const delay = Math.min(
-          1000 * 2 ** (reconnectAttempts.current - 1),
-          15000
-        );
+        const delay = Math.min(1000 * 2 ** (reconnectAttempts.current - 1), 15000);
         if (reconnectTimeoutRef.current) {
           window.clearTimeout(reconnectTimeoutRef.current);
         }

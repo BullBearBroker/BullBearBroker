@@ -26,15 +26,9 @@ jest.mock("recharts", () => {
     Tooltip: Element,
     Legend: Container,
     ReferenceLine: Element,
-    Line: ({ dataKey, name }: MockProps) => (
-      <div data-testid={`line-${dataKey}`}>{name}</div>
-    ),
-    Area: ({ dataKey, name }: MockProps) => (
-      <div data-testid={`area-${dataKey}`}>{name}</div>
-    ),
-    Bar: ({ dataKey, name }: MockProps) => (
-      <div data-testid={`bar-${dataKey}`}>{name}</div>
-    ),
+    Line: ({ dataKey, name }: MockProps) => <div data-testid={`line-${dataKey}`}>{name}</div>,
+    Area: ({ dataKey, name }: MockProps) => <div data-testid={`area-${dataKey}`}>{name}</div>,
+    Bar: ({ dataKey, name }: MockProps) => <div data-testid={`bar-${dataKey}`}>{name}</div>,
   };
 });
 
@@ -103,6 +97,8 @@ describe("IndicatorsChart", () => {
         }}
         insights={insights}
         history={{
+          symbol: "AAPL",
+          interval: "4h",
           source: "Binance",
           values: [
             {
@@ -115,7 +111,7 @@ describe("IndicatorsChart", () => {
             },
           ],
         }}
-      />
+      />,
     );
 
     expect(screen.getByRole("heading", { name: "AAPL · 4H" })).toBeInTheDocument();
@@ -156,7 +152,7 @@ describe("IndicatorsChart", () => {
         interval="1d"
         indicators={{ last_close: 2000 }}
         insights={null}
-      />
+      />,
     );
 
     expect(screen.getByRole("heading", { name: "ETH · 1D" })).toBeInTheDocument();
@@ -166,12 +162,7 @@ describe("IndicatorsChart", () => {
 
   it("muestra mensajes de carga y error en el panel de insights", () => {
     const { rerender } = customRender(
-      <IndicatorsChart
-        symbol="AAPL"
-        interval="1d"
-        indicators={baseIndicators}
-        loading
-      />
+      <IndicatorsChart symbol="AAPL" interval="1d" indicators={baseIndicators} loading />,
     );
 
     expect(screen.getByText("Analizando indicadores...")).toBeInTheDocument();
@@ -182,7 +173,7 @@ describe("IndicatorsChart", () => {
         interval="1d"
         indicators={baseIndicators}
         error="No se pudo obtener datos"
-      />
+      />,
     );
 
     expect(screen.getByText("No se pudo obtener datos")).toBeInTheDocument();

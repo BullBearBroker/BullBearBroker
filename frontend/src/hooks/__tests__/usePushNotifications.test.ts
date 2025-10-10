@@ -41,8 +41,9 @@ describe("usePushNotifications", () => {
   const originalPushManager = (window as any).PushManager;
   const originalAtob = (global as any).atob;
   const mockedSubscribePush = subscribePush as jest.MockedFunction<typeof subscribePush>;
-  const mockedFetchVapidPublicKey =
-    fetchVapidPublicKey as jest.MockedFunction<typeof fetchVapidPublicKey>;
+  const mockedFetchVapidPublicKey = fetchVapidPublicKey as jest.MockedFunction<
+    typeof fetchVapidPublicKey
+  >;
 
   beforeEach(() => {
     process.env.NEXT_PUBLIC_PUSH_VAPID_PUBLIC_KEY = "dGVzdA==";
@@ -128,7 +129,7 @@ describe("usePushNotifications", () => {
         expirationTime: null,
         keys: { auth: "auth", p256dh: "p256dh" },
       },
-      "token"
+      "token",
     );
     expect(result.current.error).toBeNull();
   });

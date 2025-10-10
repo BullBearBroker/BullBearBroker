@@ -42,9 +42,7 @@ export default function TestIndicators() {
           />
 
           {/* 🔹 JSON crudo para debug */}
-          <pre style={{ marginTop: "2rem" }}>
-            {JSON.stringify(data, null, 2)}
-          </pre>
+          <pre style={{ marginTop: "2rem" }}>{JSON.stringify(data, null, 2)}</pre>
         </>
       )}
     </div>

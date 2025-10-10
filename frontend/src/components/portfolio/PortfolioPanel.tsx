@@ -35,7 +35,7 @@ interface PortfolioPanelProps {
 function PortfolioPanelContent({ token }: PortfolioPanelProps) {
   const { data, error, mutate, isLoading } = useSWR<PortfolioSummary>(
     token ? ["portfolio", token] : null,
-    () => listPortfolio(token!)
+    () => listPortfolio(token!),
   );
 
   const [symbol, setSymbol] = useState("");
@@ -44,14 +44,11 @@ function PortfolioPanelContent({ token }: PortfolioPanelProps) {
   const [submitting, setSubmitting] = useState(false);
   const csvEnabled = useMemo(() => getFeatureFlag("portfolio-csv"), []);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const [csvFeedback, setCsvFeedback] = useState<
-    | {
-        variant: "success" | "error" | "warning";
-        message: string;
-        details?: string[];
-      }
-    | null
-  >(null);
+  const [csvFeedback, setCsvFeedback] = useState<{
+    variant: "success" | "error" | "warning";
+    message: string;
+    details?: string[];
+  } | null>(null);
   const [exporting, setExporting] = useState(false);
   const [importingCsv, setImportingCsv] = useState(false);
 
@@ -94,15 +91,13 @@ function PortfolioPanelContent({ token }: PortfolioPanelProps) {
       } catch (err) {
         console.error(err);
         setFormError(
-          err instanceof Error
-            ? err.message
-            : "No se pudo agregar el activo al portafolio."
+          err instanceof Error ? err.message : "No se pudo agregar el activo al portafolio.",
         );
       } finally {
         setSubmitting(false);
       }
     },
-    [amount, mutate, symbol, token]
+    [amount, mutate, symbol, token],
   );
 
   const handleDelete = useCallback(
@@ -114,13 +109,11 @@ function PortfolioPanelContent({ token }: PortfolioPanelProps) {
       } catch (err) {
         console.error(err);
         setFormError(
-          err instanceof Error
-            ? err.message
-            : "No se pudo eliminar el activo del portafolio."
+          err instanceof Error ? err.message : "No se pudo eliminar el activo del portafolio.",
         );
       }
     },
-    [mutate, token]
+    [mutate, token],
   );
 
   const handleExportCsv = useCallback(async () => {
@@ -140,15 +133,12 @@ function PortfolioPanelContent({ token }: PortfolioPanelProps) {
       URL.revokeObjectURL(url);
       setCsvFeedback({
         variant: "success",
-        message: "Exportación completada. Revisa tu archivo \"portfolio.csv\".",
+        message: 'Exportación completada. Revisa tu archivo "portfolio.csv".',
       });
     } catch (err) {
       setCsvFeedback({
         variant: "error",
-        message:
-          err instanceof Error
-            ? err.message
-            : "No se pudo exportar el portafolio.",
+        message: err instanceof Error ? err.message : "No se pudo exportar el portafolio.",
       });
     } finally {
       setExporting(false);
@@ -171,7 +161,7 @@ function PortfolioPanelContent({ token }: PortfolioPanelProps) {
       try {
         const result = await importPortfolioCsv(token, file);
         const errorMessages = (result.errors ?? []).map(
-          (error) => `Fila ${error.row}: ${error.message}`
+          (error) => `Fila ${error.row}: ${error.message}`,
         );
         const baseMessage = `Se importaron ${result.created} activos.`;
         setCsvFeedback({
@@ -186,17 +176,14 @@ function PortfolioPanelContent({ token }: PortfolioPanelProps) {
       } catch (err) {
         setCsvFeedback({
           variant: "error",
-          message:
-            err instanceof Error
-              ? err.message
-              : "No se pudo importar el CSV.",
+          message: err instanceof Error ? err.message : "No se pudo importar el CSV.",
         });
       } finally {
         setImportingCsv(false);
         event.target.value = "";
       }
     },
-    [mutate, token]
+    [mutate, token],
   );
 
   const handleDownloadTemplate = useCallback(() => {
@@ -232,9 +219,12 @@ function PortfolioPanelContent({ token }: PortfolioPanelProps) {
           <div className="space-y-3 rounded-2xl border border-dashed border-border/50 bg-[hsl(var(--surface))] p-4">
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div className="space-y-1">
-                <p className="text-sm font-medium text-card-foreground">Importar / exportar cartera</p>
+                <p className="text-sm font-medium text-card-foreground">
+                  Importar / exportar cartera
+                </p>
                 <p className="text-xs text-muted-foreground">
-                  Trabaja con archivos CSV usando las columnas <code>symbol</code> y <code>amount</code>.
+                  Trabaja con archivos CSV usando las columnas <code>symbol</code> y{" "}
+                  <code>amount</code>.
                 </p>
               </div>
               <div className="flex flex-col gap-2 md:flex-row">
@@ -272,7 +262,7 @@ function PortfolioPanelContent({ token }: PortfolioPanelProps) {
                   "rounded-xl border p-3 text-sm",
                   csvFeedback.variant === "error" && "border-destructive/40 text-destructive",
                   csvFeedback.variant === "warning" && "border-warning/40 text-warning",
-                  csvFeedback.variant === "success" && "border-success/40 text-success"
+                  csvFeedback.variant === "success" && "border-success/40 text-success",
                 )}
               >
                 <p>{csvFeedback.message}</p>
@@ -321,7 +311,8 @@ function PortfolioPanelContent({ token }: PortfolioPanelProps) {
           )}
           {error && (
             <p className="text-sm text-destructive" role="alert">
-              Error al cargar el portafolio: {error instanceof Error ? error.message : "Desconocido"}
+              Error al cargar el portafolio:{" "}
+              {error instanceof Error ? error.message : "Desconocido"}
             </p>
           )}
           {!isLoading && !error && portfolioItems.length === 0 && (

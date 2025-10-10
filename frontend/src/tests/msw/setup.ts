@@ -1,10 +1,10 @@
-import 'whatwg-fetch';
+import "whatwg-fetch";
 
-import { server } from './server';
+import { server } from "./server";
 
 beforeAll(() => {
   // # QA fix: evitar que requests no mockeadas rompan las suites
-  server.listen({ onUnhandledRequest: 'warn' });
+  server.listen({ onUnhandledRequest: "warn" });
 });
 
 afterEach(() => {

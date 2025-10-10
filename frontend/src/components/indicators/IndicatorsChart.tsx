@@ -127,8 +127,7 @@ function computeBollinger(values: number[], period: number, mult: number) {
   for (let i = period - 1; i < values.length; i += 1) {
     const window = values.slice(i - period + 1, i + 1);
     const mean = window.reduce((acc, val) => acc + val, 0) / period;
-    const variance =
-      window.reduce((acc, val) => acc + (val - mean) * (val - mean), 0) / period;
+    const variance = window.reduce((acc, val) => acc + (val - mean) * (val - mean), 0) / period;
     const deviation = Math.sqrt(variance);
     upper[i] = mean + mult * deviation;
     middle[i] = mean;
@@ -181,7 +180,7 @@ function computeATR(
   highs: number[],
   lows: number[],
   closes: number[],
-  period: number
+  period: number,
 ): (number | null)[] {
   const len = Math.min(highs.length, lows.length, closes.length);
   const tr: number[] = [];
@@ -196,8 +195,8 @@ function computeATR(
         Math.max(
           currentHigh - currentLow,
           Math.abs(currentHigh - prevClose),
-          Math.abs(currentLow - prevClose)
-        )
+          Math.abs(currentLow - prevClose),
+        ),
       );
     }
   }
@@ -218,12 +217,7 @@ function computeATR(
   return result;
 }
 
-function computeMACD(
-  values: number[],
-  fast: number,
-  slow: number,
-  signal: number
-) {
+function computeMACD(values: number[], fast: number, slow: number, signal: number) {
   const fastEma = computeEMA(values, fast);
   const slowEma = computeEMA(values, slow);
   const macd: (number | null)[] = values.map((_, idx) => {
@@ -250,7 +244,7 @@ function computeIchimoku(
   lows: number[],
   conversion: number,
   base: number,
-  spanB: number
+  spanB: number,
 ) {
   const len = Math.min(highs.length, lows.length);
   const tenkan: (number | null)[] = Array(len).fill(null);
@@ -288,7 +282,7 @@ function computeVWAP(
   highs: number[],
   lows: number[],
   closes: number[],
-  volumes: number[]
+  volumes: number[],
 ): (number | null)[] {
   const len = Math.min(highs.length, lows.length, closes.length, volumes.length);
   const result: (number | null)[] = Array(len).fill(null);
@@ -376,7 +370,7 @@ const IndicatorsChartComponent = memo(function IndicatorsChart({
       typeof window !== "undefined" &&
       typeof window.SVGLinearGradientElement !== "undefined" &&
       typeof window.SVGStopElement !== "undefined",
-    []
+    [],
   );
 
   const atrFill = supportsSvgGradients ? "url(#atrGradient)" : "hsl(var(--info) / 0.24)";
@@ -397,7 +391,13 @@ const IndicatorsChartComponent = memo(function IndicatorsChart({
     const atrSeries = showATR ? computeATR(highs, lows, closes, atrPeriod) : [];
     const macdSeries = computeMACD(closes, macdFast, macdSlow, macdSignal);
     const ichimokuSeriesResult = showIchimoku
-      ? computeIchimoku(highs, lows, ichimokuParams.conversion, ichimokuParams.base, ichimokuParams.spanB)
+      ? computeIchimoku(
+          highs,
+          lows,
+          ichimokuParams.conversion,
+          ichimokuParams.base,
+          ichimokuParams.spanB,
+        )
       : null;
     const vwapSeries = showVWAP ? computeVWAP(highs, lows, closes, volumes) : [];
 
@@ -476,7 +476,7 @@ const IndicatorsChartComponent = memo(function IndicatorsChart({
 
   const insightBlocks = useMemo(
     () => insights?.split(/\n+/).filter((line) => line.trim().length > 0) ?? [],
-    [insights]
+    [insights],
   );
 
   return (
@@ -490,13 +490,9 @@ const IndicatorsChartComponent = memo(function IndicatorsChart({
             Último cierre: {indicators.last_close ?? "n/d"}
           </p>
           {history?.source && (
-            <p className="text-xs text-muted-foreground">
-              Histórico desde: {history.source}
-            </p>
+            <p className="text-xs text-muted-foreground">Histórico desde: {history.source}</p>
           )}
-          {historyError && (
-            <p className="text-xs text-destructive">{historyError}</p>
-          )}
+          {historyError && <p className="text-xs text-destructive">{historyError}</p>}
         </header>
 
         <section className="space-y-4">
@@ -509,22 +505,80 @@ const IndicatorsChartComponent = memo(function IndicatorsChart({
                 <p className="text-sm text-muted-foreground">Cargando serie histórica...</p>
               ) : (
                 <ResponsiveContainer>
-                  <LineChart data={priceChartData} margin={{ left: 12, right: 12, top: 16, bottom: 8 }}>
+                  <LineChart
+                    data={priceChartData}
+                    margin={{ left: 12, right: 12, top: 16, bottom: 8 }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="index" tickFormatter={(value) => priceChartData[value]?.label ?? value} interval="preserveStartEnd" />
+                    <XAxis
+                      dataKey="index"
+                      tickFormatter={(value) => priceChartData[value]?.label ?? value}
+                      interval="preserveStartEnd"
+                    />
                     <YAxis domain={["auto", "auto"]} width={60} />
                     <Tooltip
-                      labelFormatter={(value) => priceChartData[value as number]?.label ?? String(value)}
+                      labelFormatter={(value) =>
+                        priceChartData[value as number]?.label ?? String(value)
+                      }
                     />
                     <Legend />
-                    <Line type="monotone" dataKey="close" stroke={chartPalette.price} dot={false} name="Precio" strokeWidth={1.5} />
-                    <Line type="monotone" dataKey="emaFast" stroke={chartPalette.emaFast} dot={false} name={`EMA ${emaFastPeriod}`} strokeWidth={1.2} />
-                    <Line type="monotone" dataKey="emaSlow" stroke={chartPalette.emaSlow} dot={false} name={`EMA ${emaSlowPeriod}`} strokeWidth={1.2} />
-                    <Line type="monotone" dataKey="bollingerUpper" stroke={chartPalette.bollingerUpper} dot={false} name="Bollinger Sup" strokeDasharray="5 5" />
-                    <Line type="monotone" dataKey="bollingerLower" stroke={chartPalette.bollingerLower} dot={false} name="Bollinger Inf" strokeDasharray="5 5" />
-                    <Line type="monotone" dataKey="bollingerMiddle" stroke={chartPalette.bollingerMiddle} dot={false} name="Bollinger Media" strokeDasharray="3 3" />
+                    <Line
+                      type="monotone"
+                      dataKey="close"
+                      stroke={chartPalette.price}
+                      dot={false}
+                      name="Precio"
+                      strokeWidth={1.5}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="emaFast"
+                      stroke={chartPalette.emaFast}
+                      dot={false}
+                      name={`EMA ${emaFastPeriod}`}
+                      strokeWidth={1.2}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="emaSlow"
+                      stroke={chartPalette.emaSlow}
+                      dot={false}
+                      name={`EMA ${emaSlowPeriod}`}
+                      strokeWidth={1.2}
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="bollingerUpper"
+                      stroke={chartPalette.bollingerUpper}
+                      dot={false}
+                      name="Bollinger Sup"
+                      strokeDasharray="5 5"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="bollingerLower"
+                      stroke={chartPalette.bollingerLower}
+                      dot={false}
+                      name="Bollinger Inf"
+                      strokeDasharray="5 5"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="bollingerMiddle"
+                      stroke={chartPalette.bollingerMiddle}
+                      dot={false}
+                      name="Bollinger Media"
+                      strokeDasharray="3 3"
+                    />
                     {showVWAP && (
-                      <Line type="monotone" dataKey="vwap" stroke={chartPalette.vwap} dot={false} name="VWAP" strokeWidth={1.5} />
+                      <Line
+                        type="monotone"
+                        dataKey="vwap"
+                        stroke={chartPalette.vwap}
+                        dot={false}
+                        name="VWAP"
+                        strokeWidth={1.5}
+                      />
                     )}
                   </LineChart>
                 </ResponsiveContainer>
@@ -540,15 +594,33 @@ const IndicatorsChartComponent = memo(function IndicatorsChart({
               <div className="mt-3 h-56 w-full">
                 {showRSI ? (
                   <ResponsiveContainer>
-                    <LineChart data={rsiChartData} margin={{ left: 12, right: 12, top: 16, bottom: 8 }}>
+                    <LineChart
+                      data={rsiChartData}
+                      margin={{ left: 12, right: 12, top: 16, bottom: 8 }}
+                    >
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="index" tickFormatter={(value) => rsiChartData[value]?.label ?? value} interval="preserveStartEnd" />
+                      <XAxis
+                        dataKey="index"
+                        tickFormatter={(value) => rsiChartData[value]?.label ?? value}
+                        interval="preserveStartEnd"
+                      />
                       <YAxis domain={[0, 100]} width={50} />
-                      <Tooltip labelFormatter={(value) => rsiChartData[value as number]?.label ?? String(value)} />
+                      <Tooltip
+                        labelFormatter={(value) =>
+                          rsiChartData[value as number]?.label ?? String(value)
+                        }
+                      />
                       <Legend />
                       <ReferenceLine y={30} stroke={chartPalette.rsiLower} strokeDasharray="4 4" />
                       <ReferenceLine y={70} stroke={chartPalette.rsiUpper} strokeDasharray="4 4" />
-                      <Line type="monotone" dataKey="value" stroke={chartPalette.rsi} dot={false} name={`RSI ${rsiPeriod}`} strokeWidth={1.5} />
+                      <Line
+                        type="monotone"
+                        dataKey="value"
+                        stroke={chartPalette.rsi}
+                        dot={false}
+                        name={`RSI ${rsiPeriod}`}
+                        strokeWidth={1.5}
+                      />
                     </LineChart>
                   </ResponsiveContainer>
                 ) : (
@@ -564,7 +636,10 @@ const IndicatorsChartComponent = memo(function IndicatorsChart({
               <div className="mt-3 h-56 w-full">
                 {showATR ? (
                   <ResponsiveContainer>
-                    <AreaChart data={atrChartData} margin={{ left: 12, right: 12, top: 16, bottom: 8 }}>
+                    <AreaChart
+                      data={atrChartData}
+                      margin={{ left: 12, right: 12, top: 16, bottom: 8 }}
+                    >
                       {supportsSvgGradients && (
                         <defs>
                           <linearGradient id="atrGradient" x1="0" y1="0" x2="0" y2="1">
@@ -574,9 +649,17 @@ const IndicatorsChartComponent = memo(function IndicatorsChart({
                         </defs>
                       )}
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="index" tickFormatter={(value) => atrChartData[value]?.label ?? value} interval="preserveStartEnd" />
+                      <XAxis
+                        dataKey="index"
+                        tickFormatter={(value) => atrChartData[value]?.label ?? value}
+                        interval="preserveStartEnd"
+                      />
                       <YAxis width={60} />
-                      <Tooltip labelFormatter={(value) => atrChartData[value as number]?.label ?? String(value)} />
+                      <Tooltip
+                        labelFormatter={(value) =>
+                          atrChartData[value as number]?.label ?? String(value)
+                        }
+                      />
                       <Legend />
                       <Area
                         type="monotone"
@@ -597,20 +680,59 @@ const IndicatorsChartComponent = memo(function IndicatorsChart({
 
           <div className="grid gap-4 lg:grid-cols-2">
             <div className="rounded-2xl border border-border/40 bg-[hsl(var(--surface))] p-4 transition-all duration-300 hover:border-border hover:bg-[hsl(var(--surface-hover))]">
-              <h3 className="text-sm font-sans font-medium tracking-tight text-card-foreground">Ichimoku</h3>
+              <h3 className="text-sm font-sans font-medium tracking-tight text-card-foreground">
+                Ichimoku
+              </h3>
               <div className="mt-3 h-56 w-full">
                 {showIchimoku && ichimokuSeries ? (
                   <ResponsiveContainer>
-                    <LineChart data={ichimokuChartData} margin={{ left: 12, right: 12, top: 16, bottom: 8 }}>
+                    <LineChart
+                      data={ichimokuChartData}
+                      margin={{ left: 12, right: 12, top: 16, bottom: 8 }}
+                    >
                       <CartesianGrid strokeDasharray="3 3" />
-                      <XAxis dataKey="index" tickFormatter={(value) => ichimokuChartData[value]?.label ?? value} interval="preserveStartEnd" />
+                      <XAxis
+                        dataKey="index"
+                        tickFormatter={(value) => ichimokuChartData[value]?.label ?? value}
+                        interval="preserveStartEnd"
+                      />
                       <YAxis width={60} />
-                      <Tooltip labelFormatter={(value) => ichimokuChartData[value as number]?.label ?? String(value)} />
+                      <Tooltip
+                        labelFormatter={(value) =>
+                          ichimokuChartData[value as number]?.label ?? String(value)
+                        }
+                      />
                       <Legend />
-                      <Line type="monotone" dataKey="tenkan" stroke={chartPalette.ichimokuTenkan} dot={false} name="Tenkan" />
-                      <Line type="monotone" dataKey="kijun" stroke={chartPalette.ichimokuKijun} dot={false} name="Kijun" />
-                      <Line type="monotone" dataKey="spanA" stroke={chartPalette.ichimokuSpanA} dot={false} name="Span A" strokeDasharray="5 5" />
-                      <Line type="monotone" dataKey="spanB" stroke={chartPalette.ichimokuSpanB} dot={false} name="Span B" strokeDasharray="5 5" />
+                      <Line
+                        type="monotone"
+                        dataKey="tenkan"
+                        stroke={chartPalette.ichimokuTenkan}
+                        dot={false}
+                        name="Tenkan"
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="kijun"
+                        stroke={chartPalette.ichimokuKijun}
+                        dot={false}
+                        name="Kijun"
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="spanA"
+                        stroke={chartPalette.ichimokuSpanA}
+                        dot={false}
+                        name="Span A"
+                        strokeDasharray="5 5"
+                      />
+                      <Line
+                        type="monotone"
+                        dataKey="spanB"
+                        stroke={chartPalette.ichimokuSpanB}
+                        dot={false}
+                        name="Span B"
+                        strokeDasharray="5 5"
+                      />
                     </LineChart>
                   </ResponsiveContainer>
                 ) : (
@@ -620,17 +742,42 @@ const IndicatorsChartComponent = memo(function IndicatorsChart({
             </div>
 
             <div className="rounded-2xl border border-border/40 bg-[hsl(var(--surface))] p-4 transition-all duration-300 hover:border-border hover:bg-[hsl(var(--surface-hover))]">
-              <h3 className="text-sm font-sans font-medium tracking-tight text-card-foreground">MACD</h3>
+              <h3 className="text-sm font-sans font-medium tracking-tight text-card-foreground">
+                MACD
+              </h3>
               <div className="mt-3 h-56 w-full">
                 <ResponsiveContainer>
-                  <ComposedChart data={macdChartData} margin={{ left: 12, right: 12, top: 16, bottom: 8 }}>
+                  <ComposedChart
+                    data={macdChartData}
+                    margin={{ left: 12, right: 12, top: 16, bottom: 8 }}
+                  >
                     <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="index" tickFormatter={(value) => macdChartData[value]?.label ?? value} interval="preserveStartEnd" />
+                    <XAxis
+                      dataKey="index"
+                      tickFormatter={(value) => macdChartData[value]?.label ?? value}
+                      interval="preserveStartEnd"
+                    />
                     <YAxis width={60} />
-                    <Tooltip labelFormatter={(value) => macdChartData[value as number]?.label ?? String(value)} />
+                    <Tooltip
+                      labelFormatter={(value) =>
+                        macdChartData[value as number]?.label ?? String(value)
+                      }
+                    />
                     <Legend />
-                    <Line type="monotone" dataKey="macd" stroke={chartPalette.macd} dot={false} name="MACD" />
-                    <Line type="monotone" dataKey="signal" stroke={chartPalette.macdSignal} dot={false} name="Signal" />
+                    <Line
+                      type="monotone"
+                      dataKey="macd"
+                      stroke={chartPalette.macd}
+                      dot={false}
+                      name="MACD"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="signal"
+                      stroke={chartPalette.macdSignal}
+                      dot={false}
+                      name="Signal"
+                    />
                     <Bar dataKey="histogram" fill={chartPalette.macdHistogram} name="Histograma" />
                   </ComposedChart>
                 </ResponsiveContainer>

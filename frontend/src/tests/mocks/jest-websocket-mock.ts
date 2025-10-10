@@ -45,7 +45,7 @@ class MockWebSocket {
         wasClean: true,
         code: 1000,
         reason: "client_close",
-      })
+      }),
     );
   }
 
@@ -60,7 +60,7 @@ class MockWebSocket {
     this.onmessage?.(
       new MessageEvent("message", {
         data: payload,
-      })
+      }),
     );
   }
 
@@ -77,7 +77,7 @@ class MockWebSocket {
         wasClean: true,
         code: 1000,
         reason,
-      })
+      }),
     );
   }
 }

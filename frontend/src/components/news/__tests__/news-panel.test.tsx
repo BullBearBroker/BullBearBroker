@@ -64,7 +64,7 @@ describe("NewsPanel", () => {
     expect(within(articles[0]).getByText("Mercados al alza")).toBeInTheDocument();
     expect(within(articles[0]).getByRole("link", { name: /leer noticia/i })).toHaveAttribute(
       "href",
-      "https://example.com/news"
+      "https://example.com/news",
     );
     expect(await axe(container)).toHaveNoViolations();
   });

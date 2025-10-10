@@ -51,13 +51,10 @@ export function UIStateProvider({ children }: { children: ReactNode }) {
 
   const openSidebar = useCallback(() => setSidebarOpen(true), []);
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
-  const toggleSidebar = useCallback(
-    () => setSidebarOpen((previous) => !previous),
-    [],
-  );
+  const toggleSidebar = useCallback(() => setSidebarOpen((previous) => !previous), []);
 
   const contextValue = useMemo<UIStateContextValue>(() => {
-    const currentTheme = theme === "system" ? resolvedTheme ?? theme : theme;
+    const currentTheme = theme === "system" ? (resolvedTheme ?? theme) : theme;
 
     return {
       sidebarOpen,

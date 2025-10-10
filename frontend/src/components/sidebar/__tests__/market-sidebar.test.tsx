@@ -12,14 +12,11 @@ const user = { id: 1, email: "user@example.com" } as const;
 const onLogout = jest.fn();
 
 const renderSidebar = () =>
-  customRender(
-    <MarketSidebar token="token" user={user} onLogout={onLogout} />,
-    {
-      providerProps: {
-        swrConfig: { focusThrottleInterval: 0 },
-      },
-    }
-  );
+  customRender(<MarketSidebar token="token" user={user} onLogout={onLogout} />, {
+    providerProps: {
+      swrConfig: { focusThrottleInterval: 0 },
+    },
+  });
 
 describe("MarketSidebar", () => {
   beforeEach(() => {
@@ -54,13 +51,13 @@ describe("MarketSidebar", () => {
     await screen.findByText("BTCUSDT");
     const sidebar = container.querySelector('[data-testid="market-sidebar-root"]');
     const sections = Array.from(sidebar?.querySelectorAll("h3") ?? []).map((node) =>
-      node.textContent?.trim()
+      node.textContent?.trim(),
     );
     const summary = {
       heading: sidebar?.querySelector("h2")?.textContent?.trim(),
       email: sidebar?.querySelector("p")?.textContent?.trim(),
       links: Array.from(sidebar?.querySelectorAll("a") ?? []).map((node) =>
-        node.textContent?.trim()
+        node.textContent?.trim(),
       ),
       sections,
       logout: Array.from(sidebar?.querySelectorAll("button") ?? [])
@@ -89,7 +86,7 @@ describe("MarketSidebar", () => {
     server.use(
       makeMarketErrorHandler("crypto"),
       makeMarketErrorHandler("stocks"),
-      makeMarketErrorHandler("forex")
+      makeMarketErrorHandler("forex"),
     );
 
     renderSidebar();
@@ -102,7 +99,7 @@ describe("MarketSidebar", () => {
     server.use(
       makeMarketEmptyHandler("crypto"),
       makeMarketEmptyHandler("stocks"),
-      makeMarketEmptyHandler("forex")
+      makeMarketEmptyHandler("forex"),
     );
 
     renderSidebar();
@@ -118,9 +115,7 @@ describe("MarketSidebar", () => {
 
       expect(await screen.findByText(/50\.000,00/)).toBeInTheDocument();
 
-      server.use(
-        makeMarketQuoteHandler("crypto", { price: 51_000, raw_change: 3.1 })
-      );
+      server.use(makeMarketQuoteHandler("crypto", { price: 51_000, raw_change: 3.1 }));
 
       await act(async () => {
         jest.advanceTimersByTime(31_000);

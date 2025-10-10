@@ -1,11 +1,5 @@
 import React from "react";
-import {
-  act,
-  customRender,
-  screen,
-  waitFor,
-  within,
-} from "@/tests/utils/renderWithProviders";
+import { act, customRender, screen, waitFor, within } from "@/tests/utils/renderWithProviders";
 import userEvent from "@testing-library/user-event";
 
 jest.mock("@/components/providers/auth-provider", () => {
@@ -17,9 +11,7 @@ jest.mock("@/components/providers/auth-provider", () => {
   };
 });
 
-const { useAuth: mockUseAuth } = jest.requireMock(
-  "@/components/providers/auth-provider"
-) as {
+const { useAuth: mockUseAuth } = jest.requireMock("@/components/providers/auth-provider") as {
   useAuth: jest.Mock;
 };
 
@@ -42,9 +34,7 @@ jest.mock("next/navigation", () => ({
   useRouter: jest.fn(),
 }));
 
-const { useRouter: mockUseRouter } = jest.requireMock(
-  "next/navigation"
-) as {
+const { useRouter: mockUseRouter } = jest.requireMock("next/navigation") as {
   useRouter: jest.Mock;
 };
 
@@ -75,10 +65,8 @@ jest.mock("@/lib/api", () => {
     createAlert: (...args: any[]) => mockedCreateAlert(...args),
     updateAlert: (...args: any[]) => mockedUpdateAlert(...args),
     deleteAlert: (...args: any[]) => mockedDeleteAlert(...args),
-    sendAlertNotification: (...args: any[]) =>
-      mockedSendAlertNotification(...args),
-    suggestAlertCondition: (...args: any[]) =>
-      mockedSuggestAlertCondition(...args),
+    sendAlertNotification: (...args: any[]) => mockedSendAlertNotification(...args),
+    suggestAlertCondition: (...args: any[]) => mockedSuggestAlertCondition(...args),
     listNews: (...args: any[]) => mockedListNews(...args),
     getMarketQuote: (...args: any[]) => mockedGetMarketQuote(...args),
   };
@@ -129,14 +117,29 @@ const newsFixture = [
 
 describe("DashboardPage integration", () => {
   beforeAll(() => {
-    class ResizeObserverMock {
-      observe() {}
-      unobserve() {}
-      disconnect() {}
+    class ResizeObserverMock implements ResizeObserver {
+      callback: ResizeObserverCallback;
+
+      constructor(callback: ResizeObserverCallback) {
+        this.callback = callback;
+      }
+
+      observe(): void {}
+
+      unobserve(): void {}
+
+      disconnect(): void {}
+
+      takeRecords(): ResizeObserverEntry[] {
+        return [];
+      }
     }
 
-    // @ts-expect-error - jsdom no expone ResizeObserver por defecto
-    global.ResizeObserver = ResizeObserverMock;
+    Object.defineProperty(globalThis, "ResizeObserver", {
+      configurable: true,
+      writable: true,
+      value: ResizeObserverMock,
+    });
   });
 
   beforeEach(() => {
@@ -168,15 +171,13 @@ describe("DashboardPage integration", () => {
       notes: "Basado en momentum",
     });
     mockedListNews.mockResolvedValue(newsFixture);
-    mockedGetMarketQuote.mockImplementation(
-      async (type: string, symbol: string) => ({
-        symbol,
-        price: type === "forex" ? 1.08 : 30000,
-        raw_change: 1.25,
-        source: "Demo",
-        type,
-      })
-    );
+    mockedGetMarketQuote.mockImplementation(async (type: string, symbol: string) => ({
+      symbol,
+      price: type === "forex" ? 1.08 : 30000,
+      raw_change: 1.25,
+      source: "Demo",
+      type,
+    }));
   });
 
   it("renders all dashboard modules and keeps portfolio actions accessible", async () => {
@@ -189,35 +190,22 @@ describe("DashboardPage integration", () => {
     });
 
     expect(
-      screen.getByRole("heading", { name: /indicadores clave \(BTCUSDT\)/i })
+      screen.getByRole("heading", { name: /indicadores clave \(BTCUSDT\)/i }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: /chat con ia/i })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: /alertas personalizadas/i })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("heading", { name: /noticias/i })
-    ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /chat con ia/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /alertas personalizadas/i })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /noticias/i })).toBeInTheDocument();
 
     const portfolioLink = screen.getByRole("link", { name: /ver portafolio/i });
     expect(portfolioLink).toHaveAttribute("href", "/portfolio");
 
-    expect(
-      await screen.findByRole("button", { name: /eliminar btcusdt/i })
-    ).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /eliminar btcusdt/i })).toBeInTheDocument();
     expect(screen.getByText(/Total:/i)).toBeInTheDocument();
 
-    const portfolioCard = screen
-      .getByRole("heading", { name: /portafolio/i })
-      .closest("div")!
-      .parentElement!
-      .parentElement! as HTMLElement;
+    const portfolioCard = screen.getByRole("heading", { name: /portafolio/i }).closest("div")!
+      .parentElement!.parentElement! as HTMLElement;
 
-    const symbolInput = within(portfolioCard).getByPlaceholderText(
-      /BTCUSDT, AAPL, EURUSD/i
-    );
+    const symbolInput = within(portfolioCard).getByPlaceholderText(/BTCUSDT, AAPL, EURUSD/i);
     const amountInput = within(portfolioCard).getByPlaceholderText(/cantidad/i);
 
     const user = userEvent.setup();
@@ -225,15 +213,13 @@ describe("DashboardPage integration", () => {
     await act(async () => {
       await user.type(symbolInput, "eth");
       await user.type(amountInput, "2");
-      await user.click(
-        screen.getByRole("button", { name: /agregar activo/i })
-      );
+      await user.click(screen.getByRole("button", { name: /agregar activo/i }));
     });
 
     await waitFor(() => {
       expect(mockedCreatePortfolioItem).toHaveBeenCalledWith(
         baseAuth.token,
-        expect.objectContaining({ symbol: "ETH", amount: 2 })
+        expect.objectContaining({ symbol: "ETH", amount: 2 }),
       );
     });
 

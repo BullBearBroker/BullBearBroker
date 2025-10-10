@@ -16,7 +16,7 @@ describe("AppChrome", () => {
     customRender(
       <AppChrome>
         <p>Contenido principal</p>
-      </AppChrome>
+      </AppChrome>,
     );
 
     expect(screen.getByTestId("navbar")).toBeInTheDocument();
@@ -28,7 +28,7 @@ describe("AppChrome", () => {
     const { container } = customRender(
       <AppChrome>
         <p>Contenido a11y</p>
-      </AppChrome>
+      </AppChrome>,
     );
 
     expect(await axe(container)).toHaveNoViolations();

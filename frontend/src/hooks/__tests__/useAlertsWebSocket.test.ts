@@ -69,15 +69,12 @@ class MockWebSocket {
   }
 }
 
-declare global {
-  // eslint-disable-next-line no-var
-  var WebSocket: typeof MockWebSocket;
-}
-
 describe("useAlertsWebSocket", () => {
+  const originalWebSocket = globalThis.WebSocket;
+
   beforeEach(() => {
     process.env.NEXT_PUBLIC_API_URL = ORIGINAL_API_URL ?? FALLBACK_API_URL;
-    (global as any).WebSocket = MockWebSocket as unknown as typeof WebSocket;
+    globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket;
     jest.useFakeTimers();
     MockWebSocket.reset();
   });
@@ -87,6 +84,11 @@ describe("useAlertsWebSocket", () => {
     jest.useRealTimers();
     MockWebSocket.reset();
     process.env.NEXT_PUBLIC_API_URL = ORIGINAL_API_URL;
+    if (originalWebSocket) {
+      globalThis.WebSocket = originalWebSocket;
+    } else {
+      delete (globalThis as { WebSocket?: typeof WebSocket }).WebSocket;
+    }
   });
 
   it("establece la conexión y procesa mensajes de alerta", () => {
@@ -94,7 +96,7 @@ describe("useAlertsWebSocket", () => {
     const onSystemMessage = jest.fn();
 
     const { result } = renderHook(() =>
-      useAlertsWebSocket({ token: "token-123", onAlert, onSystemMessage })
+      useAlertsWebSocket({ token: "token-123", onAlert, onSystemMessage }),
     );
 
     expect(MockWebSocket.instances).toHaveLength(1);
@@ -115,19 +117,17 @@ describe("useAlertsWebSocket", () => {
     });
 
     expect(onAlert).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "alert", message: "BTC cruzó el objetivo" })
+      expect.objectContaining({ type: "alert", message: "BTC cruzó el objetivo" }),
     );
     expect(onSystemMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ type: "system", message: "Bienvenido" })
+      expect.objectContaining({ type: "system", message: "Bienvenido" }),
     );
     expect(result.current.lastMessage).toMatchObject({ type: "system" });
     expect(result.current.error).toBe("Mensaje de WebSocket no válido");
   });
 
   it("reintenta la conexión ante un cierre inesperado", () => {
-    const { result } = renderHook(() =>
-      useAlertsWebSocket({ token: "token-123", enabled: true })
-    );
+    const { result } = renderHook(() => useAlertsWebSocket({ token: "token-123", enabled: true }));
 
     const socket = MockWebSocket.instances[0];
 
@@ -152,9 +152,7 @@ describe("useAlertsWebSocket", () => {
   });
 
   it("permite cerrar manualmente la conexión", () => {
-    const { result } = renderHook(() =>
-      useAlertsWebSocket({ token: "token-123", enabled: true })
-    );
+    const { result } = renderHook(() => useAlertsWebSocket({ token: "token-123", enabled: true }));
 
     const socket = MockWebSocket.instances[0];
 
@@ -179,7 +177,7 @@ describe("useAlertsWebSocket", () => {
   it("no intenta conectar cuando está deshabilitado", () => {
     const { result, rerender } = renderHook(
       ({ enabled }) => useAlertsWebSocket({ token: "token-123", enabled }),
-      { initialProps: { enabled: false } }
+      { initialProps: { enabled: false } },
     );
 
     expect(MockWebSocket.instances).toHaveLength(0);
@@ -191,9 +189,7 @@ describe("useAlertsWebSocket", () => {
   });
 
   it("puede reconectar manualmente después de un cierre", () => {
-    const { result } = renderHook(() =>
-      useAlertsWebSocket({ token: "token-123", enabled: true })
-    );
+    const { result } = renderHook(() => useAlertsWebSocket({ token: "token-123", enabled: true }));
 
     const socket = MockWebSocket.instances[0];
 
@@ -213,9 +209,7 @@ describe("useAlertsWebSocket", () => {
   });
 
   it("no crea conexiones adicionales cuando ya existe una activa", () => {
-    const { result } = renderHook(() =>
-      useAlertsWebSocket({ token: "token-123", enabled: true })
-    );
+    const { result } = renderHook(() => useAlertsWebSocket({ token: "token-123", enabled: true }));
 
     expect(MockWebSocket.instances).toHaveLength(1);
 
@@ -227,9 +221,7 @@ describe("useAlertsWebSocket", () => {
   });
 
   it("propaga estado de error cuando el socket reporta fallo", () => {
-    const { result } = renderHook(() =>
-      useAlertsWebSocket({ token: "token-123", enabled: true })
-    );
+    const { result } = renderHook(() => useAlertsWebSocket({ token: "token-123", enabled: true }));
 
     const socket = MockWebSocket.instances[0];
 
@@ -242,20 +234,15 @@ describe("useAlertsWebSocket", () => {
   });
 
   it("maneja fallos al construir la URL del WebSocket", () => {
-    const spy = jest
-      .spyOn(api, "getAlertsWebSocketUrl")
-      .mockImplementation(() => {
-        throw new Error("boom");
-      });
+    const spy = jest.spyOn(api, "getAlertsWebSocketUrl").mockImplementation(() => {
+      throw new Error("boom");
+    });
 
-    const { result } = renderHook(() =>
-      useAlertsWebSocket({ token: "token-123", enabled: true })
-    );
+    const { result } = renderHook(() => useAlertsWebSocket({ token: "token-123", enabled: true }));
 
     expect(MockWebSocket.instances).toHaveLength(0);
     expect(result.current.status).toBe("idle");
 
     spy.mockRestore();
   });
-
 });

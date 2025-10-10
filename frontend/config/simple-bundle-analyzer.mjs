@@ -60,9 +60,7 @@ const renderEntrypoints = (entrypoints = {}) => {
 
 const renderHtml = (targetLabel, statsJson) => {
   const assets = Array.isArray(statsJson.assets) ? statsJson.assets : [];
-  const totalSize = formatSize(
-    assets.reduce((total, asset) => total + (asset.size ?? 0), 0)
-  );
+  const totalSize = formatSize(assets.reduce((total, asset) => total + (asset.size ?? 0), 0));
   const assetsTable = renderAssetsTable(assets);
   const entrypointsSection = renderEntrypoints(statsJson.entrypoints ?? {});
 

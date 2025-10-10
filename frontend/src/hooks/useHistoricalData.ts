@@ -26,7 +26,7 @@ export interface UseHistoricalDataResult {
 
 export function useHistoricalData(
   symbol?: string | null,
-  options: UseHistoricalDataOptions = {}
+  options: UseHistoricalDataOptions = {},
 ): UseHistoricalDataResult {
   const interval = options.interval ?? "1h";
   const limit = options.limit ?? 240;
@@ -43,7 +43,7 @@ export function useHistoricalData(
     {
       revalidateOnFocus: false,
       refreshInterval: options.refreshInterval,
-    }
+    },
   );
 
   return {

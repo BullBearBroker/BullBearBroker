@@ -13,8 +13,9 @@ import {
 import { AlertsPanel } from "../alerts-panel";
 import { useAlertsWebSocket } from "@/hooks/useAlertsWebSocket";
 
-const mockedUseAlertsWebSocket =
-  useAlertsWebSocket as jest.MockedFunction<typeof useAlertsWebSocket>;
+const mockedUseAlertsWebSocket = useAlertsWebSocket as jest.MockedFunction<
+  typeof useAlertsWebSocket
+>;
 
 jest.mock("swr", () => {
   const actual = jest.requireActual("swr");
@@ -51,16 +52,16 @@ jest.mock("@/lib/api", () => ({
 const mockedUseSWR = useSWR as jest.MockedFunction<typeof useSWR>;
 const mockedCreateAlert = createAlert as jest.MockedFunction<typeof createAlert>;
 const mockedUpdateAlert = updateAlert as jest.MockedFunction<typeof updateAlert>;
-const mockedSendAlertNotification =
-  sendAlertNotification as jest.MockedFunction<typeof sendAlertNotification>;
-const mockedSuggestAlertCondition =
-  suggestAlertCondition as jest.MockedFunction<typeof suggestAlertCondition>;
+const mockedSendAlertNotification = sendAlertNotification as jest.MockedFunction<
+  typeof sendAlertNotification
+>;
+const mockedSuggestAlertCondition = suggestAlertCondition as jest.MockedFunction<
+  typeof suggestAlertCondition
+>;
 const mockedDeleteAlert = deleteAlert as jest.MockedFunction<typeof deleteAlert>;
 const mockedListAlerts = listAlerts as jest.MockedFunction<typeof listAlerts>;
 
-const createSWRMock = (
-  overrides: Partial<SWRResponse<unknown>> = {}
-): SWRResponse<unknown> =>
+const createSWRMock = (overrides: Partial<SWRResponse<unknown>> = {}): SWRResponse<unknown> =>
   ({
     data: undefined,
     error: undefined,
@@ -68,7 +69,7 @@ const createSWRMock = (
     isLoading: false,
     isValidating: false,
     ...overrides,
-  } as SWRResponse<unknown>); // CODEx: helper para incluir campos obligatorios de SWR
+  }) as SWRResponse<unknown>; // CODEx: helper para incluir campos obligatorios de SWR
 
 describe("AlertsPanel", () => {
   beforeEach(() => {
@@ -111,17 +112,11 @@ describe("AlertsPanel", () => {
     customRender(<AlertsPanel token="secure-token" />);
 
     await act(async () => {
-      await user.type(
-        screen.getByPlaceholderText("Título de la alerta"),
-        "  Comprar BTC "
-      );
-      await user.type(
-        screen.getByPlaceholderText("Activo (ej. BTCUSDT, AAPL)"),
-        "btcusdt"
-      );
+      await user.type(screen.getByPlaceholderText("Título de la alerta"), "  Comprar BTC ");
+      await user.type(screen.getByPlaceholderText("Activo (ej. BTCUSDT, AAPL)"), "btcusdt");
       await user.type(
         screen.getByPlaceholderText("Condición (ej. BTC > 50,000 USD)"),
-        "Precio cruza los 50k"
+        "Precio cruza los 50k",
       );
       await user.type(screen.getByPlaceholderText("Valor (ej. 30)"), "50000");
     });
@@ -139,7 +134,7 @@ describe("AlertsPanel", () => {
           condition: "Precio cruza los 50k",
           value: 50000,
           active: true,
-        })
+        }),
       );
     });
 
@@ -151,21 +146,16 @@ describe("AlertsPanel", () => {
     customRender(<AlertsPanel token="secure-token" />);
 
     await act(async () => {
-      await user.type(
-        screen.getByPlaceholderText("Activo (ej. BTCUSDT, AAPL)"),
-        "ETHUSDT"
-      );
+      await user.type(screen.getByPlaceholderText("Activo (ej. BTCUSDT, AAPL)"), "ETHUSDT");
       await user.type(
         screen.getByPlaceholderText("Condición (ej. BTC > 50,000 USD)"),
-        "ETH supera los 3000"
+        "ETH supera los 3000",
       );
       await user.type(screen.getByPlaceholderText("Valor (ej. 30)"), "3000");
       await user.click(screen.getByRole("button", { name: /crear alerta/i }));
     });
 
-    expect(
-      await screen.findByText("Debes asignar un título a la alerta.")
-    ).toBeInTheDocument();
+    expect(await screen.findByText("Debes asignar un título a la alerta.")).toBeInTheDocument();
     expect(mockedCreateAlert).not.toHaveBeenCalled();
   });
 
@@ -185,7 +175,7 @@ describe("AlertsPanel", () => {
           },
         ],
         mutate,
-      })
+      }),
     );
 
     mockedUpdateAlert.mockResolvedValue({
@@ -216,9 +206,7 @@ describe("AlertsPanel", () => {
     const user = userEvent.setup();
     customRender(<AlertsPanel token="demo-token" />);
 
-    const textarea = screen.getByPlaceholderText(
-      /condición/i
-    ) as HTMLTextAreaElement;
+    const textarea = screen.getByPlaceholderText(/condición/i) as HTMLTextAreaElement;
     const helperButton = screen.getByRole("button", { name: /menor que/i });
 
     expect(textarea).toHaveValue("");
@@ -236,9 +224,7 @@ describe("AlertsPanel", () => {
     const user = userEvent.setup();
     customRender(<AlertsPanel token="demo-token" />);
 
-    const textarea = screen.getByPlaceholderText(
-      /condición/i
-    ) as HTMLTextAreaElement;
+    const textarea = screen.getByPlaceholderText(/condición/i) as HTMLTextAreaElement;
     const helperButton = screen.getByRole("button", { name: /menor que/i });
 
     await act(async () => {
@@ -280,7 +266,7 @@ describe("AlertsPanel", () => {
     mockedUseSWR.mockReturnValue(
       createSWRMock({
         error: new Error("Fallo en SWR"),
-      })
+      }),
     );
 
     customRender(<AlertsPanel token="token" />);
@@ -294,7 +280,7 @@ describe("AlertsPanel", () => {
     customRender(<AlertsPanel token="token" />);
 
     expect(
-      screen.getByText("Aún no tienes alertas. Crea una para recibir notificaciones.")
+      screen.getByText("Aún no tienes alertas. Crea una para recibir notificaciones."),
     ).toBeInTheDocument();
   });
 
@@ -319,7 +305,7 @@ describe("AlertsPanel", () => {
             active: false,
           },
         ],
-      })
+      }),
     );
 
     customRender(<AlertsPanel token="token" />);
@@ -346,7 +332,7 @@ describe("AlertsPanel", () => {
           },
         ],
         mutate,
-      })
+      }),
     );
     mockedDeleteAlert.mockResolvedValueOnce(undefined as never);
 
@@ -373,16 +359,13 @@ describe("AlertsPanel", () => {
     customRender(<AlertsPanel token="secure-token" />);
 
     await act(async () => {
-      await user.type(
-        screen.getByPlaceholderText("Activo (ej. BTCUSDT, AAPL)"),
-        "btc"
-      );
+      await user.type(screen.getByPlaceholderText("Activo (ej. BTCUSDT, AAPL)"), "btc");
       await user.click(screen.getByRole("button", { name: /sugerir alerta/i }));
     });
 
     expect(mockedSuggestAlertCondition).toHaveBeenCalledWith(
       "secure-token",
-      expect.objectContaining({ asset: "btc", interval: "1h" })
+      expect.objectContaining({ asset: "btc", interval: "1h" }),
     );
     expect(screen.getByPlaceholderText(/condición/i)).toHaveValue("BTC > 45000");
     expect(screen.getByText("Basado en indicadores")).toBeInTheDocument();
@@ -400,9 +383,7 @@ describe("AlertsPanel", () => {
     customRender(<AlertsPanel token="token" />);
 
     expect(screen.getByText("Conectado")).toBeInTheDocument();
-    expect(
-      screen.getByText("Aún no hay alertas en vivo.")
-    ).toBeInTheDocument();
+    expect(screen.getByText("Aún no hay alertas en vivo.")).toBeInTheDocument();
   });
 
   it("muestra mensajes del sistema y errores del websocket", () => {
@@ -461,9 +442,7 @@ describe("AlertsPanel", () => {
       });
 
       expect(screen.getByText(/ETHUSDT · Precio objetivo alcanzado/)).toBeInTheDocument();
-      expect(
-        screen.getByText(/Precio 2345.50 · Objetivo 2500.00/)
-      ).toBeInTheDocument();
+      expect(screen.getByText(/Precio 2345.50 · Objetivo 2500.00/)).toBeInTheDocument();
     } finally {
       dateSpy.mockRestore();
     }
@@ -493,9 +472,7 @@ describe("AlertsPanel", () => {
       } as any);
     });
 
-    expect(
-      screen.getByText(/Alerta · Se recibió una alerta en vivo/)
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Alerta · Se recibió una alerta en vivo/)).toBeInTheDocument();
   });
 
   it("muestra un error si se solicita sugerencia sin activo", async () => {
@@ -507,7 +484,7 @@ describe("AlertsPanel", () => {
     });
 
     expect(
-      screen.getByText("Completa el campo de activo antes de pedir sugerencias.")
+      screen.getByText("Completa el campo de activo antes de pedir sugerencias."),
     ).toBeInTheDocument();
     expect(mockedSuggestAlertCondition).not.toHaveBeenCalled();
   });
@@ -522,28 +499,19 @@ describe("AlertsPanel", () => {
     customRender(<AlertsPanel token="secure-token" />);
 
     await act(async () => {
-      await user.type(
-        screen.getByPlaceholderText("Mensaje para Telegram/Discord"),
-        "Comprar BTC"
-      );
-      await user.type(
-        screen.getByPlaceholderText("Chat ID de Telegram (opcional)"),
-        "123"
-      );
-      await user.type(
-        screen.getByPlaceholderText("Canal de Discord (opcional)"),
-        "999"
-      );
+      await user.type(screen.getByPlaceholderText("Mensaje para Telegram/Discord"), "Comprar BTC");
+      await user.type(screen.getByPlaceholderText("Chat ID de Telegram (opcional)"), "123");
+      await user.type(screen.getByPlaceholderText("Canal de Discord (opcional)"), "999");
       await user.click(screen.getByRole("button", { name: /enviar notificación/i }));
     });
 
     await waitFor(() => {
       expect(mockedSendAlertNotification).toHaveBeenCalledWith(
         "secure-token",
-        expect.objectContaining({ message: "Comprar BTC" })
+        expect.objectContaining({ message: "Comprar BTC" }),
       );
       expect(
-        screen.getByText(/Notificación enviada \(telegram: sent \| discord: queued\)/i)
+        screen.getByText(/Notificación enviada \(telegram: sent \| discord: queued\)/i),
       ).toBeInTheDocument();
     });
   });
@@ -560,9 +528,7 @@ describe("AlertsPanel", () => {
     customRender(<AlertsPanel token="token" />);
 
     expect(screen.getByText("Conectando...")).toBeInTheDocument();
-    expect(
-      screen.getByText("Conectando al canal en vivo...")
-    ).toBeInTheDocument();
+    expect(screen.getByText("Conectando al canal en vivo...")).toBeInTheDocument();
   });
 
   it("muestra el estado inactivo cuando el websocket no ha iniciado", () => {
@@ -589,9 +555,7 @@ describe("AlertsPanel", () => {
       await user.click(screen.getByRole("button", { name: /enviar notificación/i }));
     });
 
-    expect(
-      screen.getByText("Escribe un mensaje para enviar la alerta.")
-    ).toBeInTheDocument();
+    expect(screen.getByText("Escribe un mensaje para enviar la alerta.")).toBeInTheDocument();
     expect(mockedSendAlertNotification).not.toHaveBeenCalled();
   });
 
@@ -604,10 +568,7 @@ describe("AlertsPanel", () => {
       customRender(<AlertsPanel token="secure-token" />);
 
       await act(async () => {
-        await user.type(
-          screen.getByPlaceholderText("Mensaje para Telegram/Discord"),
-          "Probar"
-        );
+        await user.type(screen.getByPlaceholderText("Mensaje para Telegram/Discord"), "Probar");
         await user.click(screen.getByRole("button", { name: /enviar notificación/i }));
       });
 
@@ -624,18 +585,13 @@ describe("AlertsPanel", () => {
     customRender(<AlertsPanel token="secure-token" />);
 
     await act(async () => {
-      await user.type(
-        screen.getByPlaceholderText("Título de la alerta"),
-        "Alerta sin condición"
-      );
+      await user.type(screen.getByPlaceholderText("Título de la alerta"), "Alerta sin condición");
       await user.type(screen.getByPlaceholderText("Activo (ej. BTCUSDT, AAPL)"), "btc");
       await user.type(screen.getByPlaceholderText("Valor (ej. 30)"), "30000");
       await user.click(screen.getByRole("button", { name: /crear alerta/i }));
     });
 
-    expect(
-      screen.getByText("Debes especificar una condición para la alerta.")
-    ).toBeInTheDocument();
+    expect(screen.getByText("Debes especificar una condición para la alerta.")).toBeInTheDocument();
     expect(mockedCreateAlert).not.toHaveBeenCalled();
   });
 
@@ -648,14 +604,12 @@ describe("AlertsPanel", () => {
       await user.type(screen.getByPlaceholderText("Activo (ej. BTCUSDT, AAPL)"), "eth");
       await user.type(
         screen.getByPlaceholderText("Condición (ej. BTC > 50,000 USD)"),
-        "ETH supera los 3k"
+        "ETH supera los 3k",
       );
       await user.click(screen.getByRole("button", { name: /crear alerta/i }));
     });
 
-    expect(
-      screen.getByText("Debes indicar un valor numérico para la alerta.")
-    ).toBeInTheDocument();
+    expect(screen.getByText("Debes indicar un valor numérico para la alerta.")).toBeInTheDocument();
     expect(mockedCreateAlert).not.toHaveBeenCalled();
   });
 
@@ -670,9 +624,7 @@ describe("AlertsPanel", () => {
       await user.click(screen.getByRole("button", { name: /crear alerta/i }));
     });
 
-    expect(
-      screen.getByText("Debes indicar el activo para la alerta.")
-    ).toBeInTheDocument();
+    expect(screen.getByText("Debes indicar el activo para la alerta.")).toBeInTheDocument();
     expect(mockedCreateAlert).not.toHaveBeenCalled();
   });
 
@@ -689,7 +641,7 @@ describe("AlertsPanel", () => {
         await user.type(screen.getByPlaceholderText("Activo (ej. BTCUSDT, AAPL)"), "btc");
         await user.type(
           screen.getByPlaceholderText("Condición (ej. BTC > 50,000 USD)"),
-          "BTC > 50k"
+          "BTC > 50k",
         );
         await user.type(screen.getByPlaceholderText("Valor (ej. 30)"), "50000");
         await user.click(screen.getByRole("button", { name: /crear alerta/i }));
@@ -719,7 +671,7 @@ describe("AlertsPanel", () => {
           },
         ],
         mutate,
-      })
+      }),
     );
     mockedUpdateAlert.mockRejectedValueOnce(new Error("No se pudo pausar"));
     const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
@@ -742,21 +694,21 @@ describe("AlertsPanel", () => {
   it("muestra un error si la API falla al eliminar", async () => {
     const user = userEvent.setup();
     const mutate = jest.fn().mockResolvedValue(undefined);
-    mockedUseSWR.mockReturnValue({
-      data: [
-        {
-          id: "alert-1",
-          title: "Alerta",
-          asset: "BTCUSDT",
-          condition: "Precio > 50k",
-          value: 50000,
-          active: true,
-        },
-      ],
-      error: undefined,
-      mutate,
-      isLoading: false,
-    });
+    mockedUseSWR.mockReturnValue(
+      createSWRMock({
+        data: [
+          {
+            id: "alert-1",
+            title: "Alerta",
+            asset: "BTCUSDT",
+            condition: "Precio > 50k",
+            value: 50000,
+            active: true,
+          },
+        ],
+        mutate,
+      }),
+    );
     mockedDeleteAlert.mockRejectedValueOnce(new Error("No se pudo eliminar"));
     const consoleSpy = jest.spyOn(console, "error").mockImplementation(() => {});
 

@@ -42,7 +42,7 @@ export default function RegisterForm() {
       { value: "moderado", label: "Moderado" },
       { value: "agresivo", label: "Agresivo" },
     ],
-    []
+    [],
   );
 
   const clearFieldError = (field: keyof FieldErrors) => {
@@ -105,9 +105,7 @@ export default function RegisterForm() {
       router.push("/");
     } catch (error) {
       const message =
-        error instanceof Error && error.message
-          ? error.message
-          : "Error al registrar la cuenta";
+        error instanceof Error && error.message ? error.message : "Error al registrar la cuenta";
       setFormError(message);
     } finally {
       setSubmitting(false);
@@ -197,9 +195,7 @@ export default function RegisterForm() {
           }}
           autoComplete="new-password"
           aria-invalid={errors.confirmPassword ? "true" : "false"}
-          aria-describedby={
-            errors.confirmPassword ? "confirmPassword-error" : undefined
-          }
+          aria-describedby={errors.confirmPassword ? "confirmPassword-error" : undefined}
         />
         {errors.confirmPassword ? (
           <p id="confirmPassword-error" className="text-sm text-destructive">

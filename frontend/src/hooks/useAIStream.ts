@@ -10,7 +10,7 @@ export interface AIInsight {
   raw?: unknown;
 }
 
-interface UseAIStreamOptions {
+export interface UseAIStreamOptions {
   enabled?: boolean;
   token?: string;
   realtimePayload?: unknown;
@@ -30,7 +30,12 @@ export function useAIStream({
   const eventSourceRef = useRef<EventSource | null>(null);
 
   const pushInsight = useCallback(
-    (payload: { message: string; source: AIInsight["source"]; raw?: unknown; timestamp?: string }) => {
+    (payload: {
+      message: string;
+      source: AIInsight["source"];
+      raw?: unknown;
+      timestamp?: string;
+    }) => {
       if (!payload.message) {
         return;
       }
@@ -46,7 +51,7 @@ export function useAIStream({
       setInsights((previous) => [...previous, insight]);
       onInsight?.(insight);
     },
-    [onInsight]
+    [onInsight],
   );
 
   useEffect(() => {
@@ -89,13 +94,16 @@ export function useAIStream({
         const parsed = JSON.parse(rawData);
         raw = parsed;
         if (parsed && typeof parsed === "object") {
+          const record = parsed as Record<string, unknown>;
+          const messageField = record.message;
+          const contentField = record.content;
           const candidate =
-            typeof (parsed as Record<string, unknown>).message === "string"
-              ? (parsed as Record<string, unknown>).message
-              : typeof (parsed as Record<string, unknown>).content === "string"
-              ? (parsed as Record<string, unknown>).content
-              : null;
-          if (candidate) {
+            typeof messageField === "string"
+              ? messageField
+              : typeof contentField === "string"
+                ? contentField
+                : null;
+          if (candidate !== null) {
             message = candidate;
           }
         } else if (typeof parsed === "string") {
@@ -138,8 +146,8 @@ export function useAIStream({
       typeof payload.content === "string"
         ? payload.content
         : typeof payload.message === "string"
-        ? payload.message
-        : null;
+          ? payload.message
+          : null;
 
     if (!message) {
       return;
@@ -166,7 +174,7 @@ export function useAIStream({
         timestamp: options?.timestamp,
       });
     },
-    [pushInsight]
+    [pushInsight],
   );
 
   return {

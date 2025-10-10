@@ -1,22 +1,21 @@
-export default async function TestStock() {
+export default async function TestCrypto() {
   try {
-    const res = await fetch(
-      "http://127.0.0.1:8000/api/markets/stocks/quotes?symbols=AAPL",
-      { cache: "no-store" }
-    );
+    const res = await fetch("http://127.0.0.1:8000/api/markets/crypto/prices?symbols=BTC", {
+      cache: "no-store",
+    });
     const data = await res.json();
 
     return (
       <div style={{ padding: "2rem", fontFamily: "Arial" }}>
-        <h1>📈 Test API Stocks</h1>
-        <p>Precio de AAPL desde el backend:</p>
+        <h1>💰 Test API Crypto</h1>
+        <p>Precio de BTC desde el backend:</p>
         <pre>{JSON.stringify(data, null, 2)}</pre>
       </div>
     );
   } catch (error) {
     return (
       <div style={{ padding: "2rem", fontFamily: "Arial" }}>
-        <h1>📈 Test API Stocks</h1>
+        <h1>💰 Test API Crypto</h1>
         <p>Error: no se pudo conectar al backend</p>
       </div>
     );

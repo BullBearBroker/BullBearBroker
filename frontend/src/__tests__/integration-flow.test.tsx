@@ -81,7 +81,7 @@ describe("Flujo de autenticación e inicio", () => {
     server.use(
       makeMarketQuoteHandler("crypto", { price: 50_000 }),
       makeMarketQuoteHandler("stocks", { price: 180.5 }),
-      makeMarketQuoteHandler("forex", { price: 1.08 })
+      makeMarketQuoteHandler("forex", { price: 1.08 }),
     );
 
     render(<DashboardPage />);

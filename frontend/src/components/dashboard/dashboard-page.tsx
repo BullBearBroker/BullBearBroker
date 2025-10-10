@@ -1,17 +1,19 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import {
-  Suspense,
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "@/lib/motion";
-import { Activity, BellRing, Bot, LineChart, Newspaper, Radio, SignalHigh, Wallet } from "lucide-react";
+import {
+  Activity,
+  BellRing,
+  Bot,
+  LineChart,
+  Newspaper,
+  Radio,
+  SignalHigh,
+  Wallet,
+} from "lucide-react";
 
 import { useAuth } from "@/components/providers/auth-provider";
 import { MarketSidebar } from "@/components/sidebar/market-sidebar";
@@ -114,13 +116,10 @@ function AsyncModuleFallback({
   );
 }
 
-const IndicatorsChart = dynamic(
-  () => import("@/components/indicators/IndicatorsChart"),
-  {
-    ssr: false,
-    loading: () => <ChartSkeleton />,
-  },
-);
+const IndicatorsChart = dynamic(() => import("@/components/indicators/IndicatorsChart"), {
+  ssr: false,
+  loading: () => <ChartSkeleton />,
+});
 
 const AlertsPanel = dynamic(
   () =>
@@ -129,25 +128,21 @@ const AlertsPanel = dynamic(
     })),
   {
     ssr: false,
-    suspense: true,
   },
 );
 
-const NewsPanel = dynamic(
-  () => import("@/components/news/NewsPanel"),
-  {
-    ssr: false,
-    loading: () => (
-      <AsyncModuleFallback
-        title="Noticias"
-        description="Cargando el pulso del mercado..."
-        icon={<Newspaper className="h-5 w-5 text-primary" aria-hidden="true" />}
-        aria-label="Sección de noticias cargándose"
-        className="h-full"
-      />
-    ),
-  },
-);
+const NewsPanel = dynamic(() => import("@/components/news/NewsPanel"), {
+  ssr: false,
+  loading: () => (
+    <AsyncModuleFallback
+      title="Noticias"
+      description="Cargando el pulso del mercado..."
+      icon={<Newspaper className="h-5 w-5 text-primary" aria-hidden="true" />}
+      aria-label="Sección de noticias cargándose"
+      className="h-full"
+    />
+  ),
+});
 
 const ChatPanel = dynamic(
   () =>
@@ -156,25 +151,21 @@ const ChatPanel = dynamic(
     })),
   {
     ssr: false,
-    suspense: true,
   },
 );
 
-const PortfolioPanel = dynamic(
-  () => import("@/components/portfolio/PortfolioPanel"),
-  {
-    ssr: false,
-    loading: () => (
-      <AsyncModuleFallback
-        title="Portafolio"
-        description="Cargando el resumen de tus posiciones..."
-        icon={<Wallet className="h-5 w-5 text-primary" aria-hidden="true" />}
-        aria-label="Sección de portafolio cargándose"
-        className="h-full"
-      />
-    ),
-  },
-);
+const PortfolioPanel = dynamic(() => import("@/components/portfolio/PortfolioPanel"), {
+  ssr: false,
+  loading: () => (
+    <AsyncModuleFallback
+      title="Portafolio"
+      description="Cargando el resumen de tus posiciones..."
+      icon={<Wallet className="h-5 w-5 text-primary" aria-hidden="true" />}
+      aria-label="Sección de portafolio cargándose"
+      className="h-full"
+    />
+  ),
+});
 
 function DashboardPageContent() {
   const { user, loading, token, logout } = useAuth();
@@ -188,7 +179,8 @@ function DashboardPageContent() {
     }
 
     const minimumWidth = 768;
-    const widthFallback = typeof window.innerWidth === "number" ? window.innerWidth >= minimumWidth : true;
+    const widthFallback =
+      typeof window.innerWidth === "number" ? window.innerWidth >= minimumWidth : true;
 
     if (typeof window.matchMedia === "function") {
       const mediaQuery = window.matchMedia("(min-width: 768px)");
@@ -313,12 +305,7 @@ function DashboardPageContent() {
       setIndicatorInsights(null);
 
       try {
-        const payload = await getIndicators(
-          "crypto",
-          indicatorSymbol,
-          "1h",
-          token ?? undefined,
-        );
+        const payload = await getIndicators("crypto", indicatorSymbol, "1h", token ?? undefined);
         if (isCancelled()) return;
         setIndicatorData(payload);
         if (payload?.symbol) {
@@ -335,7 +322,7 @@ function DashboardPageContent() {
             {
               symbol: payload.symbol,
               interval: (payload.interval as "1h" | "4h" | "1d") ?? "1h",
-            }
+            },
           );
           if (isCancelled()) return;
           const assistantMessage = aiResponse.messages.at(-1);
@@ -350,9 +337,7 @@ function DashboardPageContent() {
         if (!isCancelled()) {
           console.error(err);
           setIndicatorError(
-            err instanceof Error
-              ? err.message
-              : "No se pudieron cargar los indicadores."
+            err instanceof Error ? err.message : "No se pudieron cargar los indicadores.",
           );
         }
       } finally {
@@ -361,7 +346,7 @@ function DashboardPageContent() {
         }
       }
     },
-    [indicatorSymbol, token, user]
+    [indicatorSymbol, token, user],
   );
 
   useEffect(() => {
@@ -375,7 +360,8 @@ function DashboardPageContent() {
   }, [loadIndicators, user]);
 
   const historicalInterval = indicatorData?.interval ?? "1h"; // [Codex] nuevo
-  const historicalMarket = (indicatorData?.type as "auto" | "crypto" | "stock" | "equity" | "forex" | undefined) ?? "auto"; // [Codex] nuevo
+  const historicalMarket =
+    (indicatorData?.type as "auto" | "crypto" | "stock" | "equity" | "forex" | undefined) ?? "auto"; // [Codex] nuevo
 
   const realtimeHighlight = useMemo(() => {
     if (!realtimeData || typeof realtimeData !== "object") {
@@ -391,8 +377,8 @@ function DashboardPageContent() {
         typeof rawPrice === "number"
           ? rawPrice
           : typeof rawPrice === "string"
-          ? Number(rawPrice)
-          : null;
+            ? Number(rawPrice)
+            : null;
 
       if (numericPrice !== null && Number.isFinite(numericPrice)) {
         return `${payload.symbol} → $${numericPrice.toLocaleString(undefined, {
@@ -406,8 +392,8 @@ function DashboardPageContent() {
         typeof payload.content === "string"
           ? payload.content
           : typeof payload.message === "string"
-          ? payload.message
-          : null;
+            ? payload.message
+            : null;
 
       if (content) {
         if (typeof payload.symbol === "string") {
@@ -546,7 +532,8 @@ function DashboardPageContent() {
               <Card data-testid="notification-center" className="surface-card">
                 <CardHeader className="space-y-2 pb-4">
                   <CardTitle className="flex items-center gap-2 text-lg font-sans font-medium tracking-tight">
-                    <BellRing className="h-5 w-5 text-primary" aria-hidden="true" /> Preferencias de alerta
+                    <BellRing className="h-5 w-5 text-primary" aria-hidden="true" /> Preferencias de
+                    alerta
                   </CardTitle>
                   <CardDescription>
                     Gestiona las alertas en tiempo real provenientes del dispatcher.
@@ -561,8 +548,8 @@ function DashboardPageContent() {
                       {pushEnabled
                         ? "Suscripción activa"
                         : pushLoading
-                        ? "Sincronizando..."
-                        : "Suscripción inactiva"}
+                          ? "Sincronizando..."
+                          : "Suscripción inactiva"}
                     </Badge>
                     {pushPermission !== "unsupported" && pushPermission !== "granted" && (
                       <Button
@@ -602,7 +589,9 @@ function DashboardPageContent() {
                             className="flex items-start justify-between gap-3 rounded-xl border border-border/50 bg-[hsl(var(--surface-muted))] p-3"
                           >
                             <div className="space-y-1">
-                              <p className="text-sm font-medium text-card-foreground">{event.title}</p>
+                              <p className="text-sm font-medium text-card-foreground">
+                                {event.title}
+                              </p>
                               {event.body && (
                                 <p className="text-sm text-muted-foreground">{event.body}</p>
                               )}
@@ -653,7 +642,8 @@ function DashboardPageContent() {
               <Card className="surface-card h-full">
                 <CardHeader className="space-y-1 pb-4">
                   <CardTitle className="flex items-center gap-2 text-lg font-sans font-medium tracking-tight">
-                    <Activity className="h-5 w-5 text-primary" aria-hidden="true" /> Estado de la sesión
+                    <Activity className="h-5 w-5 text-primary" aria-hidden="true" /> Estado de la
+                    sesión
                   </CardTitle>
                   <CardDescription>
                     Mantén el pulso de la conexión en vivo y los últimos eventos del mercado.
@@ -664,9 +654,7 @@ function DashboardPageContent() {
                     <span className={realtimeConnected ? "text-success" : "text-destructive"}>
                       {realtimeConnected ? "Conectado a Realtime" : "Conexión inactiva"}
                     </span>
-                    {realtimeHighlight && (
-                      <span className="text-muted-foreground">•</span>
-                    )}
+                    {realtimeHighlight && <span className="text-muted-foreground">•</span>}
                     {realtimeHighlight && (
                       <span className="text-card-foreground">{realtimeHighlight}</span>
                     )}
@@ -697,7 +685,8 @@ function DashboardPageContent() {
               <Card className="surface-card flex flex-col" data-testid="dashboard-indicators">
                 <CardHeader className="flex flex-wrap items-center justify-between gap-3 pb-4">
                   <CardTitle className="flex items-center gap-2 text-lg font-sans font-medium tracking-tight">
-                    <SignalHigh className="h-5 w-5 text-primary" aria-hidden="true" /> Indicadores clave ({indicatorSymbol})
+                    <SignalHigh className="h-5 w-5 text-primary" aria-hidden="true" /> Indicadores
+                    clave ({indicatorSymbol})
                   </CardTitle>
                   <Button
                     variant="outline"
@@ -751,7 +740,8 @@ function DashboardPageContent() {
               <Card className="surface-card flex flex-col" data-testid="dashboard-chat">
                 <CardHeader className="pb-4">
                   <CardTitle className="flex items-center gap-2 text-lg font-sans font-medium tracking-tight">
-                    <Bot className="h-5 w-5 text-primary" aria-hidden="true" /> Asistente estratégico
+                    <Bot className="h-5 w-5 text-primary" aria-hidden="true" /> Asistente
+                    estratégico
                   </CardTitle>
                   <CardDescription>
                     Conversa con el bot para contextualizar las señales del mercado.

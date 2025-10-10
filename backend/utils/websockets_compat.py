@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import asyncio
 from types import SimpleNamespace
 from typing import Any
 
 import websockets
 
-if not getattr(websockets, "_codex_response_patch", False):  # CODEx: aplicar una sola vez
+if not getattr(
+    websockets, "_codex_response_patch", False
+):  # CODEx: aplicar una sola vez
     _original_connect = websockets.connect
 
     class _ConnectWrapper:

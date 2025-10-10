@@ -23,7 +23,7 @@ export function useLiveNotifications(token?: string | null) {
   const { data: fallbackData } = useSWR<NotificationEvent[]>(
     status === "fallback" ? "/api/notifications/logs" : null,
     fetcher,
-    { refreshInterval: 5000 }
+    { refreshInterval: 5000 },
   );
 
   useEffect(() => {

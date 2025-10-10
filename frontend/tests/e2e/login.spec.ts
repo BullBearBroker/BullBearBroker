@@ -11,30 +11,42 @@ test.describe("Flujo de autenticación", () => {
     const profile = { id: "1", email: "user@example.com", name: "Ana" };
 
     await page.route("**/api/auth/login", (route) =>
-      route.fulfill(jsonResponse({ access_token: "token", refresh_token: "refresh" }))
+      route.fulfill(jsonResponse({ access_token: "token", refresh_token: "refresh" })),
     );
     await page.route("**/api/auth/me", (route) => route.fulfill(jsonResponse(profile)));
     await page.route("**/api/portfolio", (route) =>
-      route.fulfill(jsonResponse({ items: [], total_value: 0 }))
+      route.fulfill(jsonResponse({ items: [], total_value: 0 })),
     );
     await page.route("**/api/alerts", (route) => route.fulfill(jsonResponse([])));
     await page.route("**/api/news/latest", (route) =>
-      route.fulfill(jsonResponse({ articles: [] }))
+      route.fulfill(jsonResponse({ articles: [] })),
     );
     await page.route("**/api/markets/crypto/prices**", (route) =>
       route.fulfill(
-        jsonResponse({ quotes: [{ symbol: "BTCUSDT", price: 50000, raw_change: 2.1, source: "Test", type: "crypto" }] })
-      )
+        jsonResponse({
+          quotes: [
+            { symbol: "BTCUSDT", price: 50000, raw_change: 2.1, source: "Test", type: "crypto" },
+          ],
+        }),
+      ),
     );
     await page.route("**/api/markets/stocks/quotes**", (route) =>
       route.fulfill(
-        jsonResponse({ quotes: [{ symbol: "AAPL", price: 180.5, raw_change: 1.1, source: "Test", type: "stock" }] })
-      )
+        jsonResponse({
+          quotes: [
+            { symbol: "AAPL", price: 180.5, raw_change: 1.1, source: "Test", type: "stock" },
+          ],
+        }),
+      ),
     );
     await page.route("**/api/markets/forex/rates**", (route) =>
       route.fulfill(
-        jsonResponse({ quotes: [{ symbol: "EUR/USD", price: 1.08, raw_change: -0.3, source: "Test", type: "forex" }] })
-      )
+        jsonResponse({
+          quotes: [
+            { symbol: "EUR/USD", price: 1.08, raw_change: -0.3, source: "Test", type: "forex" },
+          ],
+        }),
+      ),
     );
     await page.route("**/api/markets/indicators**", (route) =>
       route.fulfill(
@@ -45,8 +57,8 @@ test.describe("Flujo de autenticación", () => {
           count: 1,
           indicators: { close: 12345 },
           series: { closes: [1, 2, 3] },
-        })
-      )
+        }),
+      ),
     );
     await page.route("**/api/markets/history/**", (route) =>
       route.fulfill(
@@ -64,8 +76,8 @@ test.describe("Flujo de autenticación", () => {
               volume: 100,
             },
           ],
-        })
-      )
+        }),
+      ),
     );
     await page.route("**/api/ai/chat", (route) =>
       route.fulfill(
@@ -73,11 +85,15 @@ test.describe("Flujo de autenticación", () => {
           response: "Insight generado",
           used_data: true,
           sources: ["mock"],
-        })
-      )
+        }),
+      ),
     );
 
-    page.on("websocket", (ws) => ws.close());
+    page.on("websocket", (ws) => {
+      if ("close" in ws && typeof (ws as { close?: () => void }).close === "function") {
+        (ws as { close: () => void }).close();
+      }
+    });
 
     await page.goto("/login");
 
@@ -89,7 +105,11 @@ test.describe("Flujo de autenticación", () => {
     await expect(page.getByTestId("dashboard-shell")).toBeVisible();
     await expect(page.getByRole("heading", { name: /Ana/ })).toBeVisible();
 
-    await page.getByTestId("dashboard-content").getByRole("button", { name: /Cerrar sesión/i }).first().click();
+    await page
+      .getByTestId("dashboard-content")
+      .getByRole("button", { name: /Cerrar sesión/i })
+      .first()
+      .click();
 
     await expect(page).toHaveURL(/login/);
     await expect(page.getByRole("heading", { name: /Iniciar sesión/i })).toBeVisible();

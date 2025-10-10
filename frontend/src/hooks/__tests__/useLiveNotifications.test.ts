@@ -3,16 +3,13 @@ import { act, renderHook } from "@/tests/utils/renderWithProviders";
 import { useLiveNotifications } from "../useLiveNotifications";
 
 // QA: mock de SWR para inyectar datos controlados en los efectos.
-const useSWRMock = jest.fn(
-  (key?: string | null, _fetcher?: unknown, _config?: unknown) => ({
-    data: key ? currentFallbackData : undefined,
-  })
-);
+const useSWRMock = jest.fn((key?: string | null, _fetcher?: unknown, _config?: unknown) => ({
+  data: key ? currentFallbackData : undefined,
+}));
 
 jest.mock("swr", () => ({
   __esModule: true,
-  default: (...args: unknown[]) =>
-    useSWRMock(...(args as [string | null, unknown, unknown])),
+  default: (...args: unknown[]) => useSWRMock(...(args as [string | null, unknown, unknown])),
 }));
 
 let currentFallbackData: unknown;

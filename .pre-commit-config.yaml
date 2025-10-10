@@ -11,9 +11,13 @@ repos:
   - repo: https://github.com/asottile/pyupgrade
     rev: v3.17.0
     hooks: [ { id: pyupgrade, args: ["--py312-plus"] } ]
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trim-trailing-whitespace
   # 🧩 Codex fix
   - repo: https://github.com/Yelp/detect-secrets
-    rev: v1.4.0
+    rev: v1.5.0
     hooks:
       - id: detect-secrets
-        args: ['--baseline', '.secrets.baseline']
+        args: ['--baseline', '.secrets.baseline', '--exclude-files', 'pnpm-lock\\.yaml']

@@ -19,7 +19,10 @@ function NavbarComponent() {
   const userLabel = useMemo(() => user?.name || user?.email || "Invitado", [user]);
 
   return (
-    <header className="border-b bg-card/60 backdrop-blur supports-[backdrop-filter]:bg-card/80" role="banner">
+    <header
+      className="border-b bg-card/60 backdrop-blur supports-[backdrop-filter]:bg-card/80"
+      role="banner"
+    >
       <nav
         className="mx-auto flex w-full max-w-6xl items-center justify-between px-4 py-3"
         aria-label="Barra de navegación principal"
@@ -53,7 +56,10 @@ function NavbarComponent() {
             </span>
           ) : user ? (
             <div className="flex items-center gap-3">
-              <span className="text-sm text-muted-foreground" aria-label={`Sesión iniciada como ${userLabel}`}>
+              <span
+                className="text-sm text-muted-foreground"
+                aria-label={`Sesión iniciada como ${userLabel}`}
+              >
                 {userLabel}
               </span>
               <Button
