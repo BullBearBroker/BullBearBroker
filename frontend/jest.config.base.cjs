@@ -10,15 +10,17 @@ const baseConfig = {
   },
   setupFilesAfterEnv: ["<rootDir>/jest.setup.ts", "<rootDir>/src/tests/msw/setup.ts"],
   moduleNameMapper: {
-    "^.+\\.(css|less|scss|sass)$": "identity-obj-proxy",
-    "^@/styles/globals\\.css$": "identity-obj-proxy",
-    // # QA fix: corregir regex y ruta raíz del alias "@/"
-    "^@/(.*)$": "<rootDir>/src/$1",
+    // # QA fix: corregir regex y rutas raíz de los alias "@/..."
+    "^@/components/(.*)$": "<rootDir>/src/components/$1",
+    "^@/hooks/(.*)$": "<rootDir>/src/hooks/$1",
+    "^@/lib/(.*)$": "<rootDir>/src/lib/$1",
+    "^@/context/(.*)$": "<rootDir>/src/context/$1",
+    "^@/tests/(.*)$": "<rootDir>/src/tests/$1",
     "^recharts$": "<rootDir>/__mocks__/recharts.tsx",
     "^msw/node$": "<rootDir>/node_modules/msw/lib/node/index.js",
-    "^@mswjs/interceptors/WebSocket$": "<rootDir>/src/tests/msw/websocket-interceptor.ts",
-    "^@mswjs/interceptors/(.*)$": "<rootDir>/src/tests/msw/interceptors/$1.ts",
     "^jest-websocket-mock$": "<rootDir>/src/tests/mocks/jest-websocket-mock.ts", // ✅ Codex fix: mock consistente para WebSocket
+    "^@/styles/globals\.css$": "identity-obj-proxy",
+    "\.(css|less|scss|sass)$": "identity-obj-proxy",
   },
   transform: {
     "^.+\\.(ts|tsx)$": [
