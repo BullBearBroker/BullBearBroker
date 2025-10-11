@@ -1,3 +1,69 @@
+// ✅ Polyfill temporal para resolver el error de MSW en Node 20 + PNPM 10 + Jest 29+
+// Jest pierde la resolución interna del módulo "@mswjs/interceptors/ClientRequest".
+// Este bloque intercepta la carga y fuerza su ruta absoluta real.
+
+import Module from "module";
+import path from "path";
+
+const resolveFromHere = Module.createRequire
+  ? Module.createRequire(__filename)
+  : // @ts-expect-error - Node CJS fallback para entornos sin createRequire
+    require;
+
+try {
+  const {
+    fetch: undiciFetch,
+    Response: UndiciResponse,
+    Request: UndiciRequest,
+    Headers: UndiciHeaders,
+  } = resolveFromHere("node:undici");
+
+  globalThis.fetch ??= undiciFetch;
+  globalThis.Response ??= UndiciResponse;
+  globalThis.Request ??= UndiciRequest;
+  globalThis.Headers ??= UndiciHeaders;
+} catch (_error) {
+  // 🔧 Si undici no está disponible, conservamos los globals existentes
+}
+
+if (typeof Response === "undefined") {
+  try {
+    resolveFromHere("whatwg-fetch");
+  } catch (_error) {
+    // 🔧 Último recurso: definimos un Response vacío para evitar fallos de inicialización
+    class MinimalResponse {}
+    // @ts-expect-error - asignación deliberada
+    globalThis.Response = MinimalResponse;
+  }
+}
+
+const clientRequestPath = (() => {
+  try {
+    return resolveFromHere.resolve("@mswjs/interceptors/lib/node/interceptors/ClientRequest/index.js");
+  } catch (_error) {
+    return path.resolve(
+      "../node_modules/.pnpm/@mswjs+interceptors@0.39.7/node_modules/@mswjs/interceptors/lib/node/interceptors/ClientRequest/index.js"
+    );
+  }
+})();
+
+const originalResolveFilename = Module._resolveFilename;
+Module._resolveFilename = function (request, parent, isMain, options) {
+  if (request === "@mswjs/interceptors/ClientRequest") {
+    return clientRequestPath;
+  }
+  return originalResolveFilename.call(this, request, parent, isMain, options);
+};
+
+// ✅ Mock virtual para exponer el ClientRequest real dentro de Jest (Node 20 + PNPM 10)
+jest.mock(
+  "@mswjs/interceptors/ClientRequest",
+  () => resolveFromHere(clientRequestPath),
+  { virtual: true }
+);
+
+// 🔧 Fin del polyfill MSW para Node 20 + PNPM 10 + Jest 29+
+
 import "@testing-library/jest-dom";
 import "jest-axe/extend-expect";
 jest.mock("next/font/google", () => ({
