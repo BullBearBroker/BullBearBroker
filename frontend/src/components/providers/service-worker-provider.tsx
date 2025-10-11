@@ -13,13 +13,17 @@ export function ServiceWorkerProvider() {
       return;
     }
 
+    const serviceWorker = navigator.serviceWorker;
+    if (!serviceWorker) {
+      return;
+    }
+
     let cancelled = false;
 
     const registerServiceWorker = async () => {
       try {
-        const existing = await navigator.serviceWorker.getRegistration(SERVICE_WORKER_PATH);
-        const registration =
-          existing ?? (await navigator.serviceWorker.register(SERVICE_WORKER_PATH));
+        const existing = await serviceWorker.getRegistration(SERVICE_WORKER_PATH);
+        const registration = existing ?? (await serviceWorker.register(SERVICE_WORKER_PATH));
 
         if (cancelled) {
           return;
@@ -35,10 +39,20 @@ export function ServiceWorkerProvider() {
       }
     };
 
+    const handleControllerChange = () => {
+      if (cancelled) {
+        return;
+      }
+      // ✅ Reintenta el registro cuando cambia el controlador del SW
+      void registerServiceWorker();
+    };
+
+    serviceWorker.addEventListener?.("controllerchange", handleControllerChange); // 🔧 Vigila actualizaciones del service worker activo
     registerServiceWorker();
 
     return () => {
       cancelled = true;
+      serviceWorker.removeEventListener?.("controllerchange", handleControllerChange); // 🔧 Limpia el listener al desmontar el provider
     };
   }, []);
 
