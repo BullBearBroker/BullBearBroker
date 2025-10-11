@@ -72,6 +72,7 @@
     "@types/node": "^20.19.17",
     "@types/react": "^18.3.24",
     "@types/react-dom": "^18.3.7",
+    "@mswjs/interceptors": "^0.29.0",
     "autoprefixer": "^10.4.21",
     "babel-jest": "^29.7.0",
     "eslint": "^9.36.0",
