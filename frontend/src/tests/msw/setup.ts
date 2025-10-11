@@ -1,6 +1,6 @@
-import "whatwg-fetch";
+import { server } from './server';
 
-import { server } from "./server";
-
-// Ensure server lifecycle hooks are registered for the test environment.
-void server;
+// Configuración global del mock server para Jest
+beforeAll(() => server.listen());
+afterEach(() => server.resetHandlers());
+afterAll(() => server.close());
