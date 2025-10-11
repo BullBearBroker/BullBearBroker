@@ -31,11 +31,14 @@
   ],
   "author": "BullBearBroker Team",
   "license": "MIT",
+  "// 🔧 Added missing dependency \"critters\" required by Next.js 15 build": "",
   "devDependencies": {
     "@babel/preset-env": "^7.28.3",
     "@babel/preset-react": "^7.27.1",
     "@babel/preset-typescript": "^7.27.1",
+    "@mswjs/interceptors": "0.29.0",
     "babel-jest": "^30.2.0",
+    "msw": "2.11.5",
     "web-push": "^3.6.7"
   },
   "engines": {
@@ -44,5 +47,8 @@
   "repository": {
     "type": "git",
     "url": "https://github.com/bullbearbroker/bullbearbroker.git"
+  },
+  "dependencies": {
+    "critters": "^0.0.25"
   }
 }

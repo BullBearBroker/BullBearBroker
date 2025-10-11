@@ -10,15 +10,18 @@ const baseConfig = {
   },
   setupFilesAfterEnv: ["<rootDir>/jest.setup.ts", "<rootDir>/src/tests/msw/setup.ts"],
   moduleNameMapper: {
-    "^.+\\.(css|less|scss|sass)$": "identity-obj-proxy",
-    "^@/styles/globals\\.css$": "identity-obj-proxy",
-    // # QA fix: corregir regex y ruta raíz del alias "@/"
-    "^@/(.*)$": "<rootDir>/src/$1",
+    // # QA fix: corregir regex y rutas raíz de los alias "@/..."
+    "^@/components/(.*)$": "<rootDir>/src/components/$1",
+    "^@/hooks/(.*)$": "<rootDir>/src/hooks/$1",
+    "^@/lib/(.*)$": "<rootDir>/src/lib/$1",
+    "^@/utils/(.*)$": "<rootDir>/src/utils/$1", // ✅ Alias añadido para resolver "@/utils/fonts" en Jest
+    "^@/context/(.*)$": "<rootDir>/src/context/$1",
+    "^@/tests/(.*)$": "<rootDir>/src/tests/$1",
     "^recharts$": "<rootDir>/__mocks__/recharts.tsx",
     "^msw/node$": "<rootDir>/node_modules/msw/lib/node/index.js",
-    "^@mswjs/interceptors/WebSocket$": "<rootDir>/src/tests/msw/websocket-interceptor.ts",
-    "^@mswjs/interceptors/(.*)$": "<rootDir>/src/tests/msw/interceptors/$1.ts",
     "^jest-websocket-mock$": "<rootDir>/src/tests/mocks/jest-websocket-mock.ts", // ✅ Codex fix: mock consistente para WebSocket
+    "^@/styles/globals\.css$": "identity-obj-proxy",
+    "\.(css|less|scss|sass)$": "identity-obj-proxy",
   },
   transform: {
     "^.+\\.(ts|tsx)$": [
@@ -37,6 +40,10 @@ const baseConfig = {
     "/node_modules/(?!(\\.pnpm/[^/]+/node_modules/)?(recharts|d3-|msw|@mswjs|until-async|strict-event-emitter|outvariant|headers-polyfill)/)",
     "node_modules/(?!(\\.pnpm/[^/]+/node_modules/)?(recharts|d3-|msw|@mswjs|until-async|strict-event-emitter|outvariant|headers-polyfill|nanoid|uuid|other-esm-lib)/)",
   ],
+  coveragePathIgnorePatterns: [
+    "<rootDir>/src/tests/", // ✅ Ignoramos infraestructura de pruebas para el cálculo de cobertura global
+    "<rootDir>/src/types/", // ✅ Tipos estáticos quedan fuera del objetivo de cobertura
+  ],
   moduleFileExtensions: ["ts", "tsx", "js", "jsx", "json", "node"],
   testMatch: [
     "<rootDir>/app/**/*.test.(ts|tsx|js|jsx)",
@@ -48,11 +55,12 @@ const baseConfig = {
   clearMocks: true,
   collectCoverage: false,
   collectCoverageFrom: [
-    "<rootDir>/app/**/*.{ts,tsx}",
-    "<rootDir>/src/**/*.{ts,tsx}",
+    "<rootDir>/src/**/*.{ts,tsx}", // ✅ Limitamos coverage al código compartido (excluimos páginas manuales de app/)
     "<rootDir>/src/components/forms/**/*.{ts,tsx}",
     "<rootDir>/src/components/sidebar/**/*.{ts,tsx}",
     "<rootDir>/src/components/news/**/*.{ts,tsx}",
+    "!<rootDir>/src/tests/**/*", // ✅ Excluimos utilidades de pruebas (MSW, mocks) del cómputo de cobertura
+    "!<rootDir>/src/types/**/*", // ✅ Tipos .d.ts no ejecutables fuera del scope de coverage
     "!<rootDir>/app/**/__tests__/**",
     "!<rootDir>/src/**/__tests__/**",
     "!<rootDir>/src/**/stories/**",

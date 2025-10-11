@@ -254,6 +254,7 @@ describe("DashboardPage", () => {
     expect(mockMarketSidebar).toHaveBeenCalled();
     expect(mockPortfolioPanel).toHaveBeenCalledWith(
       expect.objectContaining({ token: baseAuth.token }),
+      expect.anything(), // ✅ Permitimos el segundo argumento vacío inyectado por el mock (Node 20 + Jest)
     );
     expect(mockAlertsPanel).toHaveBeenCalled();
     expect(mockNewsPanel).toHaveBeenCalled();
@@ -268,15 +269,18 @@ describe("DashboardPage", () => {
     expect(modules.className).toContain("lg:grid-cols-2");
 
     await waitFor(() => {
-      expect(mockIndicatorsChart).toHaveBeenCalledWith(
-        expect.objectContaining({
-          symbol: "BTCUSDT",
-          interval: "1h",
-          indicators: expect.any(Object),
-          history: expect.objectContaining({ symbol: "BTCUSDT" }),
-        }),
-      );
+      expect(mockIndicatorsChart).toHaveBeenCalled();
     });
+
+    const [chartProps] = mockIndicatorsChart.mock.calls.at(-1) ?? [];
+    expect(chartProps).toEqual(
+      expect.objectContaining({
+        symbol: "BTCUSDT",
+        interval: "1h",
+        indicators: expect.any(Object),
+        history: expect.objectContaining({ symbol: "BTCUSDT" }),
+      }),
+    ); // ✅ Validamos solo las props relevantes para evitar falsos negativos con argumentos extra
 
     const user = userEvent.setup();
     await act(async () => {

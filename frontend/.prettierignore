@@ -1,2 +1,5 @@
 playwright-report/
 test-results/
+# ✅ Ignoramos assets auto-generados para evitar reescrituras innecesarias
+public/mockServiceWorker.js
+public/push.html

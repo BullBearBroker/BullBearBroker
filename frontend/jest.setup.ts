@@ -1,3 +1,82 @@
+// ✅ Polyfill temporal para resolver el error de MSW en Node 20 + PNPM 10 + Jest 29+
+// Jest pierde la resolución interna del módulo "@mswjs/interceptors/ClientRequest".
+// Este bloque intercepta la carga y fuerza su ruta absoluta real.
+
+import Module from "module";
+import path from "path";
+
+const resolveFromHere = Module.createRequire(__filename); // ✅ Node 20 expone createRequire de forma estable, sin fallback CJS
+
+try {
+  const {
+    fetch: undiciFetch,
+    Response: UndiciResponse,
+    Request: UndiciRequest,
+    Headers: UndiciHeaders,
+  } = resolveFromHere("node:undici");
+
+  globalThis.fetch ??= undiciFetch;
+  globalThis.Response ??= UndiciResponse;
+  globalThis.Request ??= UndiciRequest;
+  globalThis.Headers ??= UndiciHeaders;
+} catch (_error) {
+  // 🔧 Si undici no está disponible, conservamos los globals existentes
+}
+
+if (typeof Response === "undefined") {
+  try {
+    resolveFromHere("whatwg-fetch");
+  } catch (_error) {
+    // 🔧 Último recurso: definimos un Response vacío para evitar fallos de inicialización
+    class MinimalResponse {}
+    // @ts-expect-error - asignación deliberada
+    globalThis.Response = MinimalResponse;
+  }
+}
+
+const clientRequestPath = (() => {
+  try {
+    return resolveFromHere.resolve(
+      "@mswjs/interceptors/lib/node/interceptors/ClientRequest/index.js",
+    );
+  } catch (_error) {
+    // ✅ Fixed MSW resolver (Node 20 + PNPM) apuntando a la versión 0.29.0 distribuida por PNPM
+    return path.resolve(
+      __dirname,
+      "..",
+      "node_modules/.pnpm/@mswjs+interceptors@0.29.0/node_modules/@mswjs/interceptors/lib/node/interceptors/ClientRequest/index.js",
+    );
+  }
+})();
+
+type ResolveFilenameFn = (
+  request: string,
+  parent: NodeModule | undefined,
+  isMain: boolean,
+  options?: Record<string, unknown>,
+) => string;
+
+const moduleWithResolve = Module as unknown as { _resolveFilename: ResolveFilenameFn }; // ✅ Tipado explícito para acceder a la API privada de Node
+const originalResolveFilename = moduleWithResolve._resolveFilename;
+moduleWithResolve._resolveFilename = function (
+  request: string,
+  parent: NodeModule | undefined,
+  isMain: boolean,
+  options?: Record<string, unknown>,
+) {
+  if (request === "@mswjs/interceptors/ClientRequest") {
+    return clientRequestPath;
+  }
+  return originalResolveFilename.call(this, request, parent, isMain, options);
+};
+
+// ✅ Mock virtual para exponer el ClientRequest real dentro de Jest (Node 20 + PNPM 10)
+jest.mock("@mswjs/interceptors/ClientRequest", () => resolveFromHere(clientRequestPath), {
+  virtual: true,
+});
+
+// 🔧 Fin del polyfill MSW para Node 20 + PNPM 10 + Jest 29+
+
 import "@testing-library/jest-dom";
 import "jest-axe/extend-expect";
 jest.mock("next/font/google", () => ({
