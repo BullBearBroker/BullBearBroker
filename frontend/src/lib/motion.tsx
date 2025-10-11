@@ -59,7 +59,7 @@ const fallbackAnimatePresence: AnimatePresenceLike = ({ children }) => <>{childr
 
 const optionalRequire = (() => {
   try {
-    // eslint-disable-next-line no-new-func
+
     return Function("return require")();
   } catch {
     return null;

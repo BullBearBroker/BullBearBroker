@@ -30,7 +30,7 @@ const candidates = [
 export function loadInterceptor(target: string): InterceptorModule {
   for (const basePath of candidates) {
     try {
-      // eslint-disable-next-line global-require
+
       return require(path.join(basePath, target, "index.js")) as InterceptorModule;
     } catch (error) {
       // Continue searching in other candidates

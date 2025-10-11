@@ -103,3 +103,6 @@ clean:
 	@echo "🧹 Limpiando cachés y artefactos..."
 	@find . -type d -name "__pycache__" -exec rm -rf {} +
 	@rm -rf .pytest_cache .ruff_cache .mypy_cache
+
+qa-full:
+	@bash scripts/qa_full.sh
