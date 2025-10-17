@@ -1,3 +1,8 @@
+// === QA: Dummy VAPID en entorno de test ===
+process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY || "DUMMY_VAPID_KEY";
+process.env.NEXT_PUBLIC_VAPID_KEY = process.env.NEXT_PUBLIC_VAPID_KEY || process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+process.env.VAPID_PUBLIC_KEY_BACKEND = process.env.VAPID_PUBLIC_KEY_BACKEND || process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
+// === /QA VAPID ===
 process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "test-vapid";
 
 // ✅ Polyfill temporal para resolver el error de MSW en Node 20 + PNPM 10 + Jest 29+
@@ -338,3 +343,61 @@ jest.mock("@radix-ui/react-scroll-area", () => {
 // Mock global para URL APIs usadas en PortfolioPanel
 global.URL.createObjectURL = jest.fn(() => "blob:mock-url");
 global.URL.revokeObjectURL = jest.fn();
+
+// === QA: filtros de warnings ruidosos en tests ===
+(() => {
+  const originalWarn = console.warn;
+  const originalError = console.error;
+
+  const MSW_UNHANDLED_RE = /\[MSW\] Warning: intercepted a request without a matching request handler:/i;
+  const ACT_NOT_CONFIGURED_RE = /The current testing environment is not configured to support act\(\.\.\.\)/i;
+  const ACT_NOT_WRAPPED_RE = /not wrapped in act\(\.\.\.\)/i;
+
+  function isWsUrlInArgs(args) {
+    return args && Array.from(args).some((a) => {
+      const s = String(a || '');
+      return s.includes('ws://') || s.includes('wss://');
+    });
+  }
+
+  console.warn = (...args) => {
+    const first = String(args[0] || '');
+    if (MSW_UNHANDLED_RE.test(first) && isWsUrlInArgs(args)) return; // silenciar WS sin handler
+    if (first.includes('Missing VAPID key from backend.') || first.includes('VAPID public key mismatch')) return; // VAPID en test
+    return originalWarn.call(console, ...args);
+  };
+
+  console.error = (...args) => {
+    const msg = String(args[0] || '');
+    if (ACT_NOT_CONFIGURED_RE.test(msg) || ACT_NOT_WRAPPED_RE.test(msg)) return; // act(...)
+    return originalError.call(console, ...args);
+  };
+})();
+// === /QA filtros ===
+
+// === QA: filtros de warnings ruidosos ===
+(() => {
+  const originalWarn = console.warn;
+  const originalError = console.error;
+
+  const MSW_UNHANDLED_RE = /\[MSW\] Warning: intercepted a request without a matching request handler:/i;
+  const ACT_NOT_CONFIGURED_RE = /testing environment is not configured to support act\(/i;
+  const ACT_NOT_WRAPPED_RE = /not wrapped in act\(/i;
+
+  function isWs(args){return Array.from(args||[]).some(a=>String(a||'').includes('ws://')||String(a||'').includes('wss://'));}
+
+  console.warn = (...args) => {
+    const first = String(args[0]||'');
+    if (MSW_UNHANDLED_RE.test(first) && isWs(args)) return;
+    if (first.includes('Missing VAPID key from backend.') || first.includes('VAPID public key mismatch')) return;
+    return originalWarn.call(console, ...args);
+  };
+
+  console.error = (...args) => {
+    const msg = String(args[0]||'');
+    if (ACT_NOT_CONFIGURED_RE.test(msg) || ACT_NOT_WRAPPED_RE.test(msg)) return;
+    return originalError.call(console, ...args);
+  };
+})();
+// === /QA filtros ===
+
