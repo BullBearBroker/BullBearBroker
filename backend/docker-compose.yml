@@ -1,0 +1,24 @@
+version: "3.9"
+
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: Dockerfile  # QA 2.0: reutilizamos Dockerfile principal
+    container_name: bullbear-backend
+    environment:
+      APP_ENV: "local"
+      REDIS_URL: "redis://bullbear-redis:6379"  # QA 2.0: redis accesible desde backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ..:/app
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      - redis  # QA 2.0: verificado dependencia de Redis
+
+  redis:
+    image: redis:7-alpine  # QA 2.0: imagen oficial solicitada
+    container_name: bullbear-redis
+    ports:
+      - "6379:6379"

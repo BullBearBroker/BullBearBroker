@@ -1,0 +1,41 @@
+# QA 2.9: CI básico backend + frontend + e2e
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install backend deps  # QA 2.9
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt || true
+          pip install -r backend/requirements.txt || true
+      - name: Alembic sanity  # QA 2.9
+        run: bash backend/scripts/check_migrations.sh
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Enable corepack (pnpm)  # QA 2.9
+        run: corepack enable
+      - name: Install deps  # QA 2.9
+        run: pnpm install
+      - name: Jest WS smoke  # QA 2.9
+        run: pnpm --prefix frontend test -- src/components/dashboard/__tests__/notification-center-ws.integration.test.tsx --verbose
+      - name: Playwright browsers  # QA 2.9
+        run: pnpm --prefix frontend exec playwright install --with-deps
+      - name: Playwright e2e  # QA 2.9
+        run: pnpm --prefix frontend exec playwright test --config=playwright.config.ts

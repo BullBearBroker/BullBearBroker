@@ -1,0 +1,54 @@
+{
+  "name": "bullbearbroker",
+  "version": "1.0.0",
+  "description": "BullBearBroker - Asistente Especializado en Mercados Financieros",
+  "main": "frontend/src/app/page.tsx",
+  "scripts": {
+    "start": "npm --prefix frontend run start",
+    "dev": "npm --prefix frontend run dev",
+    "backend": "cd backend && python -m uvicorn app.main:app --reload --host 0.0.0.0 --port 8000",
+    "test": "npm --prefix frontend run test",
+    "build": "npm --prefix frontend run build",
+    "test:frontend": "pnpm --prefix frontend test:dev",
+    "test:frontend:list": "pnpm --prefix frontend test:dev --listTests",
+    "test:frontend:paths": "pnpm --prefix frontend test:dev -- --runTestsByPath src/app/__tests__/portfolio-page.test.tsx src/components/portfolio/__tests__/PortfolioPanel.test.tsx",
+    "test:backend": "pytest backend",
+    "test:backend:cov": "pytest --cov=backend --cov-report=term-missing backend",
+    "lint": "pnpm lint:backend && pnpm lint:frontend",
+    "lint:backend": "cd backend && ruff check . && black --check . && isort --check-only .",
+    "lint:frontend": "pnpm --prefix frontend lint && pnpm --prefix frontend prettier:check",
+    "format": "pnpm format:backend && pnpm format:frontend",
+    "format:backend": "cd backend && ruff check --fix . && isort . && black .",
+    "format:frontend": "pnpm --prefix frontend format"
+  },
+  "keywords": [
+    "finance",
+    "trading",
+    "ai",
+    "chatbot",
+    "cryptocurrency",
+    "stocks"
+  ],
+  "author": "BullBearBroker Team",
+  "license": "MIT",
+  "// 🔧 Added missing dependency \"critters\" required by Next.js 15 build": "",
+  "devDependencies": {
+    "@babel/preset-env": "^7.28.3",
+    "@babel/preset-react": "^7.27.1",
+    "@babel/preset-typescript": "^7.27.1",
+    "@mswjs/interceptors": "0.29.0",
+    "babel-jest": "^30.2.0",
+    "msw": "2.11.5",
+    "web-push": "^3.6.7"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bullbearbroker/bullbearbroker.git"
+  },
+  "dependencies": {
+    "critters": "^0.0.25"
+  }
+}

@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# =========================
+# Config
+# =========================
+BASE="${BASE:-http://127.0.0.1:8000}"
+EMAIL="${EMAIL:-test@bullbear.ai}"
+PASSWORD="${PASSWORD:-Test1234!}"
+
+mask() { echo "${1:0:35}..."; }
+line() { printf "\n%s\n" "------------------------------------------------------------"; }
+
+# Helper para extraer campo JSON sin jq (usa Python estándar)
+get_json_field() {
+  local key="$1"
+  python - "$key" <<'PY' "$2"
+import sys, json, os
+key = sys.argv[1]
+data = json.load(sys.stdin)
+if key not in data:
+    sys.exit(1)
+print(data[key])
+PY
+}
+
+echo "BASE=$BASE"
+echo "EMAIL=$EMAIL"
+
+line
+echo "1) LOGIN"
+LOGIN_JSON="$(curl -s -X POST "$BASE/api/auth/login" \
+  -H "Content-Type: application/json" \
+  -d "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}")"
+
+echo "$LOGIN_JSON"
+
+ACCESS=$(echo "$LOGIN_JSON" | get_json_field access_token) || { echo "❌ No pude extraer access_token"; exit 1; }
+R1=$(echo "$LOGIN_JSON" | get_json_field refresh_token) || { echo "❌ No pude extraer refresh_token"; exit 1; }
+
+echo "ACCESS: $(mask "$ACCESS")"
+echo "R1    : $(mask "$R1")"
+
+line
+echo "2) REFRESH (R1 -> R2) — esperado 200 con refresh nuevo"
+R2_JSON="$(curl -s -X POST "$BASE/api/auth/refresh" \
+  -H "Content-Type: application/json" \
+  -d "{\"refresh_token\":\"$R1\"}")"
+
+echo "$R2_JSON"
+R2=$(echo "$R2_JSON" | get_json_field refresh_token) || { echo "❌ No pude extraer nuevo refresh R2"; exit 1; }
+echo "R2    : $(mask "$R2")"
+
+line
+echo "3) Reusar R1 — esperado 401 invalid_refresh"
+HTTP_REUSE_R1="$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE/api/auth/refresh" \
+  -H "Content-Type: application/json" \
+  -d "{\"refresh_token\":\"$R1\"}")"
+echo "HTTP: $HTTP_REUSE_R1"
+
+line
+echo "4) /auth/me con ACCESS — esperado 200"
+HTTP_ME="$(curl -s -o /tmp/me.json -w "%{http_code}" "$BASE/api/auth/me" -H "Authorization: Bearer $ACCESS")"
+echo "HTTP: $HTTP_ME"
+cat /tmp/me.json || true
+
+line
+echo "5) LOGOUT con R2 — esperado 200/204"
+HTTP_LOGOUT="$(curl -s -o /tmp/logout.json -w "%{http_code}" -X POST "$BASE/api/auth/logout" \
+  -H "Content-Type: application/json" \
+  -d "{\"refresh_token\":\"$R2\"}")"
+echo "HTTP: $HTTP_LOGOUT"
+cat /tmp/logout.json || true
+
+line
+echo "6) Intentar refresh con R2 (ya revocado) — esperado 401"
+HTTP_REUSE_R2="$(curl -s -o /dev/null -w "%{http_code}" -X POST "$BASE/api/auth/refresh" \
+  -H "Content-Type: application/json" \
+  -d "{\"refresh_token\":\"$R2\"}")"
+echo "HTTP: $HTTP_REUSE_R2"
+
+line
+echo "✅ Flujo completo OK"

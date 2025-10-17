@@ -1,0 +1,62 @@
+# Core API
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.12
+aiohttp==3.10.5
+httpx==0.27.2
+python-dotenv==1.0.1
+requests==2.32.3
+fastapi-limiter==0.1.6
+
+# Seguridad / Autenticación
+PyJWT==2.9.0
+python-jose[cryptography]==3.3.0
+passlib==1.7.4
+bcrypt==4.0.1
+pyotp==2.9.0
+
+# ORM y DB
+SQLAlchemy==2.0.35
+psycopg2-binary==2.9.9
+alembic==1.13.3
+
+# Cache / Cola de tareas
+aioredis==2.0.1
+celery==5.4.0
+APScheduler==3.10.4
+redis==5.0.1
+pywebpush==1.14.0
+
+# Modelado y validación
+pydantic==2.9.2
+pydantic-settings==2.5.2
+email-validator==2.2.0      # ✅ Fix requerido por Pydantic para validar emails
+
+# Datos / ML (fase futura de IA y análisis)
+numpy==1.26.4
+pandas==2.2.3
+scikit-learn==1.5.2
+joblib==1.4.2
+
+# Visualización
+plotly==5.24.1
+kaleido==0.2.1
+
+# Bots / Integraciones
+python-telegram-bot==21.6
+discord.py==2.4.0           # ✅ Para integrar el bot de Discord en el futuro
+
+# Logging
+structlog==24.1.0
+prometheus-client==0.21.0
+
+# Testing
+pytest==8.3.5
+pytest-asyncio==0.25.3
+pytest-mock==3.14.0
+pytest-cov==6.0.0
+websockets==10.4  # CODEx: mantener compatibilidad con los tests que inspeccionan handshake.response
+
+psycopg[binary]>=3.1.8  # ✅ requerido para PostgreSQL y notification scripts
+transformers>=4.57.0  # QA 2.0: required for sentiment_service and ai_service
+torch>=2.4.0 # QA 2.0 required for transformers sentiment pipeline

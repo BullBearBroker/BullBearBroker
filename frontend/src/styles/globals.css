@@ -1,0 +1,174 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@font-face {
+  font-family: "InterFallback";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("/fonts/Inter-VariableFont_slnt,wght.ttf") format("truetype");
+}
+
+.font-inter-fallback {
+  --font-inter: "InterFallback", system-ui, -apple-system, sans-serif;
+  font-family:
+    "InterFallback",
+    system-ui,
+    -apple-system,
+    sans-serif;
+}
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 224 71.4% 4.1%;
+
+  --muted: 220 14.3% 95.9%;
+  --muted-foreground: 220 8.9% 46.1%;
+
+  --popover: 0 0% 100%;
+  --popover-foreground: 224 71.4% 4.1%;
+
+  --card: 0 0% 100%;
+  --card-foreground: 224 71.4% 4.1%;
+
+  --surface: 210 40% 98%;
+  --surface-foreground: 224 71.4% 4.1%;
+  --surface-muted: 210 30% 96%;
+  --surface-hover: 210 20% 93%;
+
+  --border: 220 13% 91%;
+  --input: 220 13% 91%;
+
+  --primary: 262.1 83.3% 57.8%;
+  --primary-foreground: 210 20% 98%;
+
+  --secondary: 210 40% 96.1%;
+  --secondary-foreground: 222.2 47.4% 11.2%;
+
+  --accent: 210 40% 96.1%;
+  --accent-foreground: 222.2 47.4% 11.2%;
+
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 20% 98%;
+
+  --success: 142 71% 45%;
+  --success-foreground: 140 12% 15%;
+
+  --warning: 38 92% 50%;
+  --warning-foreground: 25 86% 15%;
+
+  --info: 213 94% 68%;
+  --info-foreground: 215 28% 19%;
+
+  --ring: 262.1 83.3% 57.8%;
+
+  --radius: 0.75rem;
+  --panel-gap: 1.5rem;
+}
+
+.dark {
+  --background: 222.2 84% 4.9%;
+  --foreground: 210 40% 98%;
+
+  --muted: 215 27.9% 16.9%;
+  --muted-foreground: 217.9 10.6% 64.9%;
+
+  --popover: 222.2 84% 4.9%;
+  --popover-foreground: 210 40% 98%;
+
+  --card: 222.2 84% 6%;
+  --card-foreground: 210 40% 98%;
+
+  --surface: 217.2 32.6% 12.5%;
+  --surface-foreground: 210 40% 96%;
+  --surface-muted: 217.2 22% 18%;
+  --surface-hover: 217.2 18% 24%;
+
+  --border: 217.2 32.6% 17.5%;
+  --input: 217.2 32.6% 17.5%;
+
+  --primary: 210 40% 98%;
+  --primary-foreground: 222.2 47.4% 11.2%;
+
+  --secondary: 217.2 32.6% 17.5%;
+  --secondary-foreground: 210 40% 98%;
+
+  --accent: 217.2 32.6% 17.5%;
+  --accent-foreground: 210 40% 98%;
+
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 210 40% 98%;
+
+  --success: 142 70% 45%;
+  --success-foreground: 141 34% 15%;
+
+  --warning: 42 97% 55%;
+  --warning-foreground: 240 9% 8%;
+
+  --info: 214 95% 78%;
+  --info-foreground: 223 47% 14%;
+
+  --ring: 263.4 70% 50.4%;
+
+  --panel-gap: 1.5rem;
+}
+
+body {
+  @apply bg-background text-foreground;
+}
+
+:root {
+  font-family: var(--font-inter, "Inter", system-ui, -apple-system, sans-serif);
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-sans font-medium tracking-tight text-card-foreground;
+  }
+}
+
+:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+@layer components {
+  .surface-card {
+    @apply rounded-2xl border border-border/50 bg-card text-card-foreground shadow-sm transition-all duration-300 hover:border-border hover:shadow-md;
+  }
+  .surface-subtle {
+    background-color: hsl(var(--surface-muted));
+  }
+  .surface-hoverable {
+    @apply transition-colors duration-300;
+    background: hsl(var(--surface));
+  }
+  .surface-hoverable:hover {
+    background: hsl(var(--surface-hover));
+  }
+}

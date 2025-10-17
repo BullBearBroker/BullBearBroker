@@ -1,0 +1,14 @@
+pre-commit==4.0.1
+black==24.10.0
+ruff==0.6.9
+isort==5.13.2
+pyupgrade==3.19.0
+mypy==1.13.0
+types-requests==2.32.0.20241016
+
+# QA: habilita 'pytest -n auto' para correr tests en paralelo dentro del contenedor
+pytest-xdist==3.6.1
+
+psycopg[binary]>=3.1.8  # ✅ requerido para PostgreSQL y notification scripts
+transformers>=4.57.0  # QA 2.0: required for sentiment_service and ai_service
+torch>=2.4.0 # QA 2.0 required for transformers sentiment pipeline

@@ -1,0 +1,77 @@
+# QA 2.9: se elimina 'version:' obsoleto (warning de Compose)
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: bullbear_api
+    env_file:
+      - backend/.env  # QA 2.9: env order (staging overrides base; local overrides ambos)
+      - backend/.env.staging
+      - backend/.env.staging.local
+      # - backend/.env.production  # QA 2.8: ejemplo para despliegues productivos
+      # - backend/.env.production.local
+    environment:
+      BULLBEAR_ENV: "development"
+      BULLBEAR_DB_URL: "sqlite:////app/data/app.db"
+      BULLBEAR_RATE_LIMIT_BACKEND: "memory"
+      BULLBEAR_MIGRATE_ON_START: "true"
+      REDIS_URL: "redis://bullbear-redis:6379"  # QA 2.0: conecta backend al servicio Redis
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+      - appdata:/app/data
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+    depends_on:
+      redis:
+        condition: service_healthy  # QA 2.9: la API espera a Redis sano
+    healthcheck:  # QA 2.9: la API expone healthcheck propio
+      test:
+        - CMD-SHELL
+        - curl -sf http://127.0.0.1:8000/api/health/ | grep -q '"status":"ok"'
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  redis:
+    image: redis:7-alpine  # QA 2.0: servicio Redis para notificaciones
+    container_name: bullbear-redis
+    ports:
+      - "6379:6379"
+    healthcheck:  # QA 2.9: healthcheck para Redis
+      test:
+        - CMD
+        - redis-cli
+        - ping
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # QA 2.9: local DB disabled (remote Supabase en uso)
+  # bullbear-db:
+  #   image: postgres:15-alpine
+  #   container_name: bullbear-db
+  #   restart: always
+  #   environment:
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: postgres
+  #     POSTGRES_DB: postgres
+  #   ports:
+  #     - "5432:5432"
+  #   volumes:
+  #     - bullbearbroker_pgdata:/var/lib/postgresql/data
+  #   networks:
+  #     - default
+volumes:
+  # QA 2.2: Local Postgres staging fallback added to bypass Supabase IPv6 limit
+  appdata:
+  bullbearbroker_pgdata:
+
+# QA 2.8 validation:
+#   docker compose down -v && docker system prune -f && docker compose up -d --build
+#   docker exec -it bullbear_api bash -c "echo $DATABASE_URL"
+#   curl http://127.0.0.1:8000/api/health/
+#   docker exec bullbear_api bash -c "PYTHONPATH=. APP_ENV=staging python backend/scripts/send_test_notification.py"

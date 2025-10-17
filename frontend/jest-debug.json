@@ -1,0 +1,175 @@
+{
+  "configs": [
+    {
+      "automock": false,
+      "cache": true,
+      "cacheDirectory": "/private/var/folders/lr/smf6sc8j1hn3mjd4z_6kmjj40000gn/T/jest_dx",
+      "clearMocks": true,
+      "collectCoverageFrom": [
+        "app/**/*.{ts,tsx}",
+        "src/**/*.{ts,tsx}",
+        "src/components/forms/**/*.{ts,tsx}",
+        "src/components/sidebar/**/*.{ts,tsx}",
+        "src/components/news/**/*.{ts,tsx}",
+        "!app/**/__tests__/**",
+        "!src/**/__tests__/**",
+        "!src/**/stories/**"
+      ],
+      "coverageDirectory": "/Users/pro/Desktop/BullBearBroker/frontend/coverage",
+      "coveragePathIgnorePatterns": ["/node_modules/"],
+      "cwd": "/Users/pro/Desktop/BullBearBroker/frontend",
+      "detectLeaks": false,
+      "detectOpenHandles": false,
+      "errorOnDeprecated": false,
+      "extensionsToTreatAsEsm": [],
+      "fakeTimers": {
+        "enableGlobally": false
+      },
+      "forceCoverageMatch": [],
+      "globals": {},
+      "haste": {
+        "computeSha1": false,
+        "enableSymlinks": false,
+        "forceNodeFilesystemAPI": true,
+        "throwOnModuleCollision": false
+      },
+      "id": "67846efb136fad09b97bbe5e1fc79882",
+      "injectGlobals": true,
+      "moduleDirectories": ["node_modules"],
+      "moduleFileExtensions": ["ts", "tsx", "js", "jsx", "json", "node"],
+      "moduleNameMapper": [
+        ["^.+\\.(css|less|scss|sass)$", "identity-obj-proxy"],
+        ["^@/styles/globals\\.css$", "identity-obj-proxy"],
+        ["^@/(.*)$", "/Users/pro/Desktop/BullBearBroker/frontend/src/$1"],
+        [
+          "^msw/node$",
+          "/Users/pro/Desktop/BullBearBroker/frontend/node_modules/msw/lib/node/index.js"
+        ],
+        [
+          "^@mswjs/interceptors/WebSocket$",
+          "/Users/pro/Desktop/BullBearBroker/frontend/src/tests/msw/websocket-interceptor.ts"
+        ],
+        [
+          "^@mswjs/interceptors/(.*)$",
+          "/Users/pro/Desktop/BullBearBroker/frontend/node_modules/@mswjs/interceptors/lib/node/interceptors/$1/index.js"
+        ]
+      ],
+      "modulePathIgnorePatterns": [],
+      "openHandlesTimeout": 1000,
+      "prettierPath": "prettier",
+      "resetMocks": false,
+      "resetModules": false,
+      "restoreMocks": false,
+      "rootDir": "/Users/pro/Desktop/BullBearBroker/frontend",
+      "roots": ["/Users/pro/Desktop/BullBearBroker/frontend"],
+      "runner": "/Users/pro/Desktop/BullBearBroker/frontend/node_modules/jest-runner/build/index.js",
+      "sandboxInjectedGlobals": [],
+      "setupFiles": [],
+      "setupFilesAfterEnv": [
+        "/Users/pro/Desktop/BullBearBroker/frontend/jest.setup.ts",
+        "/Users/pro/Desktop/BullBearBroker/frontend/src/tests/msw/setup.ts"
+      ],
+      "skipFilter": false,
+      "slowTestThreshold": 5,
+      "snapshotFormat": {
+        "escapeString": false,
+        "printBasicPrototype": false
+      },
+      "snapshotSerializers": [],
+      "testEnvironment": "/Users/pro/Desktop/BullBearBroker/frontend/node_modules/jest-environment-jsdom/build/index.js",
+      "testEnvironmentOptions": {
+        "url": "http://localhost"
+      },
+      "testLocationInResults": false,
+      "testMatch": [
+        "/Users/pro/Desktop/BullBearBroker/frontend/app/**/*.test.(ts|tsx|js|jsx)",
+        "/Users/pro/Desktop/BullBearBroker/frontend/app/**/__tests__/**/*.(ts|tsx|js|jsx)",
+        "/Users/pro/Desktop/BullBearBroker/frontend/src/**/*.test.(ts|tsx|js|jsx)",
+        "/Users/pro/Desktop/BullBearBroker/frontend/src/**/__tests__/**/*.(ts|tsx|js|jsx)"
+      ],
+      "testPathIgnorePatterns": [
+        "/Users/pro/Desktop/BullBearBroker/frontend/.next/",
+        "/Users/pro/Desktop/BullBearBroker/frontend/node_modules/"
+      ],
+      "testRegex": [],
+      "testRunner": "/Users/pro/Desktop/BullBearBroker/frontend/node_modules/jest-circus/runner.js",
+      "transform": [
+        [
+          "^.+\\.(js|jsx|ts|tsx)$",
+          "/Users/pro/Desktop/BullBearBroker/frontend/node_modules/babel-jest/build/index.js",
+          {}
+        ]
+      ],
+      "transformIgnorePatterns": [
+        "/node_modules/(?!(recharts|d3-|msw|@mswjs|until-async|strict-event-emitter|outvariant|headers-polyfill)/)"
+      ],
+      "watchPathIgnorePatterns": []
+    }
+  ],
+  "globalConfig": {
+    "bail": 0,
+    "changedFilesWithAncestor": false,
+    "ci": false,
+    "collectCoverage": true,
+    "collectCoverageFrom": [
+      "app/**/*.{ts,tsx}",
+      "src/**/*.{ts,tsx}",
+      "src/components/forms/**/*.{ts,tsx}",
+      "src/components/sidebar/**/*.{ts,tsx}",
+      "src/components/news/**/*.{ts,tsx}",
+      "!app/**/__tests__/**",
+      "!src/**/__tests__/**",
+      "!src/**/stories/**"
+    ],
+    "coverageDirectory": "/Users/pro/Desktop/BullBearBroker/frontend/coverage",
+    "coverageProvider": "babel",
+    "coverageReporters": ["json", "text", "lcov", "clover"],
+    "coverageThreshold": {
+      "global": {
+        "branches": 85,
+        "functions": 90,
+        "lines": 90,
+        "statements": 90
+      }
+    },
+    "detectLeaks": false,
+    "detectOpenHandles": false,
+    "errorOnDeprecated": false,
+    "expand": false,
+    "findRelatedTests": false,
+    "forceExit": false,
+    "json": false,
+    "lastCommit": false,
+    "listTests": false,
+    "logHeapUsage": false,
+    "maxConcurrency": 5,
+    "maxWorkers": 7,
+    "noStackTrace": false,
+    "nonFlagArgs": [],
+    "notify": false,
+    "notifyMode": "failure-change",
+    "onlyChanged": false,
+    "onlyFailures": false,
+    "openHandlesTimeout": 1000,
+    "passWithNoTests": false,
+    "projects": [],
+    "rootDir": "/Users/pro/Desktop/BullBearBroker/frontend",
+    "runTestsByPath": false,
+    "seed": 415296293,
+    "skipFilter": false,
+    "snapshotFormat": {
+      "escapeString": false,
+      "printBasicPrototype": false
+    },
+    "testFailureExitCode": 1,
+    "testPathPattern": "",
+    "testSequencer": "/Users/pro/Desktop/BullBearBroker/frontend/node_modules/@jest/test-sequencer/build/index.js",
+    "updateSnapshot": "new",
+    "useStderr": false,
+    "watch": false,
+    "watchAll": false,
+    "watchman": true,
+    "workerThreads": false
+  },
+  "version": "29.7.0"
+}

@@ -1,0 +1,87 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Push Subscribe Demo</title>
+<body style="font-family: system-ui; margin: 2rem">
+  <h1>Push Subscribe Demo</h1>
+  <p id="status">Cargando…</p>
+  <button id="btn-sub" disabled>Suscribirme y guardar en backend</button>
+  <button id="btn-test" disabled>Enviar push de prueba</button>
+
+  <script>
+    const BACKEND = "http://127.0.0.1:8000";
+    // Metemos la pública aquí directamente para simplificar
+    const VAPID_PUBLIC_KEY =
+      "BASeiZV-s_VfkDsso2hRVFaAh6jYYQMLQU8qjQjWIQEZmRHDY83A1YJPeLtlSKOc-tmt5AOtJ5lYHWHpFDLOnSU";
+
+    async function login() {
+      const res = await fetch(`${BACKEND}/api/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: "demo@test.com", password: "demo1234" }),
+      });
+      if (!res.ok) throw new Error("login failed");
+      const json = await res.json();
+      return json.access_token;
+    }
+
+    function urlBase64ToUint8Array(base64String) {
+      const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+      const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+      const raw = atob(base64);
+      const output = new Uint8Array(raw.length);
+      for (let i = 0; i < raw.length; ++i) output[i] = raw.charCodeAt(i);
+      return output;
+    }
+
+    let TOKEN = null;
+    let REG = null;
+
+    (async () => {
+      const p = document.getElementById("status");
+      try {
+        if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+          throw new Error("Este navegador no soporta Push API/Service Workers");
+        }
+        TOKEN = await login();
+        p.textContent = "Login OK. Registrando Service Worker…";
+        REG = await navigator.serviceWorker.register("/sw.js");
+        await navigator.serviceWorker.ready;
+        p.textContent = "SW listo. Puedes suscribirte.";
+        document.getElementById("btn-sub").disabled = false;
+      } catch (e) {
+        p.textContent = "Error inicial: " + (e?.message || e);
+      }
+    })();
+
+    document.getElementById("btn-sub").addEventListener("click", async () => {
+      const p = document.getElementById("status");
+      try {
+        const sub = await REG.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+        });
+        p.textContent = "Suscrito en navegador. Enviando al backend…";
+        const res = await fetch(`${BACKEND}/api/push/subscribe`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${TOKEN}` },
+          body: JSON.stringify(sub),
+        });
+        if (!res.ok) throw new Error("Backend /subscribe fallo " + res.status);
+        p.textContent = "Suscripción guardada. ¡Listo para probar envío!";
+        document.getElementById("btn-test").disabled = false;
+      } catch (e) {
+        p.textContent = "Error al suscribir: " + (e?.message || e);
+      }
+    });
+
+    document.getElementById("btn-test").addEventListener("click", async () => {
+      const p = document.getElementById("status");
+      p.textContent = "Enviando push de prueba…";
+      const res = await fetch(`${BACKEND}/api/push/send-test`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${TOKEN}` },
+      });
+      p.textContent = res.ok ? "Envío aceptado (revisa notificación)" : "Fallo: " + res.status;
+    });
+  </script>
+</body>

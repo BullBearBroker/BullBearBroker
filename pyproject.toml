@@ -1,0 +1,20 @@
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+combine_as_imports = true
+
+[tool.ruff]
+target-version = "py312"
+
+[tool.ruff.lint]
+# Dejamos que Black maneje el formateo, Ruff solo lint
+select = ["E", "F", "B"]
+ignore = ["E501"]  # ⚠️ Ignorar line too long (lo maneja Black)
+fixable = ["ALL"]
+
+# Ignorar imports fuera de orden en tests (E402)
+per-file-ignores = { "backend/tests/*" = ["E402"] }

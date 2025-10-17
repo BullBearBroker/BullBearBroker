@@ -1,0 +1,54 @@
+name: Backend CI
+
+on:
+  push:
+    paths:
+      - "backend/**"
+      - "scripts/**"
+      - "pyproject.toml"
+      - "pytest.ini"
+      - "requirements.txt"
+      - ".github/workflows/backend-ci.yml"
+      - "docker-compose.yml"
+      - "backend/Dockerfile"
+  pull_request:
+    paths:
+      - "backend/**"
+      - "scripts/**"
+      - "pyproject.toml"
+      - "pytest.ini"
+      - "requirements.txt"
+      - ".github/workflows/backend-ci.yml"
+      - "docker-compose.yml"
+      - "backend/Dockerfile"
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    env:
+      COVERAGE_THRESHOLD: 85
+      TESTING: "True"
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+          cache-dependency-path: |
+            backend/requirements.txt
+            backend/dev-requirements.txt
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install -r backend/dev-requirements.txt
+      - name: Run backend tests
+        run: pytest backend/tests --cov=backend --cov-report=term-missing
+      - name: Enforce coverage threshold
+        if: >-
+          ${{ github.event_name != 'pull_request' ||
+              (github.event_name == 'pull_request' &&
+               !contains(join(github.event.pull_request.labels.*.name, ' '), 'chore') &&
+               !contains(join(github.event.pull_request.labels.*.name, ' '), 'docs')) }}
+        run: coverage report --fail-under=${{ env.COVERAGE_THRESHOLD }}

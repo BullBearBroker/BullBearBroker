@@ -1,0 +1,15 @@
+line-length = 120
+target-version = "py312"
+
+[lint]
+# E,F,I = pyflakes/pep8/imports; UP = pyupgrade; B = bugbear
+select = ["E","F","I","UP","B"]
+ignore = []
+
+[lint.per-file-ignores]
+# Alembic suele violar E402 por el header de migraciones
+"backend/alembic/versions/*.py" = ["E402"]
+
+# En tests permitimos imports tras setup/fixtures
+"backend/tests/*.py" = ["E402"]
+"backend/tests/**/*.py" = ["E402"]

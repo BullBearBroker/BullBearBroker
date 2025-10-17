@@ -1,0 +1,425 @@
+import asyncio
+import json
+import os
+from contextlib import (  # ✅ Codex fix: limpieza segura de tareas realtime
+    asynccontextmanager,
+    suppress,
+)
+
+import redis.asyncio as redis
+from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from fastapi_limiter import FastAPILimiter
+
+from backend import database as database_module
+from backend.core.http_logging import RequestLogMiddleware
+from backend.core.logging_config import get_logger, log_event
+from backend.core.metrics import MetricsMiddleware
+from backend.core.tracing import configure_tracing
+
+# ✅ Codex fix: Import global error handlers
+from backend.middleware.error_handler import register_error_handlers
+
+# ✅ Codex fix: Import structured logging middleware
+from backend.middleware.logging_middleware import LoggingMiddleware
+from backend.models.base import Base
+from backend.routers import (  # ✅ Codex fix: registrar gateway WebSocket realtime
+    ai,
+    ai_context,
+    ai_insights,
+    ai_stream,
+    alerts,
+    auth,
+    health,
+    indicators,
+    markets,
+    metrics,
+    news,
+    notifications,
+    notifications_ws,
+    portfolio,
+    push,
+    realtime,
+)
+from backend.services.alert_service import alert_service
+from backend.services.integration_reporter import log_api_integration_report
+from backend.services.notification_dispatcher import notification_dispatcher
+from backend.services.websocket_manager import AlertWebSocketManager
+from backend.utils.config import APP_ENV, Config
+
+ENV = getattr(
+    Config, "ENV", APP_ENV
+)  # CODEx: exponer alias legado requerido por la suite de tests
+_ORIGINAL_ENV = ENV
+
+try:  # pragma: no cover - user service puede no estar disponible en algunos tests
+    from backend.services.user_service import InvalidTokenError, user_service
+except Exception:  # pragma: no cover - entorno sin servicio de usuarios
+    user_service = None  # type: ignore[assignment]
+    InvalidTokenError = Exception  # type: ignore[assignment]
+
+logger = get_logger(service="backend")
+log = logger
+logger.info("backend_started")
+
+# QA 2.8: Sentry (optional)
+SENTRY_DSN = os.getenv("SENTRY_DSN")
+if SENTRY_DSN:
+    try:  # pragma: no cover - observabilidad opcional
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            integrations=[FastApiIntegration(), SqlalchemyIntegration()],
+            traces_sample_rate=float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.0")),
+        )
+        logger.info("sentry_initialized")
+    except Exception as exc:  # pragma: no cover - evita fallas si Sentry no está
+        logger.warning("sentry_init_failed", error=str(exc))
+
+
+# ========================
+# Lifespan (startup/shutdown)
+# ========================
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 🔹 Startup
+    redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
+    redis_client = None
+    try:
+        redis_client = await redis.from_url(
+            redis_url,
+            encoding="utf-8",
+            decode_responses=True,
+        )
+        try:
+            await redis_client.ping()
+        except Exception as exc:  # pragma: no cover - redis puede no existir
+            await redis_client.close()
+            redis_client = None
+            raise RuntimeError("Redis no disponible") from exc
+        await FastAPILimiter.init(redis_client)
+        logger.info("fastapi_limiter_initialized")
+    except Exception as exc:  # pragma: no cover - redis opcional en tests
+        logger.warning("fastapi_limiter_unavailable", error=str(exc))
+
+    if getattr(Config, "TESTING", False):
+        try:
+            from backend.core.rate_limit import clear_testing_state
+
+            await clear_testing_state()
+        except Exception:  # pragma: no cover - limpieza defensiva
+            pass
+        try:
+            from backend.core.login_backoff import login_backoff
+
+            await login_backoff.clear_all()
+        except Exception:  # pragma: no cover - limpieza defensiva
+            pass
+
+    database_setup_failed = False
+    database_setup_error_message: str | None = None
+
+    try:
+        from backend.services.user_service import user_service
+
+        database_ready = True
+        active_env = (
+            ENV or APP_ENV or "local"
+        ).lower()  # CODEx: unificar prioridad entre ENV y APP_ENV
+        if os.getenv("PYTEST_CURRENT_TEST") and ENV == _ORIGINAL_ENV:
+            active_env = "local"
+        if active_env == "local":
+            try:
+                get_engine = getattr(database_module, "get_engine", None)
+                if get_engine is None:
+                    raise RuntimeError("database engine is not configured")
+                database_engine = get_engine()
+                if not hasattr(database_engine, "connect"):
+                    raise RuntimeError("database engine is not configured")
+                Base.metadata.create_all(bind=database_engine, checkfirst=True)
+                logger.info("database_ready")
+            except Exception as e:
+                log.error(
+                    {
+                        "service": "backend",
+                        "event": "database_setup_error",
+                        "error": str(e),
+                    }
+                )
+                try:
+                    database_module.reset_engine()
+                except Exception:
+                    pass
+                database_ready = False
+                database_setup_failed = True
+                database_setup_error_message = str(e)
+                log_event(
+                    logger,
+                    service="backend",
+                    event="database_setup_error",
+                    error=database_setup_error_message,
+                )
+        else:
+            logger.info("database_migrations_required", env=active_env)
+
+        if database_ready:
+            default_email = os.environ.get("BULLBEAR_DEFAULT_USER", "test@bullbear.ai")
+            default_password = os.environ.get("BULLBEAR_DEFAULT_PASSWORD", "Test1234!")
+            user_service.ensure_user(default_email, default_password)
+            logger.info("default_user_ready", email=default_email)
+    except Exception as e:  # pragma: no cover - evita fallas en despliegues sin DB
+        database_setup_failed = True
+        database_setup_error_message = database_setup_error_message or str(e)
+        log.error(
+            {
+                "service": "backend",
+                "event": "database_setup_error",
+                "error": str(e),
+            }
+        )
+        try:
+            database_module.reset_engine()
+        except Exception:
+            pass
+        log_event(
+            logger,
+            service="backend",
+            event="database_setup_error",
+            error=database_setup_error_message,
+        )
+
+    try:
+        # Informe de integraciones para confirmar que usamos APIs reales.
+        await log_api_integration_report()
+    except Exception as exc:  # pragma: no cover - logging defensivo
+        logger.warning("integration_report_failed", error=str(exc))
+
+    app.state.realtime_service = (
+        notification_dispatcher.realtime
+    )  # ✅ Codex fix: servicio global para WebSocket realtime
+    app.state.notification_dispatcher = notification_dispatcher
+    app.state.realtime_price_task = (
+        None  # ✅ Codex fix: inicializar referencia a tarea de precios
+    )
+    app.state.realtime_insights_task = (
+        None  # ✅ Codex fix: inicializar referencia a tarea de insights
+    )
+
+    yield  # ⬅️ Aquí FastAPI empieza a servir requests
+
+    if database_setup_failed and database_setup_error_message is not None:
+        log_event(
+            logger,
+            service="backend",
+            event="database_setup_error",
+            error=database_setup_error_message,
+        )
+
+    # 🔹 Shutdown
+    # Si necesitas liberar recursos (ej: cerrar redis) hazlo aquí
+    realtime_service = getattr(app.state, "realtime_service", None)
+    if realtime_service is not None:
+        with suppress(
+            Exception
+        ):  # ✅ Codex fix: tolerar errores al cerrar conexiones realtime
+            await realtime_service.close_all()
+
+    for task_name in ("realtime_price_task", "realtime_insights_task"):
+        task = getattr(app.state, task_name, None)
+        if task is not None:
+            task.cancel()
+            with suppress(
+                asyncio.CancelledError
+            ):  # ✅ Codex fix: cancelar tareas de broadcast en shutdown
+                await task
+            setattr(app.state, task_name, None)
+
+    try:
+        if "redis_client" in locals() and redis_client:
+            await redis_client.aclose()
+            FastAPILimiter.redis = None
+            logger.info("redis_closed")
+    except Exception as exc:
+        logger.warning("redis_close_error", error=str(exc))
+
+    try:
+        current_engine = getattr(database_module, "engine", None)
+        if hasattr(current_engine, "dispose") and callable(
+            getattr(current_engine, "dispose", None)
+        ):
+            current_engine.dispose()
+            logger.info("engine_disposed")
+        else:
+            log_event(
+                logger,
+                service="backend",
+                event="engine_dispose_error",
+                error="engine has no dispose()",
+            )
+    except Exception as exc:
+        log_event(
+            logger,
+            service="backend",
+            event="engine_dispose_error",
+            error=str(exc),
+        )
+
+
+# ========================
+# App principal
+# ========================
+OPENAPI_TAGS = [
+    {"name": "health", "description": "Monitoreo y diagnósticos de la API."},
+    {"name": "alerts", "description": "Gestión de alertas financieras en tiempo real."},
+    {"name": "markets", "description": "Consulta de datos de mercados bursátiles."},
+    {"name": "news", "description": "Noticias financieras relevantes."},
+    {"name": "auth", "description": "Autenticación y manejo de sesiones."},
+    {"name": "ai", "description": "Interacciones con el asistente de IA."},
+    {
+        "name": "push",
+        "description": "Suscripciones y preferencias de notificaciones push.",
+    },
+    {
+        "name": "indicators",
+        "description": "Cálculo de indicadores técnicos basados en datos OHLCV.",
+    },
+    {
+        "name": "portfolio",
+        "description": "Importación, exportación y consulta de portafolios.",
+    },
+]
+
+app = FastAPI(
+    title="BullBearBroker API",
+    version="0.1.0",
+    description="🚀 API conversacional para análisis financiero en tiempo real",
+    lifespan=lifespan,
+    openapi_tags=OPENAPI_TAGS,
+)
+
+try:  # pragma: no cover - tracing may be optional during tests
+    configure_tracing(app)
+except Exception as exc:  # pragma: no cover - defensive logging
+    logger.warning("tracing_configuration_failed", error=str(exc))
+
+# Configuración de CORS (controlada por variables de entorno)
+raw_origins = os.environ.get("CORS_ALLOW_ORIGINS", "http://localhost:3000")
+origins = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+app.add_middleware(MetricsMiddleware)
+app.add_middleware(RequestLogMiddleware)
+# ✅ Codex fix: Register structured logging middleware
+app.add_middleware(LoggingMiddleware)
+
+# ✅ Codex fix: Enable global error handlers
+register_error_handlers(app)
+
+
+# Endpoint raíz (health básico de la API)
+@app.get("/")
+def read_root():
+    return {"message": "🚀 BullBearBroker API corriendo correctamente!"}
+
+
+# ✅ Routers registrados con prefijo global /api
+app.include_router(metrics.router, prefix="/api")
+app.include_router(health.router, prefix="/api/health", tags=["health"])
+app.include_router(alerts.router, prefix="/api/alerts", tags=["alerts"])
+app.include_router(markets.router, prefix="/api/markets", tags=["markets"])
+app.include_router(news.router, prefix="/api/news", tags=["news"])
+app.include_router(
+    realtime.router, prefix="/api/realtime", tags=["realtime"]
+)  # ✅ Codex fix: habilitar gateway WebSocket realtime
+app.include_router(auth.router)
+app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
+app.include_router(ai_context.router, prefix="/api/ai", tags=["ai"])
+app.include_router(ai_insights.router, prefix="/api/ai", tags=["ai"])
+app.include_router(ai_stream.router, prefix="/api/ai", tags=["ai"])
+app.include_router(notifications.router)
+# 🧩 Bloque 9A
+app.include_router(notifications_ws.router)
+app.include_router(push.router, prefix="/api/push", tags=["push"])
+app.include_router(portfolio.router)  # 🧩 Codex fix: router ya incluye prefijo
+app.include_router(indicators.router)
+
+
+alerts_ws_manager = AlertWebSocketManager()
+alert_service.register_websocket_manager(alerts_ws_manager)
+app.state.alerts_ws_manager = alerts_ws_manager
+
+_readiness_path = os.getenv("READINESS_PROBE_PATH", "/health")
+if not _readiness_path.startswith("/"):
+    _readiness_path = f"/{_readiness_path}"
+
+if _readiness_path != "/api/health":
+
+    @app.get(_readiness_path, include_in_schema=False)
+    async def readiness_probe() -> JSONResponse:
+        """Ruta liviana para sondas de readiness."""
+
+        result = await health.health()
+        if isinstance(result, JSONResponse):
+            return result
+        return JSONResponse(content=result)
+
+
+@app.websocket("/ws/alerts")
+async def alerts_websocket(
+    websocket: WebSocket,
+    token: str | None = Query(default=None, description="Bearer token opcional"),
+) -> None:
+    """Canal WebSocket que transmite alertas en tiempo real."""
+
+    if token and user_service is not None:
+        try:
+            await asyncio.to_thread(user_service.get_current_user, token)
+        except InvalidTokenError:
+            await websocket.close(code=1008, reason="Token inválido")
+            return
+        except Exception as exc:  # pragma: no cover - logging defensivo
+            logger.warning("websocket_auth_error", error=str(exc))
+            await websocket.close(code=1011, reason="Error autenticando usuario")
+            return
+
+    await alerts_ws_manager.connect(websocket)
+    try:
+        await websocket.send_json(
+            {
+                "type": "system",
+                "message": "Conectado al canal de alertas en tiempo real",
+            }
+        )
+
+        while True:
+            raw_message = await websocket.receive_text()
+            try:
+                message = json.loads(raw_message)
+            except json.JSONDecodeError:
+                message = {"type": "text", "raw": raw_message}
+
+            if isinstance(message, dict) and message.get("type") == "ping":
+                await websocket.send_json({"type": "pong"})
+            elif isinstance(message, dict):
+                await websocket.send_json(
+                    {
+                        "type": "ack",
+                        "received": message.get("type", "unknown"),
+                    }
+                )
+    except WebSocketDisconnect:
+        pass
+    except Exception as exc:  # pragma: no cover - resiliencia ante errores inesperados
+        logger.warning("websocket_connection_error", error=str(exc))
+    finally:
+        await alerts_ws_manager.disconnect(websocket)
