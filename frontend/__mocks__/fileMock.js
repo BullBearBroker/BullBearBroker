@@ -1,1 +1,1 @@
-module.exports = 'file-mock';
+module.exports = 'test-file-stub';
