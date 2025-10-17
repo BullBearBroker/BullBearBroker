@@ -17,9 +17,13 @@ const rest = http; // ✅ Alias rest para mantener compatibilidad con suites exi
 beforeAll(() =>
   server.listen({
     onUnhandledRequest(req, print) {
+    const url = (req && (req.url || (req).request?.url)) || '';
+    if (url.startsWith('ws://') || url.startsWith('wss://')) return; // QA
+
       if (req.url.startsWith("ws://")) return;
       print.warning();
-    },
+    
+},
   })
 );
 afterEach(() => server.resetHandlers());
