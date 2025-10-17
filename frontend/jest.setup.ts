@@ -1,3 +1,5 @@
+process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "test-vapid";
+
 // ✅ Polyfill temporal para resolver el error de MSW en Node 20 + PNPM 10 + Jest 29+
 // Jest pierde la resolución interna del módulo "@mswjs/interceptors/ClientRequest".
 // Este bloque intercepta la carga y fuerza su ruta absoluta real.
@@ -130,6 +132,14 @@ beforeAll(() => {
       return;
     }
 
+    if (
+      typeof args[0] === "string" &&
+      String(args[0]).includes(
+        "The current testing environment is not configured to support act("
+      )
+    ) {
+      return;
+    }
     originalError.call(console, ...args);
   };
 

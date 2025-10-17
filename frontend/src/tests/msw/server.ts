@@ -14,7 +14,14 @@ export const server: SetupServerApi = setupServer(...handlers);
 const rest = http; // ✅ Alias rest para mantener compatibilidad con suites existentes en MSW 2.x
 
 // Lifecycle hooks para Jest
-beforeAll(() => server.listen({ onUnhandledRequest: "warn" }));
+beforeAll(() =>
+  server.listen({
+    onUnhandledRequest(req, print) {
+      if (req.url.startsWith("ws://")) return;
+      print.warning();
+    },
+  })
+);
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 
