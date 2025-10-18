@@ -1,35 +1,27 @@
-const base = require('./jest.config.base.cjs');
-
-/** Merge helper que evita duplicados sencillos */
-function uniq(arr) { return Array.from(new Set(arr.filter(Boolean))); }
+/* Extiende config base y añade entorno jsdom + setups locales */
+let base = {};
+try {
+  base = require('./jest.config.base.cjs');
+} catch {}
 
 module.exports = {
   ...base,
-
-  // Entorno del navegador para tests de React
   testEnvironment: 'jsdom',
-
-  // Alias @/ -> <rootDir>/src/
   moduleNameMapper: {
     ...(base.moduleNameMapper || {}),
     '^@/(.*)$': '<rootDir>/src/$1',
-    // Mapea estáticos básicos (por si aparecen en tests)
+    '^@/styles/globals\\.css$': '<rootDir>/__mocks__/styleMock.js',
     '\\.(css|less|sass|scss)$': '<rootDir>/__mocks__/styleMock.js',
-    '\\.(jpg|jpeg|png|gif|webp|avif|svg)$': '<rootDir>/__mocks__/fileMock.js',
+    '\\.(png|jpg|jpeg|gif|svg)$': '<rootDir>/__mocks__/fileMock.js',
   },
-
-  // Ficheros cargados ANTES que el entorno (variables)
-  setupFiles: uniq([
-    ...(base.setupFiles || []),
+  setupFiles: [
     '<rootDir>/jest.env.setup.ts',
-  ]),
-
-  // Ficheros cargados DESPUÉS (polyfills, mocks y custom setup)
-  setupFilesAfterEnv: uniq([
+    'whatwg-fetch',
+    ...(base.setupFiles || []),
+  ],
+  setupFilesAfterEnv: [
+    '<rootDir>/jest.setup.ts',
+    '@testing-library/jest-dom',
     ...(base.setupFilesAfterEnv || []),
-    'whatwg-fetch',                        // fetch() en JSDOM
-    '@testing-library/jest-dom',           // matchers extra
-    '<rootDir>/src/tests/mocks/jest-websocket-mock.ts', // WS mock si existe
-    '<rootDir>/jest.setup.ts',             // tu setup principal
-  ]),
+  ],
 };

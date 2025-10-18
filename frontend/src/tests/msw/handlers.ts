@@ -70,7 +70,11 @@ const DEFAULT_NEWS = [
   },
 ];
 
-export const handlers = [
+export const httpHandlers = [
+  // VAPID: debe coincidir con process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY en jest.env.setup.ts
+  http.get("*/api/notifications/vapid-public-key", () =>
+    HttpResponse.json({ vapidPublicKey: "QkItRFVNTVktVkFQSUQtS0VZ" })
+  ),
   http.get(NEWS_PATH, () => HttpResponse.json({ articles: DEFAULT_NEWS })),
   http.get(MARKET_ENDPOINTS.crypto, () => HttpResponse.json({ quotes: [DEFAULT_QUOTES.crypto] })),
   http.get(MARKET_ENDPOINTS.stocks, () => HttpResponse.json({ quotes: [DEFAULT_QUOTES.stocks] })),
@@ -103,10 +107,6 @@ export const handlers = [
   ),
   // # QA fix: mock de logs de notificaciones
   http.get("*/api/notifications/logs", () => HttpResponse.json([])),
-  // # QA fix: mock handshake de realtime websocket
-  http.get("*/api/realtime/ws", () => HttpResponse.json({ ok: true })),
-  // # QA fix: mock canal de notificaciones websocket
-  http.get("*/ws/notifications", () => HttpResponse.json({ ok: true })),
 ];
 
 export const newsEmptyHandler = http.get(NEWS_PATH, () =>
@@ -192,3 +192,5 @@ export function createMockPortfolioHandlers(options: PortfolioHandlersOptions = 
 }
 
 export { http, HttpResponse };
+
+export const handlers = httpHandlers;

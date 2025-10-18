@@ -41,7 +41,7 @@ if (typeof Response === "undefined") {
   }
 }
 
-const clientRequestPath = (() => {
+const mockClientRequestPath = (() => {
   try {
     return resolveFromHere.resolve(
       "@mswjs/interceptors/lib/node/interceptors/ClientRequest/index.js",
@@ -72,13 +72,15 @@ moduleWithResolve._resolveFilename = function (
   options?: Record<string, unknown>,
 ) {
   if (request === "@mswjs/interceptors/ClientRequest") {
-    return clientRequestPath;
+    return mockClientRequestPath;
   }
   return originalResolveFilename.call(this, request, parent, isMain, options);
 };
 
+const mockResolveFromHere = resolveFromHere; // ⛑️ Permitido por Jest: prefijo mock evita error de scope
+
 // ✅ Mock virtual para exponer el ClientRequest real dentro de Jest (Node 20 + PNPM 10)
-jest.mock("@mswjs/interceptors/ClientRequest", () => resolveFromHere(clientRequestPath), {
+jest.mock("@mswjs/interceptors/ClientRequest", () => mockResolveFromHere(mockClientRequestPath), {
   virtual: true,
 });
 
@@ -400,4 +402,3 @@ global.URL.revokeObjectURL = jest.fn();
   };
 })();
 // === /QA filtros ===
-
