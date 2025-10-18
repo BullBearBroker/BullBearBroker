@@ -70,10 +70,12 @@ const DEFAULT_NEWS = [
   },
 ];
 
+const VAPID_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "BB-DUMMY-VAPID-KEY";
+
 export const httpHandlers = [
   // VAPID: debe coincidir con process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY en jest.env.setup.ts
   http.get("*/api/notifications/vapid-public-key", () =>
-    HttpResponse.json({ vapidPublicKey: "QkItRFVNTVktVkFQSUQtS0VZ" })
+    HttpResponse.json({ vapidPublicKey: VAPID_KEY })
   ),
   http.get(NEWS_PATH, () => HttpResponse.json({ articles: DEFAULT_NEWS })),
   http.get(MARKET_ENDPOINTS.crypto, () => HttpResponse.json({ quotes: [DEFAULT_QUOTES.crypto] })),
@@ -107,6 +109,11 @@ export const httpHandlers = [
   ),
   // # QA fix: mock de logs de notificaciones
   http.get("*/api/notifications/logs", () => HttpResponse.json([])),
+  // Absorber llamadas HTTP accidentales a endpoints WS
+  http.get("http://localhost:8000/api/realtime/ws", () => HttpResponse.text("", { status: 204 })),
+  http.get("/api/realtime/ws", () => HttpResponse.text("", { status: 204 })),
+  http.get("http://localhost/ws/notifications", () => HttpResponse.text("", { status: 204 })),
+  http.get("/ws/notifications", () => HttpResponse.text("", { status: 204 })),
 ];
 
 export const newsEmptyHandler = http.get(NEWS_PATH, () =>

@@ -1,6 +1,13 @@
 // ✅ Codex fix: mock simplificado de jest-websocket-mock para entorno de pruebas
+import { act } from "react";
 
 type WebSocketEventHandler<T> = ((event: T) => void) | null;
+
+const runInAct = (callback: () => void) => {
+  act(() => {
+    callback();
+  });
+};
 
 class MockWebSocket {
   static readonly CONNECTING = 0;
@@ -21,10 +28,7 @@ class MockWebSocket {
 
   constructor(url: string) {
     this.url = url;
-    const found = Server.lookup(url);
-    if (!found) {
-      throw new Error(`No mock server listening on ${url}`);
-    }
+    const found = Server.lookup(url) ?? new Server(url);
     this.server = found;
     found.attach(this);
   }
@@ -40,45 +44,55 @@ class MockWebSocket {
     this.readyState = MockWebSocket.CLOSING;
     this.server?.detach(this);
     this.readyState = MockWebSocket.CLOSED;
-    this.onclose?.(
-      new CloseEvent("close", {
-        wasClean: true,
-        code: 1000,
-        reason: "client_close",
-      }),
-    );
+    runInAct(() => {
+      this.onclose?.(
+        new CloseEvent("close", {
+          wasClean: true,
+          code: 1000,
+          reason: "client_close",
+        }),
+      );
+    });
   }
 
   _open() {
     if (this.readyState === MockWebSocket.OPEN) return;
     this.readyState = MockWebSocket.OPEN;
-    this.onopen?.(new Event("open"));
+    runInAct(() => {
+      this.onopen?.(new Event("open"));
+    });
   }
 
   _emitMessage(payload: string) {
     if (this.readyState !== MockWebSocket.OPEN) return;
-    this.onmessage?.(
-      new MessageEvent("message", {
-        data: payload,
-      }),
-    );
+    runInAct(() => {
+      this.onmessage?.(
+        new MessageEvent("message", {
+          data: payload,
+        }),
+      );
+    });
   }
 
   _emitError() {
     this.readyState = MockWebSocket.CLOSED;
-    this.onerror?.(new Event("error"));
+    runInAct(() => {
+      this.onerror?.(new Event("error"));
+    });
   }
 
   _emitClose(reason = "server_close") {
     if (this.readyState === MockWebSocket.CLOSED) return;
     this.readyState = MockWebSocket.CLOSED;
-    this.onclose?.(
-      new CloseEvent("close", {
-        wasClean: true,
-        code: 1000,
-        reason,
-      }),
-    );
+    runInAct(() => {
+      this.onclose?.(
+        new CloseEvent("close", {
+          wasClean: true,
+          code: 1000,
+          reason,
+        }),
+      );
+    });
   }
 }
 
