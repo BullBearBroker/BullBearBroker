@@ -1,5 +1,21 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const toStringRecord = (source: NodeJS.ProcessEnv): Record<string, string> => {
+  return Object.entries(source).reduce<Record<string, string>>((acc, [key, value]) => {
+    if (typeof value === "string") {
+      acc[key] = value;
+    } else if (value !== undefined) {
+      acc[key] = String(value);
+    } else {
+      acc[key] = "";
+    }
+    return acc;
+  }, {});
+};
+
+const webServerEnv = toStringRecord(process.env);
+webServerEnv.NODE_ENV = webServerEnv.NODE_ENV || "test";
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true, // CODEx: mantener ejecución paralela para suites largas
@@ -11,7 +27,7 @@ export default defineConfig({
     port: 3000,
     reuseExistingServer: true,
     timeout: 180000,
-    env: { ...process.env },
+    env: webServerEnv,
   },
   reporter: [["list"], ["html", { outputFolder: "playwright-report", open: "never" }]], // CODEx: mezcla reporter textual y HTML silencioso
   use: {

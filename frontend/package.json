@@ -26,6 +26,7 @@
     "test:watch": "jest --config jest.config.dev.cjs --watch",
     "test:alerts": "jest --config jest.config.dev.cjs src/components/alerts/__tests__/alerts-panel.test.tsx",
     "test:esm": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "test:cov": "jest --config ./jest.config.local.cjs --coverage --runInBand --passWithNoTests",
     "test:e2e": "pnpm exec playwright test --config=playwright.config.ts",
     "e2e": "playwright test --config=playwright.config.ts",
     "e2e:server": "next dev",
