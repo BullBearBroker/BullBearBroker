@@ -1,4 +1,5 @@
-import { act, renderHook, waitFor } from "@/tests/utils/renderWithProviders";
+import { renderHook, waitFor } from "@/tests/utils/renderWithProviders";
+import { flushPromisesAndTimers } from "@/tests/utils/act-helpers";
 
 import { fetchVapidPublicKey, subscribePush } from "@/lib/api";
 import { usePushNotifications } from "../usePushNotifications";
@@ -141,9 +142,7 @@ describe("usePushNotifications", () => {
 
     const { result } = renderHook(() => usePushNotifications("token"));
 
-    await act(async () => {
-      await Promise.resolve();
-    });
+    await flushPromisesAndTimers();
 
     expect(result.current.enabled).toBe(false);
     expect(result.current.error).toMatch(/clave pública VAPID/i);

@@ -1,4 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
+import { withAct, flushPromisesAndTimers } from "@/tests/utils/act-helpers";
 
 import { useAlertsWebSocket } from "../useAlertsWebSocket";
 import * as api from "@/lib/api";
@@ -91,7 +92,7 @@ describe("useAlertsWebSocket", () => {
     }
   });
 
-  it("establece la conexión y procesa mensajes de alerta", () => {
+  it("establece la conexión y procesa mensajes de alerta", async () => {
     const onAlert = jest.fn();
     const onSystemMessage = jest.fn();
 
@@ -103,18 +104,20 @@ describe("useAlertsWebSocket", () => {
     const socket = MockWebSocket.instances[0];
     expect(socket.url).toBe(buildAlertsWebSocketUrl("token-123"));
 
-    act(() => {
+    await withAct(async () => {
       socket.triggerOpen();
     });
+    await flushPromisesAndTimers();
 
     expect(result.current.status).toBe("open");
 
-    act(() => {
+    await withAct(async () => {
       socket.triggerMessage({ type: "alert", message: "BTC cruzó el objetivo" });
       socket.triggerMessage({ type: "system", message: "Bienvenido" });
       // mensaje inválido para cubrir rama de error
       socket.onmessage?.({ data: "not-json" } as any);
     });
+    await flushPromisesAndTimers();
 
     expect(onAlert).toHaveBeenCalledWith(
       expect.objectContaining({ type: "alert", message: "BTC cruzó el objetivo" }),
@@ -233,12 +236,15 @@ describe("useAlertsWebSocket", () => {
     expect(result.current.error).toBe("Ocurrió un error con la conexión en vivo");
   });
 
-  it("maneja fallos al construir la URL del WebSocket", () => {
+  it("maneja fallos al construir la URL del WebSocket", async () => {
     const spy = jest.spyOn(api, "getAlertsWebSocketUrl").mockImplementation(() => {
       throw new Error("boom");
     });
 
-    const { result } = renderHook(() => useAlertsWebSocket({ token: "token-123", enabled: true }));
+    const { result } = await withAct(async () =>
+      renderHook(() => useAlertsWebSocket({ token: "token-123", enabled: true })),
+    );
+    await flushPromisesAndTimers();
 
     expect(MockWebSocket.instances).toHaveLength(0);
     expect(result.current.status).toBe("idle");

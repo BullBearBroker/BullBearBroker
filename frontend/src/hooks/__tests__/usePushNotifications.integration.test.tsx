@@ -1,13 +1,13 @@
 import userEvent from "@testing-library/user-event";
 
 import {
-  act,
   customRender,
   renderHook,
   screen,
   waitFor,
   within,
 } from "@/tests/utils/renderWithProviders";
+import { withAct, flushPromisesAndTimers } from "@/tests/utils/act-helpers";
 
 import { usePushNotifications } from "../usePushNotifications";
 import { fetchVapidPublicKey, subscribePush, testNotificationDispatcher } from "@/lib/api";
@@ -146,7 +146,7 @@ describe("usePushNotifications integration", () => {
 
     await waitFor(() => expect(mockedSubscribePush).toHaveBeenCalled());
     if (dispatchServiceWorkerMessage) {
-      act(() => {
+      await withAct(async () => {
         dispatchServiceWorkerMessage?.({
           type: "notification:dispatcher",
           title: "BullBearBroker Test",
@@ -155,6 +155,7 @@ describe("usePushNotifications integration", () => {
           receivedAt: "2023-01-01T00:00:00.000Z",
         });
       });
+      await flushPromisesAndTimers();
     }
     await waitFor(() =>
       expect(
@@ -170,9 +171,10 @@ describe("usePushNotifications integration", () => {
     ).toBe(true);
 
     const trigger = screen.getByTestId("send-test");
-    await act(async () => {
+    await withAct(async () => {
       await userEvent.click(trigger);
     });
+    await flushPromisesAndTimers();
     expect(mockedTestNotificationDispatcher).toHaveBeenCalledWith("secure-token");
     expect(
       logsList
@@ -201,9 +203,8 @@ describe("usePushNotifications integration", () => {
 
     const { result } = renderHook(() => usePushNotifications("secure-token"));
 
-    await act(async () => {
-      await result.current.requestPermission();
-    });
+    await withAct(async () => result.current.requestPermission());
+    await flushPromisesAndTimers();
 
     await waitFor(() => expect(result.current.permission).toBe("unsupported"));
 

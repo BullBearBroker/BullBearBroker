@@ -1,6 +1,7 @@
 import React from "react";
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { withAct, flushPromisesAndTimers } from "@/tests/utils/act-helpers";
 
 import { ErrorBoundary } from "@/tests/utils/ErrorBoundary";
 import { login as loginUser, refreshToken as refreshTokenRequest, getProfile } from "@/lib/api";
@@ -128,9 +129,10 @@ describe("auth context", () => {
 
     expect(screen.getByTestId("user-email")).toHaveTextContent("no-user");
 
-    await act(async () => {
+    await withAct(async () => {
       await user.click(screen.getByRole("button", { name: /ejecutar login/i }));
     });
+    await flushPromisesAndTimers();
 
     await waitFor(() => {
       expect(screen.getByTestId("user-email")).toHaveTextContent("user@example.com");
@@ -175,17 +177,19 @@ describe("auth context", () => {
       </AuthProvider>,
     );
 
-    await act(async () => {
+    await withAct(async () => {
       await user.click(screen.getByRole("button", { name: /login/i }));
     });
+    await flushPromisesAndTimers();
 
     await waitFor(() => {
       expect(screen.getByTestId("user-email")).toHaveTextContent("logout@example.com");
     });
 
-    await act(async () => {
+    await withAct(async () => {
       await user.click(screen.getByRole("button", { name: /logout/i }));
     });
+    await flushPromisesAndTimers();
 
     expect(screen.getByTestId("user-email")).toHaveTextContent("no-user");
     expect(localStorage.getItem("access_token")).toBeNull();
@@ -265,9 +269,10 @@ describe("auth context", () => {
       </AuthProvider>,
     );
 
-    await act(async () => {
+    await withAct(async () => {
       await user.click(screen.getByRole("button", { name: /login fallido/i }));
     });
+    await flushPromisesAndTimers();
 
     await waitFor(() => {
       expect(screen.getByTestId("error")).toHaveTextContent("Credenciales inválidas");

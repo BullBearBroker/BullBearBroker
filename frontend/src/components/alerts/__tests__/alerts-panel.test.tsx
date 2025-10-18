@@ -1,6 +1,7 @@
 import { act, customRender, screen, waitFor } from "@/tests/utils/renderWithProviders";
 import userEvent from "@testing-library/user-event";
 import useSWR, { type SWRResponse } from "swr";
+import { withAct, flushPromisesAndTimers } from "@/tests/utils/act-helpers";
 
 import {
   createAlert,
@@ -502,8 +503,12 @@ describe("AlertsPanel", () => {
       await user.type(screen.getByPlaceholderText("Mensaje para Telegram/Discord"), "Comprar BTC");
       await user.type(screen.getByPlaceholderText("Chat ID de Telegram (opcional)"), "123");
       await user.type(screen.getByPlaceholderText("Canal de Discord (opcional)"), "999");
+    });
+
+    await withAct(async () => {
       await user.click(screen.getByRole("button", { name: /enviar notificación/i }));
     });
+    await flushPromisesAndTimers();
 
     await waitFor(() => {
       expect(mockedSendAlertNotification).toHaveBeenCalledWith(

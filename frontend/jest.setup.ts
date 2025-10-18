@@ -135,6 +135,21 @@ if (typeof EventTarget !== "undefined" && !(EventTarget.prototype as any).__jest
   };
 }
 
+afterEach(() => {
+  try {
+    const jestApi = (globalThis as {
+      jest?: {
+        clearAllTimers?: () => void;
+        useRealTimers?: () => void;
+      };
+    }).jest;
+    jestApi?.clearAllTimers?.();
+    jestApi?.useRealTimers?.();
+  } catch {
+    /* noop */
+  }
+});
+
 if (typeof (global as any).ResizeObserver === "undefined") {
   (global as any).ResizeObserver = class {
     observe() {}
