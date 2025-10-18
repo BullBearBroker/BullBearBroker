@@ -13,7 +13,11 @@ export function useRealtime() {
       return undefined;
     }
 
-    const ws = new WebSocket("ws://localhost:8000/api/realtime/ws");
+    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+    const wsBase = apiBase.replace(/^http/i, "ws");
+    const wsUrl = `${wsBase.replace(/\/$/, "")}/api/realtime/ws`;
+
+    const ws = new WebSocket(wsUrl);
     socketRef.current = ws;
 
     ws.onopen = () => {

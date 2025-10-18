@@ -5,12 +5,18 @@ process.env.VAPID_PUBLIC_KEY_BACKEND = process.env.VAPID_PUBLIC_KEY_BACKEND || p
 // === /QA VAPID ===
 process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? "test-vapid";
 
+(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
+if (typeof global !== "undefined") {
+  (global as any).IS_REACT_ACT_ENVIRONMENT = true;
+}
+
 // ✅ Polyfill temporal para resolver el error de MSW en Node 20 + PNPM 10 + Jest 29+
 // Jest pierde la resolución interna del módulo "@mswjs/interceptors/ClientRequest".
 // Este bloque intercepta la carga y fuerza su ruta absoluta real.
 
 import Module from "module";
 import path from "path";
+import { act } from "react";
 
 const resolveFromHere = Module.createRequire(__filename); // ✅ Node 20 expone createRequire de forma estable, sin fallback CJS
 
@@ -99,72 +105,35 @@ jest.mock("next/font/google", () => ({
 // Configura una URL de API por defecto para los tests del frontend
 process.env.NEXT_PUBLIC_API_URL ??= "http://localhost:8000";
 
-const originalError = console.error;
-const originalWarn = console.warn;
-
-const ignoredWarnings = [
-  /Warning:.*(linearGradient|stop|defs)/,
-  /Push notifications not supported/i,
-  /Invalid fallback payload/i,
-  /unrecognized in this browser/i,
-];
-
-const ignoredErrorMessages = [
-  /Mensaje WS no parseable/, // errores controlados por mocks de WS
-  /No se pudo construir la URL del WebSocket/,
-];
-
-function shouldIgnore(message: unknown) {
-  if (typeof message !== "string") {
-    return false;
-  }
-  return ignoredWarnings.some((pattern) => pattern.test(message));
+if (typeof WebSocket !== "undefined" && !(WebSocket.prototype as any).__jestActPatched) {
+  const originalDispatchEvent = WebSocket.prototype.dispatchEvent;
+  Object.defineProperty(WebSocket.prototype, "__jestActPatched", {
+    value: true,
+    configurable: true,
+  });
+  WebSocket.prototype.dispatchEvent = function dispatchEventWithAct(event: Event): boolean {
+    let result = false;
+    act(() => {
+      result = originalDispatchEvent.call(this, event);
+    });
+    return result;
+  };
 }
 
-function shouldIgnoreError(message: unknown) {
-  if (shouldIgnore(message)) {
-    return true;
-  }
-  if (typeof message !== "string") {
-    return false;
-  }
-  return ignoredErrorMessages.some((pattern) => pattern.test(message));
+if (typeof EventTarget !== "undefined" && !(EventTarget.prototype as any).__jestActPatched) {
+  const originalDispatchEvent = EventTarget.prototype.dispatchEvent;
+  Object.defineProperty(EventTarget.prototype, "__jestActPatched", {
+    value: true,
+    configurable: true,
+  });
+  EventTarget.prototype.dispatchEvent = function dispatchEventWithAct(event: Event): boolean {
+    let result = false;
+    act(() => {
+      result = originalDispatchEvent.call(this, event);
+    });
+    return result;
+  };
 }
-
-beforeAll(() => {
-  console.error = (...args: any[]) => {
-    const [message] = args;
-
-    if (shouldIgnoreError(message)) {
-      return;
-    }
-
-    if (
-      typeof args[0] === "string" &&
-      String(args[0]).includes(
-        "The current testing environment is not configured to support act("
-      )
-    ) {
-      return;
-    }
-    originalError.call(console, ...args);
-  };
-
-  console.warn = (...args: any[]) => {
-    const [message] = args;
-
-    if (shouldIgnore(message)) {
-      return;
-    }
-
-    originalWarn.call(console, ...args);
-  };
-});
-
-afterAll(() => {
-  console.error = originalError;
-  console.warn = originalWarn;
-});
 
 if (typeof (global as any).ResizeObserver === "undefined") {
   (global as any).ResizeObserver = class {
@@ -345,60 +314,3 @@ jest.mock("@radix-ui/react-scroll-area", () => {
 // Mock global para URL APIs usadas en PortfolioPanel
 global.URL.createObjectURL = jest.fn(() => "blob:mock-url");
 global.URL.revokeObjectURL = jest.fn();
-
-// === QA: filtros de warnings ruidosos en tests ===
-(() => {
-  const originalWarn = console.warn;
-  const originalError = console.error;
-
-  const MSW_UNHANDLED_RE = /\[MSW\] Warning: intercepted a request without a matching request handler:/i;
-  const ACT_NOT_CONFIGURED_RE = /The current testing environment is not configured to support act\(\.\.\.\)/i;
-  const ACT_NOT_WRAPPED_RE = /not wrapped in act\(\.\.\.\)/i;
-
-  function isWsUrlInArgs(args) {
-    return args && Array.from(args).some((a) => {
-      const s = String(a || '');
-      return s.includes('ws://') || s.includes('wss://');
-    });
-  }
-
-  console.warn = (...args) => {
-    const first = String(args[0] || '');
-    if (MSW_UNHANDLED_RE.test(first) && isWsUrlInArgs(args)) return; // silenciar WS sin handler
-    if (first.includes('Missing VAPID key from backend.') || first.includes('VAPID public key mismatch')) return; // VAPID en test
-    return originalWarn.call(console, ...args);
-  };
-
-  console.error = (...args) => {
-    const msg = String(args[0] || '');
-    if (ACT_NOT_CONFIGURED_RE.test(msg) || ACT_NOT_WRAPPED_RE.test(msg)) return; // act(...)
-    return originalError.call(console, ...args);
-  };
-})();
-// === /QA filtros ===
-
-// === QA: filtros de warnings ruidosos ===
-(() => {
-  const originalWarn = console.warn;
-  const originalError = console.error;
-
-  const MSW_UNHANDLED_RE = /\[MSW\] Warning: intercepted a request without a matching request handler:/i;
-  const ACT_NOT_CONFIGURED_RE = /testing environment is not configured to support act\(/i;
-  const ACT_NOT_WRAPPED_RE = /not wrapped in act\(/i;
-
-  function isWs(args){return Array.from(args||[]).some(a=>String(a||'').includes('ws://')||String(a||'').includes('wss://'));}
-
-  console.warn = (...args) => {
-    const first = String(args[0]||'');
-    if (MSW_UNHANDLED_RE.test(first) && isWs(args)) return;
-    if (first.includes('Missing VAPID key from backend.') || first.includes('VAPID public key mismatch')) return;
-    return originalWarn.call(console, ...args);
-  };
-
-  console.error = (...args) => {
-    const msg = String(args[0]||'');
-    if (ACT_NOT_CONFIGURED_RE.test(msg) || ACT_NOT_WRAPPED_RE.test(msg)) return;
-    return originalError.call(console, ...args);
-  };
-})();
-// === /QA filtros ===

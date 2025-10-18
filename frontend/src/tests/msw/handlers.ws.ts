@@ -1,5 +1,6 @@
-import type { WebSocketHandler } from "msw";
+import { ws } from "msw";
 
-// Placeholder collection for WebSocket handlers.
-// Add entries here with `ws.link` if specific websocket tests are required.
-export const wsHandlers: WebSocketHandler[] = [];
+export const wsHandlers = [
+  ws.link("ws://localhost:8000/api/realtime/ws"),
+  ws.link("ws://localhost/ws/notifications"),
+];
