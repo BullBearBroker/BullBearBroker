@@ -19,7 +19,9 @@ def upgrade() -> None:
 
         if "fail_count" not in columns:
             batch_op.add_column(
-                sa.Column("fail_count", sa.Integer(), nullable=False, server_default="0")
+                sa.Column(
+                    "fail_count", sa.Integer(), nullable=False, server_default="0"
+                )
             )
         if "last_fail_at" not in columns:
             batch_op.add_column(

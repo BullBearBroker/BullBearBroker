@@ -9,11 +9,10 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 
-def load_env_lines(env_path: Path) -> List[str]:
+def load_env_lines(env_path: Path) -> list[str]:
     text = env_path.read_text(encoding="utf-8")
     # Preserve trailing newline semantics
     lines = text.splitlines()
@@ -22,7 +21,7 @@ def load_env_lines(env_path: Path) -> List[str]:
     return lines
 
 
-def extract_existing_url(lines: List[str]) -> str | None:
+def extract_existing_url(lines: list[str]) -> str | None:
     for raw in lines:
         if not raw.startswith("SUPABASE_DB_URL="):
             continue
@@ -40,7 +39,7 @@ def build_direct_url(
 ) -> str:
     scheme = "postgresql+psycopg"
     path = f"/{default_db_name}"
-    query_pairs: Dict[str, str] = {}
+    query_pairs: dict[str, str] = {}
     userinfo: str | None = None
 
     if existing_url:
@@ -81,13 +80,13 @@ def sanitize_userinfo(user: str | None, password_urlenc: str | None) -> str | No
 
 
 def update_env(
-    lines: List[str],
+    lines: list[str],
     *,
     direct_url: str,
-) -> List[str]:
+) -> list[str]:
     keys_to_remove = {"SUPABASE_DB_HOSTADDR", "SUPABASE_DB_POOL_URL", "DATABASE_URL"}
-    updated: List[str] = []
-    seen_keys: Dict[str, bool] = {"DB_USE_POOL": False, "SUPABASE_DB_URL": False}
+    updated: list[str] = []
+    seen_keys: dict[str, bool] = {"DB_USE_POOL": False, "SUPABASE_DB_URL": False}
 
     for raw in lines:
         stripped = raw.strip()
@@ -123,7 +122,7 @@ def update_env(
     return updated
 
 
-def persist_env(env_path: Path, lines: List[str]) -> None:
+def persist_env(env_path: Path, lines: list[str]) -> None:
     # Ensure single trailing newline
     if lines and lines[-1] == "":
         content = "\n".join(lines[:-1]) + "\n"

@@ -5,10 +5,10 @@ from __future__ import annotations
 
 import re
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Iterable
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 QA_DIR = REPO_ROOT / "qa"
@@ -143,13 +143,10 @@ def write_report(findings_map: dict[str, list[Finding]], scanned_files: int) -> 
         for relative, entries in sorted(findings_map.items()):
             lines.append(f"## {relative}")
             for entry in entries:
-                lines.append(
-                    f"- L{entry.line}: {entry.category} → {entry.message}"
-                )
+                lines.append(f"- L{entry.line}: {entry.category} → {entry.message}")
             lines.append("")
 
     REPORT_PATH.write_text("\n".join(lines).strip() + "\n", encoding="utf-8")
-
 
 
 def main() -> None:

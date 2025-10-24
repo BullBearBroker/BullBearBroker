@@ -49,7 +49,9 @@ def main() -> None:
         candidates = session.query(PushSubscription).all()
 
         for subscription in candidates:
-            should_delete = push_service.should_prune_subscription(subscription, reference=now)
+            should_delete = push_service.should_prune_subscription(
+                subscription, reference=now
+            )
             if not should_delete:
                 # Grace period for repeated failures without mark
                 fail_count = getattr(subscription, "fail_count", 0) or 0
@@ -57,7 +59,10 @@ def main() -> None:
                 if (
                     fail_count >= PRUNE_FAIL_THRESHOLD
                     and last_fail is not None
-                    and (last_fail if last_fail.tzinfo else last_fail.replace(tzinfo=UTC)) <= cutoff
+                    and (
+                        last_fail if last_fail.tzinfo else last_fail.replace(tzinfo=UTC)
+                    )
+                    <= cutoff
                 ):
                     should_delete = True
 

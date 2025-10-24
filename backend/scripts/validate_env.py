@@ -51,14 +51,22 @@ else:
     else:
         host = urlparse(direct_url).hostname or ""
         if host.lower() in PLACEHOLDER_HOSTS:
-            _append_error("SUPABASE_DB_URL (DB host placeholder; use db.<project_ref>.supabase.co)")
+            _append_error(
+                "SUPABASE_DB_URL (DB host placeholder; use db.<project_ref>.supabase.co)"
+            )
 
     if _has("SUPABASE_DB_POOL_URL"):
         _append_warn("SUPABASE_DB_POOL_URL (ignored while DB_USE_POOL=false)")
     if _has("DATABASE_URL"):
         _append_warn("DATABASE_URL (ignored while DB_USE_POOL=false)")
-    if not os.getenv("SUPABASE_DB_HOSTADDR") and direct_url and "hostaddr=" not in direct_url:
-        _append_warn("SUPABASE_DB_HOSTADDR (define to force IPv4 when automatic resolution fails)")  # QA
+    if (
+        not os.getenv("SUPABASE_DB_HOSTADDR")
+        and direct_url
+        and "hostaddr=" not in direct_url
+    ):
+        _append_warn(
+            "SUPABASE_DB_HOSTADDR (define to force IPv4 when automatic resolution fails)"
+        )  # QA
 
 # Helpful warnings
 for key in [

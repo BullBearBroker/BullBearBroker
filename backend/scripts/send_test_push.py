@@ -11,7 +11,9 @@ from backend.services.push_service import endpoint_fingerprint, push_service
 
 def main() -> None:
     if not push_service.has_vapid_keys():
-        print("[warn] VAPID keys missing – configure VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY")
+        print(
+            "[warn] VAPID keys missing – configure VAPID_PUBLIC_KEY/VAPID_PRIVATE_KEY"
+        )
         return
 
     subscriptions = push_service.get_all_subscriptions()
@@ -46,7 +48,9 @@ def main() -> None:
     if delivered:
         print(f"[ok] Notificaciones Web Push entregadas: {delivered}")
     else:
-        print("[warn] No se pudo entregar la notificación – revisa los logs del backend")
+        print(
+            "[warn] No se pudo entregar la notificación – revisa los logs del backend"
+        )
 
 
 if __name__ == "__main__":

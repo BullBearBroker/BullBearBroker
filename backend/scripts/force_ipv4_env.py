@@ -30,7 +30,8 @@ def _try_shell_resolvers(host: str) -> str | None:
                 out = subprocess.check_output(
                     ["dig", "+short", "A", host, "@" + dns],
                     text=True,
-                    timeout=3, stderr=subprocess.DEVNULL,
+                    timeout=3,
+                    stderr=subprocess.DEVNULL,
                 )
                 for line in map(_clean, out.splitlines()):
                     if _is_valid_ipv4(line):
@@ -45,7 +46,8 @@ def _try_shell_resolvers(host: str) -> str | None:
                 out = subprocess.check_output(
                     ["nslookup", host, dns],
                     text=True,
-                    timeout=3, stderr=subprocess.DEVNULL,
+                    timeout=3,
+                    stderr=subprocess.DEVNULL,
                 )
                 for line in map(_clean, out.splitlines()):
                     if "Address:" in line:
@@ -61,7 +63,8 @@ def _try_shell_resolvers(host: str) -> str | None:
             out = subprocess.check_output(
                 ["host", "-t", "A", host, "1.1.1.1"],
                 text=True,
-                timeout=3, stderr=subprocess.DEVNULL,
+                timeout=3,
+                stderr=subprocess.DEVNULL,
             )
             for token in out.replace(",", " ").split():
                 if _is_valid_ipv4(token):
@@ -75,13 +78,11 @@ def _try_shell_resolvers(host: str) -> str | None:
             out = subprocess.check_output(
                 ["ping", "-c1", host],
                 text=True,
-                timeout=3, stderr=subprocess.DEVNULL,
+                timeout=3,
+                stderr=subprocess.DEVNULL,
             )
             for token in (
-                out.replace("(", " ")
-                .replace(")", " ")
-                .replace(":", " ")
-                .split()
+                out.replace("(", " ").replace(")", " ").replace(":", " ").split()
             ):
                 if _is_valid_ipv4(token):
                     return token
@@ -140,7 +141,9 @@ def main() -> None:
 
     sep = "&" if "?" in url else "?"
     new_url = f"{url}{sep}hostaddr={ipv4}"
-    new_text = re.sub(r"^SUPABASE_DB_URL=.+$", f"SUPABASE_DB_URL={new_url}", text, flags=re.M)
+    new_text = re.sub(
+        r"^SUPABASE_DB_URL=.+$", f"SUPABASE_DB_URL={new_url}", text, flags=re.M
+    )
     ENV_PATH.write_text(new_text, encoding="utf-8")
     print(f'{{"updated": true, "hostaddr": "{ipv4}", "source": "{source}"}}')
 

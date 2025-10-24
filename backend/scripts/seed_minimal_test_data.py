@@ -29,7 +29,7 @@ def main() -> None:
     with engine.begin() as cx:
         _set_search_path(cx, schema)
 
-        exists = cx.exec_driver_sql("SELECT to_regclass('""users""')").scalar()
+        exists = cx.exec_driver_sql("SELECT to_regclass('" "users" "')").scalar()
         if exists is None:
             print("SEED_SKIP: users table not present")
             return

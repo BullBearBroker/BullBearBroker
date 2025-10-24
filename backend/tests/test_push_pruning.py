@@ -37,7 +37,9 @@ def test_should_prune_subscription_by_mark() -> None:
 def test_should_prune_subscription_by_fail_count_and_age() -> None:
     subscription = _subscription()
     subscription.fail_count = PRUNE_FAIL_THRESHOLD
-    subscription.last_fail_at = datetime.now(UTC) - timedelta(hours=PRUNE_GRACE_HOURS + 1)
+    subscription.last_fail_at = datetime.now(UTC) - timedelta(
+        hours=PRUNE_GRACE_HOURS + 1
+    )
     assert push_service.should_prune_subscription(subscription)
 
 
