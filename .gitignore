@@ -35,6 +35,7 @@ pnpm-debug.log*
 # ========================
 # 🔐 Environments
 # ========================
+# QA: secrets protection – never commit local env files
 .env
 .env.local
 .env.staging
@@ -90,14 +91,23 @@ frontend/.env.production.local
 !**/.env.example
 !**/.env.*.example
 
-htmlcov/
-qa-logs/
-coverage.xml
+# QA: secrets scan output
+qa/SECRETS_REPORT.md
 
 htmlcov/
 qa-logs/
 coverage.xml
 
+htmlcov/
+qa-logs/
+coverage.xml
+
 qa-logs/
 htmlcov/
 coverage.xml
+backend/htmlcov/
+frontend/coverage/
+.pytest_cache/
+*.env
+*.env.*
+.env*
