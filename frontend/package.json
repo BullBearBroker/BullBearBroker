@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -p 3000",
     "analyze": "ANALYZE=true next build",
     "analyze:client": "ANALYZE=true next build && open .next/analyze/client.html",
     "analyze:report": "pnpm run analyze && pnpm exec lighthouse http://localhost:3000 --output html --output-path ./lighthouse-report.html",
@@ -35,7 +35,9 @@
     "// QA 2.7-I": "helpers para ejecutar e2e con server manual",
     "// QA 2.0:test:e2e": "Playwright usa pnpm exec para respetar workspace",
     "test:e2e:ui": "playwright test --ui --config=playwright.config.ts",
-    "test:e2e:report": "playwright show-report"
+    "test:e2e:report": "playwright show-report",
+    "prebuild": "node ./scripts/validate-env.mjs || true",
+    "validate:env": "node ./scripts/validate-env.mjs"
   },
   "// CODEx: scripts": "Resolved merge conflict and aligned playwright/test commands with pnpm workflow.",
   "// CODEx:typecheck": "Added explicit TypeScript typecheck script for CI consistency.",
@@ -72,7 +74,7 @@
     "@mswjs/interceptors": "0.29.0",
     "@next/bundle-analyzer": "^15.2.0",
     "@next/eslint-plugin-next": "15.5.4",
-    "@playwright/test": "1.56.0",
+    "@playwright/test": "1.47.0",
     "@testing-library/jest-dom": "^6.8.0",
     "@testing-library/react": "^14.3.1",
     "@testing-library/user-event": "^14.6.1",

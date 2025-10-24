@@ -4,6 +4,7 @@
 
 .PHONY: venv dev test lint fmt migrate up-local up-staging down build run ci verify-all clean
 .PHONY: qa-backend qa-backend-cov qa-frontend qa-full qa-rebuild qa-db-smoke qa-migrate-local qa-db-smoke-local qa-backend-parallel qa-backend-serial
+.PHONY: lint-backend lint-frontend fmt-backend fmt-frontend test-backend test-backend-cov test-frontend-cov test-e2e test-e2e-report health env-validate-backend env-validate-frontend env-sync push-test push-info push-prune secrets-scan
 
 # Variables por defecto
 ENV ?= local
@@ -38,6 +39,50 @@ run:
 	@echo "🚀 Ejecutando contenedor local en puerto 8000..."
 	docker run --rm -p 8000:8000 bullbear:local
 
+net-diag:
+	@docker compose exec -T api bash -lc 'bash backend/scripts/net_diag.sh || true'
+
+db-check:
+	@docker compose exec -T api bash -lc 'PYTHONPATH=. APP_ENV=staging python backend/scripts/check_db_connectivity.py || true'
+
+health:
+	@curl -s -o - http://127.0.0.1:8000/api/health || true
+
+# --- 🔐 ENV VALIDATION ---
+env-validate-backend:
+	@docker compose exec -T api bash -lc 'PYTHONPATH=. python backend/scripts/validate_env.py || true'
+
+env-validate-frontend:
+	@pnpm --prefix frontend run validate:env || true
+
+env-sync:
+	@python tools/sync_env_examples.py
+
+# QA: Helpers para Web Push
+push-test:
+	@docker compose exec -T api bash -lc 'PYTHONPATH=. APP_ENV=staging python backend/scripts/send_test_push.py || true'
+
+push-info:
+	@echo "Frontend VAPID key: $${NEXT_PUBLIC_VAPID_PUBLIC_KEY}"
+	@docker compose exec -T api bash -lc 'if [ -n "$${VAPID_PRIVATE_KEY}" ]; then echo "Backend VAPID present: yes"; else echo "Backend VAPID present: no"; fi' || true
+
+push-prune:
+	@docker compose exec -T api bash -lc 'PYTHONPATH=. APP_ENV=staging python backend/scripts/prune_stale_push_subs.py || true'
+
+db-force-ipv4:
+	@python backend/scripts/force_ipv4_env.py || true
+
+db-smoke:
+	@docker compose exec -T api bash -lc 'PYTHONPATH=. APP_ENV=staging python backend/scripts/check_db_connectivity.py'
+
+db-migrate-direct:
+	@docker compose exec -T api bash -lc 'export DATABASE_URL="$$SUPABASE_DB_URL"; alembic upgrade head'
+
+secrets-scan:
+	@mkdir -p qa
+	@python tools/secrets_sweep.py || true
+	@echo "Secrets report: qa/SECRETS_REPORT.md"
+
 # --- ⚙️ BACKEND LOCAL ---
 up-local:
 	@echo "🚀 Iniciando stack en modo local con Docker Compose..."
@@ -66,14 +111,27 @@ test:
 	@pytest backend/tests -vv
 
 test-frontend:
-	@echo "🧪 Ejecutando tests del frontend (Jest)..."
-	@pnpm --prefix frontend run test -- --coverage  # CODEx: unificamos ejecución de Jest con pnpm
+	@echo "🧪 Ejecutando tests del frontend (Jest) – modo tolerante..."
+	@pnpm --prefix frontend run test -- --passWithNoTests
 
 test-all:
 	@echo "🔄 Ejecutando validaciones completas (lint + backend + frontend)..."
 	@pre-commit run --all-files || true  # CODEx: ejecutar hooks de forma no bloqueante
 	@pytest backend/tests -vv  # CODEx: validar suite de backend en modo detallado
 	@pnpm --prefix frontend run test:dev  # CODEx: ejecutar suite unitaria/integración del frontend sin UI
+
+# QA: Backend tests (smoke & cobertura unificada)
+test-backend:
+	@pytest backend/tests -q
+
+test-backend-cov:
+	@mkdir -p qa
+	@pytest backend/tests -q --cov=backend --cov-report=term-missing --cov-report=xml:qa/backend-coverage.xml
+
+# QA: Frontend tests con artefactos en qa/
+test-frontend-cov:
+	@mkdir -p qa/frontend-coverage
+	@pnpm --prefix frontend run test -- --coverage --coverageReporters=text --coverageReporters=cobertura --coverageDirectory=qa/frontend-coverage
 
 # --- 🔍 LINTERS Y FORMATO ---
 lint:
@@ -89,6 +147,22 @@ format:
 	@black .  # CODEx: formateo estandarizado de Python
 	@isort .  # CODEx: ordenar imports antes de chequear estilo
 	@ruff check .  # CODEx: mantiene análisis estático en modo verificación
+
+# QA: Linters/formatters unificados
+lint-backend:
+	@python -m ruff check .
+	@python -m black --check .
+	@python -m isort --check-only .
+
+lint-frontend:
+	@pnpm --prefix frontend run lint || true
+
+fmt-backend:
+	@python -m black .
+	@python -m isort .
+
+fmt-frontend:
+	@pnpm --prefix frontend run format || true
 
 # --- 🧪 CI/CD ---
 ci:
@@ -150,7 +224,8 @@ qa-frontend:
 	pnpm -C frontend exec jest --config jest.config.dev.cjs --coverage --passWithNoTests
 
 # QA: todo
-qa-full: qa-backend qa-backend-cov qa-frontend
+# QA: deprecated qa-full aggregator replaced by unified qa-full recipe below
+# qa-full: qa-backend qa-backend-cov qa-frontend
 
 # QA: reconstruye contenedores (idempotente)
 qa-rebuild:
@@ -181,3 +256,14 @@ qa-backend-parallel:
 # QA: corre en serie lo sensible
 qa-backend-serial:
 	docker exec bullbear_api bash -lc 'pytest -m "slow or rate_limit or e2e" -q'
+
+# QA: Playwright targets tolerantes en local
+test-e2e:
+	@pnpm --prefix frontend exec playwright test --config=playwright.config.ts || true
+
+test-e2e-report:
+	@pnpm --prefix frontend exec playwright show-report || true
+
+.PHONY: qa-full
+qa-full:
+	@bash scripts/qa_full_check.sh

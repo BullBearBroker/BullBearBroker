@@ -10,11 +10,17 @@ import {
 import { withAct, flushPromisesAndTimers } from "@/tests/utils/act-helpers";
 
 import { usePushNotifications } from "../usePushNotifications";
-import { fetchVapidPublicKey, subscribePush, testNotificationDispatcher } from "@/lib/api";
+import {
+  fetchVapidPublicKey,
+  subscribePush,
+  testNotificationDispatcher,
+  unsubscribePush,
+} from "@/lib/api";
 
 jest.mock("@/lib/api", () => ({
   fetchVapidPublicKey: jest.fn(),
   subscribePush: jest.fn(),
+  unsubscribePush: jest.fn(),
   testNotificationDispatcher: jest.fn(),
 }));
 
@@ -25,31 +31,50 @@ const mockedTestNotificationDispatcher = testNotificationDispatcher as jest.Mock
 const mockedFetchVapidPublicKey = fetchVapidPublicKey as jest.MockedFunction<
   typeof fetchVapidPublicKey
 >;
+const mockedUnsubscribePush = unsubscribePush as jest.MockedFunction<typeof unsubscribePush>;
 
 describe("usePushNotifications integration", () => {
   const originalNotification = window.Notification;
+  const originalGlobalNotification = global.Notification;
+  const originalNavigator = global.navigator;
   const originalServiceWorker = navigator.serviceWorker;
   const originalPushManager = (window as any).PushManager;
   const originalAtob = (global as any).atob;
   let dispatchServiceWorkerMessage: ((data: unknown) => void) | undefined;
+  let notificationRequestPermissionMock: jest.Mock<Promise<NotificationPermission>, []>;
 
   beforeEach(() => {
     process.env.NEXT_PUBLIC_VAPID_KEY = "dGVzdA==";
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = "dGVzdA==";
     mockedSubscribePush.mockResolvedValue({ id: "subscription" });
     mockedTestNotificationDispatcher.mockResolvedValue({ status: "ok", sent: 1 });
     mockedFetchVapidPublicKey.mockResolvedValue(process.env.NEXT_PUBLIC_VAPID_KEY ?? "");
     (global as any).atob = (value: string) => Buffer.from(value, "base64").toString("binary");
 
+    notificationRequestPermissionMock = jest
+      .fn<Promise<NotificationPermission>, []>()
+      .mockResolvedValue("default");
+
     class MockNotification {
-      static permission: NotificationPermission = "granted";
-      static async requestPermission() {
-        return this.permission;
-      }
+      static permission: NotificationPermission = "default";
+      static requestPermission: jest.Mock<Promise<NotificationPermission>, []> =
+        notificationRequestPermissionMock;
+      constructor(public _title: string, public _options?: NotificationOptions) {}
     }
+
+    Object.defineProperty(global, "Notification", {
+      configurable: true,
+      value: MockNotification,
+    });
 
     Object.defineProperty(window, "Notification", {
       configurable: true,
       value: MockNotification,
+    });
+
+    (global as any).navigator = { serviceWorker: {} } as any;
+    (global as any).window = Object.assign(global.window || {}, {
+      PushManager: function PushManager() {},
     });
 
     Object.defineProperty(window, "PushManager", {
@@ -67,6 +92,7 @@ describe("usePushNotifications integration", () => {
       endpoint: "https://example.com/push",
       expirationTime: null,
       toJSON: () => ({ keys: { auth: "auth", p256dh: "p256dh" } }),
+      unsubscribe: jest.fn().mockResolvedValue(true),
     } as unknown as PushSubscription;
 
     const registration = {
@@ -75,27 +101,46 @@ describe("usePushNotifications integration", () => {
       },
     } as unknown as ServiceWorkerRegistration;
 
-    Object.defineProperty(navigator, "serviceWorker", {
-      configurable: true,
-      value: {
-        register: jest.fn().mockResolvedValue(registration),
-        ready: Promise.resolve(registration),
-        getRegistration: jest.fn().mockResolvedValue(registration),
-        addEventListener: eventTarget.addEventListener.bind(eventTarget),
-        removeEventListener: eventTarget.removeEventListener.bind(eventTarget),
-      },
-    });
+    (global as any).navigator.serviceWorker = {
+      register: jest.fn().mockResolvedValue(registration),
+      ready: Promise.resolve(registration),
+      getRegistration: jest.fn().mockResolvedValue(registration),
+      addEventListener: eventTarget.addEventListener.bind(eventTarget),
+      removeEventListener: eventTarget.removeEventListener.bind(eventTarget),
+    };
+
+    const typedNotification = window.Notification as unknown as {
+      permission: NotificationPermission;
+      requestPermission: jest.Mock<Promise<NotificationPermission>, []>;
+    };
+    typedNotification.permission = "granted";
+    typedNotification.requestPermission.mockResolvedValue("granted");
   });
 
   afterEach(() => {
+    if (originalGlobalNotification) {
+      Object.defineProperty(global, "Notification", {
+        configurable: true,
+        value: originalGlobalNotification,
+      });
+    } else {
+      delete (global as any).Notification;
+    }
     Object.defineProperty(window, "Notification", {
       configurable: true,
       value: originalNotification,
     });
-    Object.defineProperty(navigator, "serviceWorker", {
-      configurable: true,
-      value: originalServiceWorker,
-    });
+    if (originalNavigator) {
+      (global as any).navigator = originalNavigator;
+    } else {
+      delete (global as any).navigator;
+    }
+    if (originalNavigator && originalServiceWorker) {
+      Object.defineProperty(originalNavigator, "serviceWorker", {
+        configurable: true,
+        value: originalServiceWorker,
+      });
+    }
     if (originalPushManager) {
       Object.defineProperty(window, "PushManager", {
         configurable: true,
@@ -109,9 +154,13 @@ describe("usePushNotifications integration", () => {
     } else {
       delete (global as any).atob;
     }
-    mockedSubscribePush.mockReset();
-    mockedTestNotificationDispatcher.mockReset();
-    mockedFetchVapidPublicKey.mockReset();
+    mockedSubscribePush.mockClear();
+    mockedUnsubscribePush.mockClear();
+    mockedTestNotificationDispatcher.mockClear();
+    mockedFetchVapidPublicKey.mockClear();
+    notificationRequestPermissionMock?.mockReset();
+    delete process.env.NEXT_PUBLIC_VAPID_KEY;
+    delete process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
   });
 
   const Harness = ({ token = "secure-token" }: { token?: string }) => {
@@ -184,11 +233,13 @@ describe("usePushNotifications integration", () => {
   });
 
   it("maneja permisos denegados sin lanzar errores", async () => {
+    notificationRequestPermissionMock.mockResolvedValue("denied");
     const MockNotification = window.Notification as unknown as {
       permission: NotificationPermission;
-      requestPermission: () => Promise<NotificationPermission>;
+      requestPermission: jest.Mock<Promise<NotificationPermission>, []>;
     };
     MockNotification.permission = "denied";
+    MockNotification.requestPermission.mockResolvedValue("denied");
 
     customRender(<Harness token="token-denegado" />);
 
@@ -198,16 +249,25 @@ describe("usePushNotifications integration", () => {
   });
 
   // 🧩 Bloque 8A
-  test("should fail gracefully if VAPID key mismatches or missing", async () => {
-    mockedFetchVapidPublicKey.mockResolvedValueOnce("");
+  test("should fail gracefully if VAPID key is missing or placeholder", async () => {
+    notificationRequestPermissionMock.mockResolvedValue("default");
+    const notification = window.Notification as unknown as {
+      permission: NotificationPermission;
+      requestPermission: jest.Mock<Promise<NotificationPermission>, []>;
+    };
+    notification.permission = "default";
+    process.env.NEXT_PUBLIC_VAPID_KEY = "";
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY = "";
+    mockedFetchVapidPublicKey.mockResolvedValue("");
 
     const { result } = renderHook(() => usePushNotifications("secure-token"));
 
-    await withAct(async () => result.current.requestPermission());
     await flushPromisesAndTimers();
 
-    await waitFor(() => expect(result.current.permission).toBe("unsupported"));
-
+    expect(result.current.isSupported).toBe(false);
+    expect(result.current.enabled).toBe(false);
     expect(result.current.permission).toBe("unsupported");
+    expect(result.current.error).toMatch(/clave pública VAPID/i);
+    expect(mockedSubscribePush).not.toHaveBeenCalled();
   });
 });

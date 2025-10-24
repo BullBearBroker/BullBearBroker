@@ -16,7 +16,7 @@ if (typeof global !== "undefined") {
 
 import Module from "module";
 import path from "path";
-import { act } from "react";
+import { act } from "@testing-library/react";
 
 const resolveFromHere = Module.createRequire(__filename); // ✅ Node 20 expone createRequire de forma estable, sin fallback CJS
 
@@ -156,6 +156,40 @@ if (typeof (global as any).ResizeObserver === "undefined") {
     unobserve() {}
     disconnect() {}
   };
+}
+
+/* === WS act wrapper (auto, idempotente) === */
+if (!(globalThis as any).__WS_ACT_PATCH__) {
+  (globalThis as any).__WS_ACT_PATCH__ = true;
+  const OG_WS = globalThis.WebSocket as any;
+  if (OG_WS) {
+    class WebSocketWithAct extends OG_WS {
+      addEventListener(type: string, listener: any, options?: any) {
+        const wrapped =
+          typeof listener === "function"
+            ? ((ev: Event) => act(() => (listener as any)(ev)))
+            : listener && typeof (listener as any).handleEvent === "function"
+            ? ({
+                handleEvent: (ev: Event) => act(() => (listener as any).handleEvent(ev)),
+              })
+            : listener;
+        return super.addEventListener(type, wrapped as any, options);
+      }
+      set onclose(fn: any) {
+        super.onclose = fn ? (ev: Event) => act(() => fn(ev)) : fn;
+      }
+      set onmessage(fn: any) {
+        super.onmessage = fn ? (ev: Event) => act(() => fn(ev)) : fn;
+      }
+      set onopen(fn: any) {
+        super.onopen = fn ? (ev: Event) => act(() => fn(ev)) : fn;
+      }
+      set onerror(fn: any) {
+        super.onerror = fn ? (ev: Event) => act(() => fn(ev)) : fn;
+      }
+    }
+    globalThis.WebSocket = WebSocketWithAct as any;
+  }
 }
 
 try {

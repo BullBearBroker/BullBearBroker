@@ -1,34 +1,25 @@
 "use client";
 
 // 🧩 Bloque 8B
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { fetchVapidPublicKey, subscribePush, testNotificationDispatcher } from "@/lib/api";
+import {
+  fetchVapidPublicKey,
+  subscribePush,
+  testNotificationDispatcher,
+  unsubscribePush,
+} from "@/lib/api";
+import { isLikelyVapidPlaceholder, normalizeVapidKey, urlBase64ToUint8Array } from "@/utils/vapid";
 
-const VAPID_KEY =
-  process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? process.env.NEXT_PUBLIC_VAPID_KEY; // QA 2.0: compatibilidad con variables previas
-if (!VAPID_KEY && typeof console !== "undefined") {
-  console.warn("⚠️ Missing VAPID key from environment"); // QA 2.0: alerta cuando falta VAPID
+const PLACEHOLDER_VAPID_REGEX = /^BB_placeholder|^PLACEHOLDER|^test_/i;
+
+function readVapidEnvValue(): string {
+  const raw =
+    process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY ?? process.env.NEXT_PUBLIC_VAPID_KEY ?? "";
+  return raw.trim();
 }
-
-const isTestEnvironment =
-  typeof process !== "undefined" &&
-  (process.env.NODE_ENV === "test" || process.env.JEST_WORKER_ID !== undefined);
 
 export const PERMISSION_DENIED_MESSAGE = "Debes permitir notificaciones para recibir alertas.";
-
-function urlBase64ToUint8Array(base64String: string): Uint8Array {
-  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-  const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
-
-  const rawData = atob(base64);
-  const outputArray = new Uint8Array(rawData.length);
-
-  for (let i = 0; i < rawData.length; ++i) {
-    outputArray[i] = rawData.charCodeAt(i);
-  }
-  return outputArray;
-}
 
 export interface NotificationEnvelope {
   id: string;
@@ -45,9 +36,10 @@ interface NotificationHistoryEntry {
   timestamp: number;
 }
 
-interface PushNotificationsState {
+export interface PushNotificationsState {
   enabled: boolean;
   error: string | null;
+  isSupported: boolean;
   permission: NotificationPermission | "unsupported";
   loading: boolean;
   testing: boolean;
@@ -55,6 +47,9 @@ interface PushNotificationsState {
   logs: string[];
   notificationHistory: NotificationHistoryEntry[];
   lastEvent: NotificationEnvelope | null;
+  subscription: PushSubscription | null;
+  subscribe: () => Promise<PushSubscription>;
+  unsubscribe: () => Promise<boolean>;
   sendTestNotification: () => Promise<void>;
   requestPermission: () => Promise<NotificationPermission | "unsupported">;
   dismissEvent: (id: string) => void;
@@ -83,16 +78,14 @@ export async function registerPushSubscription(
     }
   ).toast;
 
-  const normalizeKey = (key?: string | null) => (typeof key === "string" ? key.trim() : "");
-
-  let serverKey = normalizeKey(vapidPublicKey);
+  let serverKey = normalizeVapidKey(vapidPublicKey);
   if (!serverKey) {
-    serverKey = normalizeKey(await fetchVapidPublicKey());
+    serverKey = normalizeVapidKey(await fetchVapidPublicKey());
   }
 
   if (!serverKey) {
     await new Promise((resolve) => setTimeout(resolve, 2000));
-    serverKey = normalizeKey(await fetchVapidPublicKey());
+    serverKey = normalizeVapidKey(await fetchVapidPublicKey());
   }
 
   if (!serverKey) {
@@ -102,7 +95,14 @@ export async function registerPushSubscription(
     throw new Error("Missing VAPID key");
   }
 
-  const localKey = normalizeKey(VAPID_KEY ?? ""); // QA 2.0: alineado con NEXT_PUBLIC_VAPID_PUBLIC_KEY
+  if (isLikelyVapidPlaceholder(serverKey)) {
+    if (toastApi?.error) {
+      toastApi.error("Configura una clave pública VAPID real en el entorno");
+    }
+    throw new Error("Invalid VAPID key");
+  }
+
+  const localKey = normalizeVapidKey(readVapidEnvValue()); // QA 2.0: alineado con NEXT_PUBLIC_VAPID_PUBLIC_KEY
 
   if (localKey && localKey !== serverKey) {
     console.warn("VAPID public key mismatch between frontend and backend.");
@@ -130,6 +130,16 @@ export async function registerPushSubscription(
 }
 
 export function usePushNotifications(token?: string | null): PushNotificationsState {
+  const vapid = useMemo(() => readVapidEnvValue(), []);
+  const isPlaceholderVapid = useMemo(
+    () => !vapid || PLACEHOLDER_VAPID_REGEX.test(vapid),
+    [vapid],
+  );
+  const swSupported = typeof navigator !== "undefined" && "serviceWorker" in navigator;
+  const pushSupported = typeof window !== "undefined" && "PushManager" in window;
+  const supportedByBrowser = swSupported && pushSupported;
+  const isSupported = supportedByBrowser && !isPlaceholderVapid;
+
   const [enabled, setEnabled] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -156,11 +166,28 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
     }
   });
   const [permission, setPermission] = useState<NotificationPermission | "unsupported">(() => {
+    if (!isSupported) {
+      return "unsupported";
+    }
     if (typeof window === "undefined" || !("Notification" in window)) {
       return "unsupported";
     }
     return Notification.permission;
   });
+  const [subscription, setSubscription] = useState<PushSubscription | null>(null);
+
+  useEffect(() => {
+    if (!vapid && typeof console !== "undefined") {
+      console.warn("⚠️ Missing VAPID key from environment");
+    }
+  }, [vapid]);
+
+  useEffect(() => {
+    if (!isSupported) {
+      setEnabled(false);
+      setPermission("unsupported");
+    }
+  }, [isSupported]);
 
   const appendLog = useCallback((message: string) => {
     setLogs((prev) => {
@@ -176,6 +203,209 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
       return next.slice(-100);
     });
   }, []);
+
+  const resolveVapidKey = useCallback(async () => {
+    const localCandidate = normalizeVapidKey(readVapidEnvValue());
+
+    const fetchCandidate = async () => {
+      try {
+        return normalizeVapidKey(await fetchVapidPublicKey());
+      } catch (error) {
+        if (process.env.NODE_ENV !== "production") {
+          console.warn("Error fetching VAPID key from backend", error);
+        }
+        return "";
+      }
+    };
+
+    let serverKey = await fetchCandidate();
+    if (!serverKey && localCandidate) {
+      serverKey = localCandidate;
+    }
+
+    if (!serverKey) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      serverKey = await fetchCandidate();
+      if (!serverKey && localCandidate) {
+        serverKey = localCandidate;
+      }
+    }
+
+    if (!serverKey) {
+      throw new Error("No se pudo obtener la clave pública VAPID desde el servidor.");
+    }
+
+    if (localCandidate && serverKey !== localCandidate) {
+      console.warn("VAPID public key mismatch between frontend y backend.");
+      appendLog("Clave VAPID distinta entre frontend y backend");
+    }
+
+    if (isLikelyVapidPlaceholder(serverKey)) {
+      throw new Error("La clave pública VAPID configurada es un placeholder.");
+    }
+
+    return serverKey;
+  }, [appendLog]);
+
+  const subscribe = useCallback(async () => {
+    if (typeof window === "undefined") {
+      throw new Error("Entorno de navegador no disponible");
+    }
+    if (isPlaceholderVapid) {
+      const message = !vapid
+        ? "Se requiere una clave pública VAPID válida para habilitar las notificaciones."
+        : "La clave pública VAPID configurada es un placeholder.";
+      appendLog(message);
+      setError(message);
+      setEnabled(false);
+      setPermission("unsupported");
+      throw new Error(message);
+    }
+    if (!("Notification" in window)) {
+      appendLog("Notificaciones push no soportadas en este navegador");
+      setPermission("unsupported");
+      throw new Error("Las notificaciones push no están soportadas en este navegador.");
+    }
+    if (!("PushManager" in window)) {
+      appendLog("Notificaciones push no soportadas en este navegador");
+      setPermission("unsupported");
+      throw new Error("Las notificaciones push no están soportadas en este navegador.");
+    }
+    if (!("serviceWorker" in navigator)) {
+      appendLog("Los service workers no están soportados en este navegador");
+      setPermission("unsupported");
+      throw new Error("Los service workers no están soportados en este navegador.");
+    }
+
+    const registration = await navigator.serviceWorker.ready;
+    if (!registration) {
+      throw new Error("Service worker registration unavailable.");
+    }
+
+    let permissionState: NotificationPermission = Notification.permission;
+    setPermission(permissionState);
+
+    if (permissionState === "denied") {
+      setError(PERMISSION_DENIED_MESSAGE);
+      setEnabled(false);
+      throw new Error(PERMISSION_DENIED_MESSAGE);
+    }
+
+    if (permissionState !== "granted") {
+      setError(null);
+      const result = await Notification.requestPermission();
+      permissionState = result;
+      setPermission(permissionState);
+      appendLog(
+        result === "granted"
+          ? "Permiso de notificaciones concedido"
+          : result === "denied"
+            ? "Permiso de notificaciones denegado"
+            : "Permiso de notificaciones pendiente",
+      );
+      if (permissionState !== "granted") {
+        if (permissionState === "denied") {
+          setError(PERMISSION_DENIED_MESSAGE);
+        }
+        setEnabled(false);
+        throw new Error(
+          permissionState === "denied"
+            ? PERMISSION_DENIED_MESSAGE
+            : "Permiso de notificaciones pendiente",
+        );
+      }
+    }
+
+    const serverKey = await resolveVapidKey();
+    const activeSubscription = await registerPushSubscription(registration, serverKey);
+    appendLog("Clave pública VAPID validada correctamente");
+
+    const json = activeSubscription.toJSON();
+    const auth = json.keys?.auth ?? "";
+    const p256dh = json.keys?.p256dh ?? "";
+    const expirationTime =
+      typeof activeSubscription.expirationTime === "number"
+        ? new Date(activeSubscription.expirationTime).toISOString()
+        : null;
+
+    if (token) {
+      try {
+        await subscribePush(
+          {
+            endpoint: activeSubscription.endpoint,
+            expirationTime,
+            keys: { auth, p256dh },
+          },
+          token,
+        );
+      } catch (err) {
+        const message =
+          err instanceof Error
+            ? err.message
+            : "No se pudo registrar la suscripción en el backend.";
+        setError(message);
+        appendLog(`Error al registrar la suscripción en backend: ${message}`);
+        throw err;
+      }
+    } else {
+      appendLog("Suscripción local creada sin token de autenticación");
+    }
+
+    setSubscription(activeSubscription);
+    setEnabled(isSupported && permissionState === "granted" && Boolean(activeSubscription));
+    setError(null);
+    appendLog("Suscripción push activa");
+    return activeSubscription;
+  }, [appendLog, isPlaceholderVapid, isSupported, resolveVapidKey, token, vapid]);
+
+  const unsubscribe = useCallback(async () => {
+    if (typeof window === "undefined" || !("serviceWorker" in navigator)) {
+      appendLog("Service worker no disponible para cancelar la suscripción push");
+      return false;
+    }
+    const registration = await navigator.serviceWorker.ready;
+    if (!registration) {
+      appendLog("No se encontró un registro de service worker activo");
+      return false;
+    }
+    const currentSubscription = await registration.pushManager.getSubscription();
+    if (!currentSubscription) {
+      appendLog("No había suscripción push activa");
+      return false;
+    }
+    try {
+      await currentSubscription.unsubscribe();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "No se pudo cancelar la suscripción push";
+      appendLog(`Error al cancelar la suscripción: ${message}`);
+      throw err;
+    }
+
+    if (token) {
+      const endpoint = currentSubscription.endpoint;
+      try {
+        await unsubscribePush(endpoint, token);
+        appendLog("Suscripción eliminada en backend");
+      } catch (err) {
+        const message =
+          err instanceof Error
+            ? err.message
+            : "No se pudo eliminar la suscripción en el backend";
+        appendLog(`Error al eliminar suscripción en backend: ${message}`);
+      }
+    }
+
+    setSubscription(null);
+    setEnabled(false);
+    setError(null);
+    return true;
+  }, [appendLog, token]);
+
+  const subscribeRef = useRef(subscribe);
+  useEffect(() => {
+    subscribeRef.current = subscribe;
+  }, [subscribe]);
 
   // 🧩 Bloque 8B
   const clearLogs = useCallback(() => {
@@ -203,6 +433,15 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
   }, []);
 
   const requestPermission = useCallback(async () => {
+    if (isPlaceholderVapid) {
+      const message = !vapid
+        ? "Se requiere una clave pública VAPID válida para habilitar las notificaciones."
+        : "La clave pública VAPID configurada es un placeholder.";
+      appendLog(message);
+      setError(message);
+      setPermission("unsupported");
+      return "unsupported";
+    }
     if (permission === "unsupported") {
       return "unsupported";
     }
@@ -235,114 +474,29 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
       setError(null);
     }
     return result;
-  }, [appendLog, permission]);
+  }, [appendLog, isPlaceholderVapid, permission, vapid]);
 
   useEffect(() => {
-    if (!token) return;
-    if (typeof window === "undefined") return;
-    const hasNavigator = typeof navigator !== "undefined";
-    if (!("Notification" in window)) {
-      setPermission("unsupported");
-      setError("Las notificaciones push no están soportadas en este navegador.");
+    if (!token) {
       return;
     }
-    if (!("PushManager" in window)) {
-      if (hasNavigator && !isTestEnvironment) {
-        appendLog("Notificaciones push no soportadas en este navegador");
-      }
-      setPermission("unsupported");
-      setError("Las notificaciones push no están soportadas en este navegador.");
-      return;
-    }
-    if (!hasNavigator || !("serviceWorker" in navigator)) {
-      setPermission("unsupported");
-      setError("Los service workers no están soportados en este navegador.");
-      return;
-    }
-
     let active = true;
-
-    const register = async () => {
+    const attemptSubscription = async () => {
       setLoading(true);
       try {
-        const registration = await navigator.serviceWorker.ready;
-        if (!registration) {
-          throw new Error("Service worker registration unavailable.");
-        }
-
-        let permissionState = "Notification" in window ? Notification.permission : "default";
-        setPermission(permissionState);
-
-        if (permissionState === "denied") {
-          appendLog("Permiso de notificaciones denegado");
-          setError(PERMISSION_DENIED_MESSAGE);
-          setEnabled(false);
-          return;
-        }
-
-        if (permissionState !== "granted" && "Notification" in window) {
-          permissionState = await Notification.requestPermission();
-          setPermission(permissionState);
-          appendLog(
-            permissionState === "granted"
-              ? "Permiso de notificaciones concedido"
-              : permissionState === "denied"
-                ? "Permiso de notificaciones denegado"
-                : "Permiso de notificaciones pendiente",
-          );
-        }
-
-        if (permissionState !== "granted") {
-          if (permissionState === "denied") {
-            setError(PERMISSION_DENIED_MESSAGE);
-          }
-          setEnabled(false);
-          return;
-        }
-
-        const vapidPublicKey = await fetchVapidPublicKey();
-        if (!vapidPublicKey) {
-          console.warn("Missing VAPID key from backend.");
-          appendLog("No se recibió clave pública VAPID del backend");
-          setPermission("unsupported");
-          setError("No se pudo obtener la clave pública VAPID desde el servidor.");
-          setEnabled(false);
-          return;
-        }
-
-        const subscription = await registerPushSubscription(registration, vapidPublicKey);
-        appendLog("Clave pública VAPID validada correctamente");
-
-        const json = subscription.toJSON();
-        const auth = json.keys?.auth ?? "";
-        const p256dh = json.keys?.p256dh ?? "";
-
-        const expirationTime =
-          typeof subscription.expirationTime === "number"
-            ? new Date(subscription.expirationTime).toISOString()
-            : null; // ✅ Codex fix: normalizamos el timestamp a ISO8601 antes de enviarlo.
-
-        await subscribePush(
-          {
-            endpoint: subscription.endpoint,
-            expirationTime,
-            keys: { auth, p256dh },
-          },
-          token,
-        );
-
-        if (active) {
-          setEnabled(true);
-          setError(null);
-          appendLog("Suscripción push activa");
-        }
+        await subscribe();
       } catch (err) {
-        if (!active) return;
-        console.error("No se pudo registrar la suscripción push", err);
+        if (!active) {
+          return;
+        }
         const message =
           err instanceof Error ? err.message : "No se pudo registrar la suscripción push.";
+        if (process.env.NODE_ENV !== "production") {
+          console.error("No se pudo registrar la suscripción push", err);
+        }
         setError(message);
         setEnabled(false);
+        setSubscription(null);
         if (message.toLowerCase().includes("vapid")) {
           setPermission("unsupported");
         }
@@ -354,12 +508,19 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
       }
     };
 
-    register();
+    void attemptSubscription();
 
     return () => {
       active = false;
     };
-  }, [appendLog, token]);
+  }, [appendLog, subscribe, token]);
+
+  useEffect(() => {
+    if (!token) {
+      setEnabled(false);
+      setSubscription(null);
+    }
+  }, [token]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -374,6 +535,15 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
       const data = event.data;
       if (!data || typeof data !== "object") return;
       const type = (data as { type?: string }).type;
+      if (type === "push:subscription-change") {
+        appendLog("Cambio de suscripción push detectado – reintentando registro");
+        void subscribeRef.current?.().catch((error) => {
+          if (process.env.NODE_ENV !== "production") {
+            console.warn("Fallo al reintentar suscripción push", error);
+          }
+        });
+        return;
+      }
       if (type !== "notification:dispatcher" && type !== "push-notification") {
         return;
       }
@@ -419,7 +589,7 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
     return () => {
       container.removeEventListener("message", handleMessage as EventListener);
     };
-  }, [appendLog, appendNotificationHistory]);
+  }, [appendLog, appendNotificationHistory, subscribe]);
 
   // 🧩 Bloque 8B
   const triggerLocalNotification = useCallback((title: string, body: string) => {
@@ -479,6 +649,7 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
   return {
     enabled,
     error,
+    isSupported,
     permission,
     loading,
     testing,
@@ -486,6 +657,9 @@ export function usePushNotifications(token?: string | null): PushNotificationsSt
     logs,
     notificationHistory,
     lastEvent,
+    subscription,
+    subscribe,
+    unsubscribe,
     sendTestNotification,
     requestPermission,
     dismissEvent,
