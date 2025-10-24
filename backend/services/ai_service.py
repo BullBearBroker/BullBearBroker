@@ -15,6 +15,8 @@ from urllib.parse import urljoin  # [Codex] nuevo
 
 import aiohttp
 
+MOCK_RESPONSE = "respuesta simulada"
+
 import backend.services.context_service as context_service
 import backend.services.sentiment_service as sentiment_service
 from backend.core.metrics import AI_PROVIDER_FAILOVER_TOTAL
@@ -224,6 +226,18 @@ class AIService:
         self._pending_prompts: dict[str, asyncio.Task[Any]] = {}
         self._latency_stats: dict[str, dict[str, float]] = {}
 
+    def _huggingface_available(self) -> bool:
+        token = getattr(Config, "HUGGINGFACE_API_KEY", None) or os.getenv(
+            "HUGGINGFACE_API_KEY"
+        )
+        return bool(token)
+
+    def _mistral_available(self) -> bool:
+        api_key = getattr(mistral_service, "api_key", None) or os.getenv(
+            "MISTRAL_API_KEY"
+        )
+        return bool(api_key)
+
     def set_market_service(self, market_service):
         self.market_service = market_service
 
@@ -338,8 +352,24 @@ class AIService:
             "huggingface": "HuggingFace",
             "ollama": "Local",
             "local": "Local",
+            "mock": "Mock",
         }
         return mapping.get(provider_name.lower(), provider_name)
+
+    def _normalize_provider_label(self, provider: str | None) -> str:
+        """Normalize provider names for metrics to huggingface/mistral/mock."""
+        if not provider:
+            return "mock"
+        slug = provider.strip().lower()
+        if slug in {"huggingface", "mistral", "mock"}:
+            return slug
+        return "mock"
+
+    def _record_provider_status(
+        self, provider: str | None, route: str, status: str
+    ) -> None:
+        provider_slug = self._normalize_provider_label(provider)
+        ai_provider_requests_total.labels(provider=provider_slug, outcome=status).inc()
 
     def _record_provider_fallback(
         self, from_provider: str, to_provider: str, route: str
@@ -393,7 +423,7 @@ class AIService:
             duration_ms = (time.perf_counter() - start_local) * 1000
             provider = "local"
             ai_latency_seconds.labels(provider=provider).observe(duration_ms / 1000)
-            ai_requests_total.labels(provider=provider, status="success").inc()
+            ai_requests_total.labels(outcome="success").inc()
             self._log_provider_call(provider, True, duration_ms, fallback_used)
             logger.info(
                 json.dumps(
@@ -510,18 +540,72 @@ class AIService:
         except Exception:
             prompt_for_cache = None
 
-        providers_config: list[tuple[str, Callable[[], Awaitable[str]]]] = [
-            ("mistral", lambda: self.process_with_mistral(message, context))
-        ]
+        provider_mode = os.getenv("AI_PROVIDER", "mistral").lower()
+        providers_config: list[tuple[str, Callable[[], Awaitable[str]]]] = []
 
-        if Config.HUGGINGFACE_API_KEY:
-            providers_config.append(
-                ("huggingface", lambda: self._call_huggingface(message, context))
-            )
+        def add_provider(name: str, fn: Callable[[], Awaitable[str]]) -> None:
+            providers_config.append((name, fn))
 
-        providers_config.append(("ollama", lambda: self._call_ollama(message, context)))
+        if provider_mode == "auto":
+            if self._huggingface_available():
+                add_provider(
+                    "huggingface", lambda: self._call_huggingface(message, context)
+                )
+            else:
+                self._record_provider_status("huggingface", route, "skipped")
 
-        primary_provider = providers_config[0][0]
+            if self._mistral_available():
+                add_provider(
+                    "mistral", lambda: self.process_with_mistral(message, context)
+                )
+            else:
+                self._record_provider_status("mistral", route, "skipped")
+
+        elif provider_mode == "huggingface":
+            if self._huggingface_available():
+                add_provider(
+                    "huggingface", lambda: self._call_huggingface(message, context)
+                )
+            else:
+                self._record_provider_status("huggingface", route, "skipped")
+            if self._mistral_available():
+                add_provider(
+                    "mistral", lambda: self.process_with_mistral(message, context)
+                )
+            else:
+                self._record_provider_status("mistral", route, "skipped")
+            add_provider("ollama", lambda: self._call_ollama(message, context))
+
+        elif provider_mode == "mistral":
+            if self._mistral_available():
+                add_provider(
+                    "mistral", lambda: self.process_with_mistral(message, context)
+                )
+            else:
+                self._record_provider_status("mistral", route, "skipped")
+            if self._huggingface_available():
+                add_provider(
+                    "huggingface", lambda: self._call_huggingface(message, context)
+                )
+            else:
+                self._record_provider_status("huggingface", route, "skipped")
+            add_provider("ollama", lambda: self._call_ollama(message, context))
+
+        elif provider_mode == "mock":
+            # handled later; no providers added
+            pass
+        else:
+            if self._mistral_available():
+                add_provider(
+                    "mistral", lambda: self.process_with_mistral(message, context)
+                )
+            if self._huggingface_available():
+                add_provider(
+                    "huggingface", lambda: self._call_huggingface(message, context)
+                )
+            add_provider("ollama", lambda: self._call_ollama(message, context))
+
+        primary_provider = providers_config[0][0] if providers_config else "mock"
 
         if prompt_for_cache:
             cached_payload = await cache_service.get(route, prompt_for_cache)
@@ -531,6 +615,8 @@ class AIService:
                     ai_cache_hit_total.labels(model=provider_from_cache).inc()
                 except Exception:  # pragma: no cover - defensive metric guard
                     pass
+                ai_requests_total.labels(outcome="success").inc()
+                self._record_provider_status(provider_from_cache, route, "success")
                 last_provider = getattr(self, "_last_provider_attempted", None)
                 if last_provider:
                     backoff_module = getattr(
@@ -575,10 +661,19 @@ class AIService:
                 )
                 return await pending_prompts[prompt_for_cache]
 
-        async def _execute_prompt() -> AIResponsePayload:
-            if not Config.HUGGINGFACE_API_KEY:
-                logger.info("HuggingFace token not configured. Skipping provider.")
+        if not providers_config:
+            self._record_provider_status("mock", route, "success")
+            ai_requests_total.labels(outcome="success").inc()
+            ai_latency_seconds.labels(provider="mock").observe(0.0)
+            self._log_provider_call("mock", True, 0.0, False)
+            return AIResponsePayload(
+                text=MOCK_RESPONSE,
+                provider="mock",
+                used_data=False,
+                sources=[],
+            )
 
+        async def _execute_prompt() -> AIResponsePayload:
             providers = providers_config
 
             ai_text: str | None = None
@@ -634,15 +729,11 @@ class AIService:
                                     }
                                 )
                             )
-                            provider = cache_fallback_provider
+                            provider = cache_fallback_provider or provider_name
                             ai_text = cache_fallback_text
-                            ai_requests_total.labels(
-                                provider=provider or "cache",
-                                status="success",
-                            ).inc()
-                            self._log_provider_call(
-                                cache_fallback_provider or "cache", True, 0.0, True
-                            )
+                            ai_requests_total.labels(outcome="success").inc()
+                            self._record_provider_status(provider, route, "success")
+                            self._log_provider_call(provider, True, 0.0, True)
                             break
                 if not ai_text:
                     AI_PROVIDER_FAILOVER_TOTAL.labels(provider="local").inc()
@@ -736,12 +827,31 @@ class AIService:
             pending_prompts[prompt_for_cache] = task
             return await task
 
-        return await _execute_prompt()
+        try:
+            return await _execute_prompt()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning(
+                "AI providers pipeline failed, falling back to mock: %s", exc
+            )
+            self._record_provider_status("mock", route, "success")
+            ai_requests_total.labels(outcome="success").inc()
+            ai_latency_seconds.labels(provider="mock").observe(0.0)
+            self._log_provider_call("mock", True, 0.0, True)
+            return AIResponsePayload(
+                text=MOCK_RESPONSE,
+                provider="mock",
+                used_data=False,
+                sources=[],
+            )
 
     async def process_with_mistral(
         self, message: str, context: dict[str, Any] = None
     ) -> str:
         """Procesar mensaje con Mistral AI"""
+        if os.getenv("AI_PROVIDER", "mistral").lower() == "mock":
+            raise RuntimeError("mock_provider_disabled")
         try:
             # Generar respuesta con Mistral AI
             response = await mistral_service.generate_financial_response(
@@ -784,15 +894,17 @@ class AIService:
                 if cached_payload and cached_payload.get("text"):
                     cached_text = cached_payload["text"]
                     cached_provider = cached_payload.get("provider", provider_name)
-                    ai_requests_total.labels(
-                        provider=cached_provider, status="success"
-                    ).inc()
+                    ai_requests_total.labels(outcome="success").inc()
+                    self._record_provider_status(
+                        cached_provider or provider_name, route, "success"
+                    )
                     self._reset_circuit(provider_name)
                     self._log_provider_call(provider_name, True, 0.0, index > 0)
                     return cached_text, cached_provider
             if not self._ready_for_attempt(provider_name):
                 fallback_used = index < total_providers - 1
                 self._log_provider_call(provider_name, False, 0.0, fallback_used)
+                self._record_provider_status(provider_name, route, "skipped")
                 if fallback_used:
                     AI_PROVIDER_FAILOVER_TOTAL.labels(provider=provider_name).inc()
                     next_provider = providers[index + 1][0]
@@ -809,6 +921,7 @@ class AIService:
             if now < cooldown_until:
                 fallback_used = index < total_providers - 1
                 self._log_provider_call(provider_name, False, 0.0, fallback_used)
+                self._record_provider_status(provider_name, route, "skipped")
                 if fallback_used:
                     AI_PROVIDER_FAILOVER_TOTAL.labels(provider=provider_name).inc()
                     next_provider = providers[index + 1][0]
@@ -845,9 +958,8 @@ class AIService:
                         ai_latency_seconds.labels(provider=provider_name).observe(
                             duration_ms / 1000
                         )
-                        ai_requests_total.labels(
-                            provider=provider_name, status="success"
-                        ).inc()
+                        ai_requests_total.labels(outcome="success").inc()
+                        self._record_provider_status(provider_name, route, "success")
                         self._reset_circuit(provider_name)
                         self._log_provider_call(
                             provider_name,
@@ -869,13 +981,12 @@ class AIService:
                     ai_latency_seconds.labels(provider=provider_name).observe(
                         duration_ms / 1000
                     )
-                    ai_requests_total.labels(
-                        provider=provider_name, status="failure"
-                    ).inc()
+                    ai_requests_total.labels(outcome="error").inc()
                     ai_failures_total.labels(
                         provider=provider_name,
                         error_type=exc.__class__.__name__,
                     ).inc()
+                    self._record_provider_status(provider_name, route, "error")
                     circuit = self._register_failure(provider_name, exc)
                     reason = getattr(exc, "ai_reason", None)
                     if reason == "rate_limited":
@@ -956,7 +1067,6 @@ class AIService:
 
         provider_label = "HuggingFace"
         route = get_current_route()
-        ai_provider_requests_total.labels(provider_label, route).inc()
         start = time.perf_counter()
         data: Any | None = None
         try:

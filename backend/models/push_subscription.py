@@ -1,7 +1,7 @@
 import uuid
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Column, DateTime, ForeignKey, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -26,6 +26,9 @@ class PushSubscription(Base):
     expiration_time = Column(
         DateTime(timezone=True), nullable=True
     )  # ✅ Codex fix: guardamos la expiración opcional enviada por el navegador.
+    fail_count = Column(Integer, nullable=False, server_default="0")
+    last_fail_at = Column(DateTime(timezone=True), nullable=True)
+    pruning_marked = Column(Boolean, nullable=False, server_default="false")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     user = relationship("User", back_populates="push_subscriptions")

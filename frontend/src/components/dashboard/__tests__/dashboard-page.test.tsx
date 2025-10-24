@@ -3,10 +3,6 @@ jest.mock("@/hooks/useAuth", () => ({
   useAuth: () => ({ user: { name: "Ana", id: 1 }, isAuthenticated: true }),
 }));
 
-jest.mock("@/hooks/usePushNotifications", () => ({
-  usePushNotifications: () => ({ enabled: true, permission: "granted" }),
-}));
-
 import React from "react";
 import { act, customRender, screen, waitFor } from "@/tests/utils/renderWithProviders";
 import userEvent from "@testing-library/user-event";
@@ -55,6 +51,7 @@ const mockUseHistoricalData = jest.fn(() => ({
 type PushMockState = {
   enabled: boolean;
   error: string | null;
+  isSupported: boolean;
   permission: NotificationPermission;
   loading: boolean;
   testing: boolean;
@@ -65,6 +62,9 @@ type PushMockState = {
   dismissEvent: jest.Mock;
   notificationHistory: MockNotificationEvent[];
   clearLogs: jest.Mock;
+  subscription: PushSubscription | null;
+  subscribe: jest.Mock;
+  unsubscribe: jest.Mock;
 };
 
 const stablePushEvents: PushMockState["events"] = [];
@@ -75,6 +75,7 @@ const stablePushHistory: PushMockState["notificationHistory"] = [];
 const createPushMockState = (overrides: Partial<PushMockState> = {}): PushMockState => ({
   enabled: false,
   error: null,
+  isSupported: true,
   permission: "default" as NotificationPermission,
   loading: false,
   testing: false,
@@ -85,6 +86,9 @@ const createPushMockState = (overrides: Partial<PushMockState> = {}): PushMockSt
   dismissEvent: jest.fn(),
   notificationHistory: stablePushHistory,
   clearLogs: jest.fn(),
+  subscription: null,
+  subscribe: jest.fn(),
+  unsubscribe: jest.fn(),
   ...overrides,
 }); // # QA fix: helper consistente para estados del hook de push
 

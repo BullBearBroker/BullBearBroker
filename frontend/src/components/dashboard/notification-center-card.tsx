@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import NotificationsDebugPanel from "@/components/debug/NotificationsDebugPanel";
 import { PERMISSION_DENIED_MESSAGE, usePushNotifications } from "@/hooks/usePushNotifications";
 // 🧩 Bloque 9B
 import { useLiveNotifications } from "@/hooks/useLiveNotifications";
@@ -26,6 +27,9 @@ export interface NotificationLog {
 const STORAGE_KEY = "notificationHistory";
 
 export default function NotificationCenterCard() {
+  // 🧩 Bloque 9B
+  const { token } = useAuth();
+  const push = usePushNotifications(token ?? undefined);
   const {
     error,
     permission,
@@ -33,9 +37,7 @@ export default function NotificationCenterCard() {
     sendTestNotification,
     notificationHistory,
     clearLogs,
-  } = usePushNotifications();
-  // 🧩 Bloque 9B
-  const { token } = useAuth();
+  } = push;
   // 🧩 Bloque 9B
   const { events, status } = useLiveNotifications(token ?? undefined);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -172,6 +174,9 @@ export default function NotificationCenterCard() {
   const isRealtime = status === "connected";
   const uiState = useOptionalUIState();
   const setToastVisible = uiState?.setToastVisible;
+  const debugFlag = process.env.NEXT_PUBLIC_FEATURE_NOTIFICATIONS_DEBUG;
+  const showDebugPanel =
+    process.env.NODE_ENV !== "production" && (debugFlag === undefined || debugFlag !== "false");
 
   useEffect(() => {
     if (!setToastVisible) {
@@ -309,6 +314,11 @@ export default function NotificationCenterCard() {
           </p>
         </div>
       </CardContent>
+      {showDebugPanel ? (
+        <div className="border-t border-border/40 p-4">
+          <NotificationsDebugPanel pushState={push} token={token ?? undefined} />
+        </div>
+      ) : null}
     </Card>
   );
 }

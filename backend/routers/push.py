@@ -15,7 +15,8 @@ from sqlalchemy.orm import Session
 
 from backend.database import get_db
 from backend.models import Base, PushNotificationPreference, PushSubscription, User
-from backend.services.push_service import push_service
+from backend.services.audit_service import AuditService
+from backend.services.push_service import endpoint_fingerprint, push_service
 
 try:  # pragma: no cover - optional when running tests without user_service
     from backend.services.user_service import InvalidTokenError, user_service
@@ -55,6 +56,10 @@ class PushSubscriptionPayload(BaseModel):
 
 class PushSubscriptionResponse(BaseModel):
     id: UUID
+
+
+class PushUnsubscribePayload(BaseModel):
+    endpoint: str = Field(..., min_length=10)
 
 
 class PushPreferencesPayload(BaseModel):
@@ -129,6 +134,8 @@ async def subscribe_push(
             Base.metadata.create_all(bind=bind)
         subscription = _query_subscription()
 
+    endpoint_hash = endpoint_fingerprint(payload.endpoint)
+
     if subscription:
         subscription.auth = payload.keys.auth
         subscription.p256dh = payload.keys.p256dh
@@ -136,6 +143,9 @@ async def subscribe_push(
         subscription.expiration_time = (
             payload.expiration_time
         )  # ✅ Codex fix: persistimos la expiración sincronizada con el navegador.
+        subscription.fail_count = 0
+        subscription.last_fail_at = None
+        subscription.pruning_marked = False
     else:
         subscription = PushSubscription(
             endpoint=payload.endpoint,
@@ -143,13 +153,56 @@ async def subscribe_push(
             p256dh=payload.keys.p256dh,
             expiration_time=payload.expiration_time,  # ✅ Codex fix: registramos la expiración en nuevas suscripciones.
             user_id=current_user.id,
+            fail_count=0,
+            pruning_marked=False,
         )
         db.add(subscription)
 
     db.commit()
     db.refresh(subscription)
 
+    AuditService.log_event(
+        user_id=str(current_user.id),
+        action="push.subscribe",
+        metadata={
+            "endpoint_fingerprint": endpoint_hash,
+            "has_expiration": payload.expiration_time is not None,
+        },
+    )
+
     return PushSubscriptionResponse(id=subscription.id)
+
+
+@router.delete("/subscribe", status_code=status.HTTP_200_OK)
+async def unsubscribe_push(
+    payload: PushUnsubscribePayload,
+    db: Annotated[Session, Depends(get_db)],
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> dict[str, bool]:
+    # QA: endpoint para eliminar suscripciones Web Push.
+
+    subscription = (
+        db.query(PushSubscription)
+        .filter(
+            PushSubscription.endpoint == payload.endpoint,
+            PushSubscription.user_id == current_user.id,
+        )
+        .one_or_none()
+    )
+
+    if not subscription:
+        return {"removed": False}
+
+    endpoint_hash = endpoint_fingerprint(subscription.endpoint)
+    db.delete(subscription)
+    db.commit()
+
+    AuditService.log_event(
+        user_id=str(current_user.id),
+        action="push.unsubscribe",
+        metadata={"endpoint_fingerprint": endpoint_hash},
+    )
+    return {"removed": True}
 
 
 def _get_preferences(db: Session, user_id: UUID) -> PushNotificationPreference:

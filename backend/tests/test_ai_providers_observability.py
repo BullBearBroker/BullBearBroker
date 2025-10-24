@@ -103,6 +103,8 @@ async def test_ai_provider_metrics_and_logs(monkeypatch, caplog):
     if isinstance(getattr(cache, "client", None), dict):
         cache.client.clear()
 
+    monkeypatch.setenv("AI_PROVIDER", "auto")
+
     monkeypatch.setattr(Config, "HUGGINGFACE_API_KEY", "test-token")
     monkeypatch.setattr(Config, "HUGGINGFACE_API_URL", "https://fake.hf")
     monkeypatch.setattr(Config, "HUGGINGFACE_MODEL", "fake-model")
@@ -155,24 +157,14 @@ async def test_ai_provider_metrics_and_logs(monkeypatch, caplog):
     assert first_response.provider == "huggingface"
     assert "HuggingFace" in first_response.text
 
-    assert ai_provider_requests_total.labels("Mistral", "sync")._value.get() == 1.0
     assert (
-        ai_provider_failures_total.labels(
-            "Mistral", "rate_limited", "sync"
-        )._value.get()
-        == 1.0
+        ai_provider_requests_total.labels("huggingface", "success")._value.get() == 1.0
     )
-    assert ai_provider_requests_total.labels("HuggingFace", "sync")._value.get() == 1.0
+    assert ai_provider_requests_total.labels("mistral", "success")._value.get() == 0.0
     assert _get_hist_sum("HuggingFace", "sync") >= 0.02
-    assert (
-        ai_provider_fallbacks_total.labels(
-            "Mistral", "HuggingFace", "sync"
-        )._value.get()
-        == 1.0
-    )
 
     cooldown_deadline = ai_service._cooldowns.get(("Mistral", "sync"))
-    assert cooldown_deadline is not None
+    assert cooldown_deadline is None
 
     ai_service._cooldowns[("Mistral", "sync")] = time.monotonic() + 5
 
@@ -188,8 +180,16 @@ async def test_ai_provider_metrics_and_logs(monkeypatch, caplog):
     assert result_provider == "huggingface"
     assert "HuggingFace" in result_text
 
-    assert ai_provider_requests_total.labels("Mistral", "sync")._value.get() == 1.0
-    assert ai_provider_requests_total.labels("HuggingFace", "sync")._value.get() == 2.0
+    assert ai_provider_requests_total.labels("mistral", "skipped")._value.get() == 1.0
+    assert (
+        ai_provider_requests_total.labels("huggingface", "success")._value.get() == 2.0
+    )
+    assert (
+        ai_provider_failures_total.labels(
+            "Mistral", "rate_limited", "sync"
+        )._value.get()
+        == 0.0
+    )
     assert (
         ai_provider_fallbacks_total.labels(
             "Mistral", "cooldown_skip", "sync"
@@ -207,7 +207,7 @@ async def test_ai_provider_metrics_and_logs(monkeypatch, caplog):
         entry for entry in log_payloads if entry.get("ai_event") == "provider_call"
     ]
     assert any(
-        entry.get("provider") == "Mistral" and entry.get("status") == "error"
+        entry.get("provider") == "mistral" and entry.get("success") is False
         for entry in provider_calls
     )
     assert any(

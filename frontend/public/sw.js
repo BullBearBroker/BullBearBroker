@@ -87,6 +87,7 @@ self.addEventListener("fetch", (event) => {
   }
 });
 
+// QA: Web Push – eventos SW (push/notificationclick/pushsubscriptionchange)
 self.addEventListener("push", (event) => {
   const data = (() => {
     if (!event.data) {
@@ -123,6 +124,8 @@ self.addEventListener("push", (event) => {
 
     await self.registration.showNotification(title, {
       body,
+      icon: typeof data.icon === "string" ? data.icon : "/favicon.ico",
+      badge: typeof data.badge === "string" ? data.badge : undefined,
       data: payload,
     });
   };
@@ -144,5 +147,22 @@ self.addEventListener("notificationclick", (event) => {
       }
       return self.clients.openWindow(absoluteUrl);
     }),
+  );
+});
+
+self.addEventListener("pushsubscriptionchange", (event) => {
+  // QA: Web Push – notifica a la aplicación para reintentar la suscripción
+  event.waitUntil(
+    (async () => {
+      const clients = await self.clients.matchAll({ includeUncontrolled: true, type: "window" });
+      await Promise.all(
+        clients.map((client) =>
+          client.postMessage({
+            type: "push:subscription-change",
+            reason: event.type,
+          }),
+        ),
+      );
+    })(),
   );
 });

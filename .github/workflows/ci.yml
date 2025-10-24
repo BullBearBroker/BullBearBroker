@@ -39,3 +39,8 @@ jobs:
         run: pnpm --prefix frontend exec playwright install --with-deps
       - name: Playwright e2e  # QA 2.9
         run: pnpm --prefix frontend exec playwright test --config=playwright.config.ts
+
+# QA: Consider add qa-full in CI once secrets are wired
+# - make env-validate-backend
+# - make env-validate-frontend
+# - make qa-full

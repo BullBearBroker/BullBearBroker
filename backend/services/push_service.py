@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import time
 from collections.abc import Iterable
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pywebpush import WebPushException, webpush
@@ -27,6 +30,17 @@ def _get_session_factory():  # pragma: no cover - helper invoked en tiempo de ej
 LOGGER = logging.getLogger(__name__)
 
 
+def endpoint_fingerprint(endpoint: str) -> str:
+    """Return a stable, privacy-safe fingerprint for logging."""
+
+    return hashlib.sha256(endpoint.encode("utf-8")).hexdigest()[:12]
+
+
+# QA: utilidades para pruning y expiración
+PRUNE_FAIL_THRESHOLD = 5
+PRUNE_GRACE_HOURS = 24
+
+
 class PushService:
     """Encapsulates Web Push subscription handling and delivery."""
 
@@ -35,6 +49,15 @@ class PushService:
         # These attributes remain for backwards compatibility with existing tests
         self._vapid_private_key: str | None = None
         self._vapid_public_key: str | None = None
+        self._vapid_subject: str | None = getattr(settings, "VAPID_SUBJECT", None)
+        if not settings.VAPID_PRIVATE_KEY or not settings.VAPID_PUBLIC_KEY:
+            self.logger.warning(
+                "VAPID keys missing at startup – push delivery degraded until configured"
+            )  # QA: advertencia temprana cuando faltan claves
+        if not self._vapid_subject:
+            self.logger.debug(
+                "VAPID subject missing – default mailto placeholder will be used"
+            )
 
     def get_all_subscriptions(self) -> list[PushSubscription]:
         """Return every stored subscription, if a database is available."""
@@ -60,13 +83,84 @@ class PushService:
         )
         return vapid_private, vapid_public
 
+    def _build_vapid_claims(self) -> dict[str, str]:
+        # QA: permite configurar el subject VAPID vía entorno.
+        subject = getattr(settings, "VAPID_SUBJECT", None) or self._vapid_subject
+        if not subject:
+            subject = "mailto:soporte@bullbearbroker.example"
+        return {"sub": subject}
+
     def has_vapid_keys(self) -> bool:
         """Return ``True`` when both VAPID keys are available."""
 
         vapid_private, vapid_public = self._resolve_vapid_keys()
         return bool(vapid_private and vapid_public)
 
-    def _deliver(
+    def _mark_delivery_failure(self, subscription_id, *, mark_pruning: bool) -> None:
+        session_factory = _get_session_factory()
+        if session_factory is None:
+            return
+
+        with session_factory() as session:  # type: ignore[misc]
+            record = session.get(PushSubscription, subscription_id)
+            if record is None:
+                return
+            raw_failures = record.fail_count or 0
+            try:
+                current_failures = int(raw_failures) + 1
+            except (TypeError, ValueError):
+                current_failures = 1
+            record.fail_count = current_failures
+            record.last_fail_at = datetime.now(UTC)
+            if mark_pruning:
+                record.pruning_marked = True
+            session.commit()
+
+    def _reset_subscription_state(self, subscription_id) -> None:
+        session_factory = _get_session_factory()
+        if session_factory is None:
+            return
+
+        with session_factory() as session:  # type: ignore[misc]
+            record = session.get(PushSubscription, subscription_id)
+            if record is None:
+                return
+            record.fail_count = 0
+            record.last_fail_at = None
+            record.pruning_marked = False
+            session.commit()
+
+    @staticmethod
+    def should_prune_subscription(
+        subscription: PushSubscription, reference: datetime | None = None
+    ) -> bool:
+        """Determine if a subscription should be pruned based on failure history."""
+
+        pruning_marked = getattr(subscription, "pruning_marked", False)
+        if isinstance(pruning_marked, str):
+            pruning_marked = pruning_marked.lower() == "true"
+        if pruning_marked:
+            return True
+
+        raw_fail_count = getattr(subscription, "fail_count", 0) or 0
+        try:
+            fail_count = int(raw_fail_count)
+        except (TypeError, ValueError):
+            fail_count = 0
+        if fail_count < PRUNE_FAIL_THRESHOLD:
+            return False
+
+        last_fail_at = getattr(subscription, "last_fail_at", None)
+        if last_fail_at is None:
+            return False
+
+        if last_fail_at.tzinfo is None:
+            last_fail_at = last_fail_at.replace(tzinfo=UTC)
+
+        reference_ts = reference or datetime.now(UTC)
+        return last_fail_at <= reference_ts - timedelta(hours=PRUNE_GRACE_HOURS)
+
+    def _send_with_retries(
         self,
         subscription: PushSubscription,
         payload: dict[str, Any],
@@ -74,31 +168,75 @@ class PushService:
         vapid_private: str,
         vapid_public: str,
     ) -> bool:
-        subscription_info = {
-            "endpoint": subscription.endpoint,
-            "keys": {"auth": subscription.auth, "p256dh": subscription.p256dh},
-        }
+        fingerprint = endpoint_fingerprint(subscription.endpoint)
+        attempts = 0
 
-        try:
-            webpush(
-                subscription_info=subscription_info,
-                data=json.dumps(payload),
-                vapid_private_key=vapid_private,
-                vapid_public_key=vapid_public,
-                vapid_claims={"sub": "mailto:admin@bullbear.ai"},
-            )
-        except WebPushException as exc:  # pragma: no cover - defensive logging
-            self.logger.warning(f"Push failed for {subscription.endpoint}: {exc}")
-            return False
-        except Exception as exc:  # pragma: no cover - defensive logging
-            self.logger.warning(
-                "Unexpected error delivering web push for %s: %s",
-                subscription.endpoint,
-                exc,
-            )
-            return False
+        while True:
+            subscription_info = {
+                "endpoint": subscription.endpoint,
+                "keys": {"auth": subscription.auth, "p256dh": subscription.p256dh},
+            }
+            try:
+                webpush(
+                    subscription_info=subscription_info,
+                    data=json.dumps(payload),
+                    vapid_private_key=vapid_private,
+                    vapid_public_key=vapid_public,
+                    vapid_claims=self._build_vapid_claims(),
+                )
+            except WebPushException as exc:  # pragma: no cover - defensive logging
+                response = getattr(exc, "response", None)
+                status_code = getattr(response, "status_code", None)
+                mark_pruning = status_code in {404, 410}
+                message = getattr(response, "text", "") or str(exc)
+                reason = message.strip().replace("\n", " ")[:160]
+                self._mark_delivery_failure(subscription.id, mark_pruning=mark_pruning)
+                self.logger.warning(
+                    "webpush_error endpoint=%s status=%s attempt=%s pruning=%s reason=%s",
+                    fingerprint,
+                    status_code or "unknown",
+                    attempts + 1,
+                    mark_pruning,
+                    reason,
+                )
+                if mark_pruning:
+                    break
 
-        return True
+                schedule: list[float] = []
+                if status_code == 429:
+                    schedule = [0.5, 1.0, 2.0, 4.0]
+                elif status_code is not None and 500 <= status_code < 600:
+                    schedule = [0.5, 1.5]
+                else:
+                    break
+
+                if attempts >= 3 or attempts >= len(schedule):
+                    break
+
+                time.sleep(schedule[attempts])
+                attempts += 1
+                continue
+            except Exception as exc:  # pragma: no cover - defensive logging
+                self._mark_delivery_failure(subscription.id, mark_pruning=False)
+                self.logger.warning(
+                    "webpush_exception endpoint=%s attempt=%s error=%s",
+                    fingerprint,
+                    attempts + 1,
+                    str(exc)[:160],
+                )
+                break
+            else:
+                self._reset_subscription_state(subscription.id)
+                self.logger.debug(
+                    "webpush_delivered endpoint=%s attempts=%s",
+                    fingerprint,
+                    attempts + 1,
+                )
+                return True
+
+            break
+
+        return False
 
     def _is_category_allowed(
         self, subscription: PushSubscription, category: str | None
@@ -150,9 +288,15 @@ class PushService:
 
         delivered = 0
         for subscription in subscriptions:
+            if self.should_prune_subscription(subscription):
+                self.logger.debug(
+                    "skip_pruned_subscription endpoint=%s",
+                    endpoint_fingerprint(subscription.endpoint),
+                )
+                continue
             if not self._is_category_allowed(subscription, category):
                 continue
-            if self._deliver(
+            if self._send_with_retries(
                 subscription,
                 payload,
                 vapid_private=vapid_private,

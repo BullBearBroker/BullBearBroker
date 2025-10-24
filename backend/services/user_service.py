@@ -33,6 +33,8 @@ from backend.utils.config import Config, password_context
 
 LOGGER = logging.getLogger(__name__)
 
+_FAKE_PASSWORD_HASH = password_context.hash("invalid-placeholder-password")
+
 
 class UserAlreadyExistsError(Exception):
     """Se lanza cuando se intenta crear un usuario ya registrado."""
@@ -183,7 +185,13 @@ class UserService:
 
     def authenticate_user(self, email: str, password: str) -> User:
         user = self.get_user_by_email(email)
-        if not user or not user.verify_password(password):
+        if not user:
+            try:
+                password_context.verify(password, _FAKE_PASSWORD_HASH)
+            except Exception:  # noqa: BLE001 - deliberately swallow timing guard
+                pass
+            raise InvalidCredentialsError("Credenciales inválidas")
+        if not user.verify_password(password):
             raise InvalidCredentialsError("Credenciales inválidas")
         return user
 

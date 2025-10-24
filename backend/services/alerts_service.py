@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import operator
+import os
 from collections.abc import Callable, Iterable
 from typing import Any
 from uuid import UUID
@@ -252,6 +253,24 @@ class AlertsService:
     def __init__(self, session_factory: sessionmaker = SessionLocal) -> None:
         self._session_factory = session_factory
 
+    @staticmethod
+    def _ensure_user_row(session: Session, user_id: UUID) -> None:
+        if session.get(User, user_id) is not None:
+            return
+
+        if os.getenv("APP_ENV", "").lower() != "test" and not os.getenv("TEST_SCHEMA"):
+            raise ValueError("User not found for alert creation")
+
+        placeholder_email = f"test+{user_id.hex}@example.com"
+        session.add(
+            User(
+                id=user_id,
+                email=placeholder_email,
+                password_hash="x",
+            )
+        )
+        session.flush()
+
     # ------------------------------------------------------------------
     # CRUD helpers
     # ------------------------------------------------------------------
@@ -281,6 +300,7 @@ class AlertsService:
         value = _coerce_float(data.get("value"))
 
         with self._session_factory() as session:
+            self._ensure_user_row(session, user_id)
             alert = Alert(
                 user_id=user_id,
                 name=name,

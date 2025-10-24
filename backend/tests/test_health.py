@@ -24,6 +24,7 @@ from backend.routers import health as health_module  # noqa: E402
 async def test_health_endpoint_returns_ok(monkeypatch: pytest.MonkeyPatch) -> None:
     reset_rate_limiter_cache("health_endpoint")
     monkeypatch.setattr(health_module.FastAPILimiter, "redis", None, raising=False)
+    monkeypatch.setattr(health_module.push_service, "has_vapid_keys", lambda: True)
 
     async def _fake_db_check() -> dict[str, str]:
         return {"status": "ok"}
@@ -41,6 +42,7 @@ async def test_health_endpoint_returns_ok(monkeypatch: pytest.MonkeyPatch) -> No
     assert body["status"] == "ok"
     assert "env" in body
     assert body["services"]["redis"]["status"] == "skipped"
+    assert body["services"]["push"]["status"] == "ok"
 
 
 @pytest.mark.asyncio
@@ -55,6 +57,7 @@ async def test_health_endpoint_returns_503_when_redis_unavailable(
 
     broken = BrokenRedis()
     monkeypatch.setattr(health_module.FastAPILimiter, "redis", broken, raising=False)
+    monkeypatch.setattr(health_module.push_service, "has_vapid_keys", lambda: True)
 
     async def _fake_db_check() -> dict[str, str]:
         return {"status": "ok"}
@@ -70,6 +73,7 @@ async def test_health_endpoint_returns_503_when_redis_unavailable(
     assert response.status_code == 503
     body = response.json()
     assert body["services"]["redis"]["status"] == "error"
+    assert body["services"]["push"]["status"] == "ok"
 
 
 @pytest.mark.asyncio
@@ -84,6 +88,7 @@ async def test_health_endpoint_reports_database_failure(
 
     monkeypatch.setattr(health_module, "_check_database", _failing_db_check)
     monkeypatch.setattr(health_module.FastAPILimiter, "redis", None, raising=False)
+    monkeypatch.setattr(health_module.push_service, "has_vapid_keys", lambda: True)
 
     async with AsyncClient(
         transport=ASGITransport(app=app, client=(f"health-db-{uuid.uuid4()}", 80)),
@@ -94,3 +99,4 @@ async def test_health_endpoint_reports_database_failure(
     assert response.status_code == 503
     body = response.json()
     assert body["services"]["database"]["status"] == "error"
+    assert body["services"]["push"]["status"] == "ok"

@@ -82,4 +82,28 @@ class Position(Base):
     portfolio: Mapped[Portfolio] = relationship("Portfolio", back_populates="positions")
 
 
-__all__ = ["Portfolio", "Position"]
+class LegacyPortfolioItem(Base):
+    """Legacy materialized positions table kept for backwards compatibility."""
+
+    __tablename__ = "portfolio_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False
+    )
+    symbol: Mapped[str] = mapped_column(String(20), nullable=False)
+    amount: Mapped[Decimal] = mapped_column(Numeric(20, 8), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=datetime.utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+
+__all__ = ["Portfolio", "Position", "LegacyPortfolioItem"]

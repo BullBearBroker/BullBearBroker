@@ -37,6 +37,7 @@ describe("🔔 NotificationCenterCard (WebSocket integration)", () => {
     jest.spyOn(pushHook, "usePushNotifications").mockReturnValue({
       enabled: true,
       error: null,
+      isSupported: true,
       permission: "granted",
       loading: false,
       testing: false,
@@ -44,11 +45,15 @@ describe("🔔 NotificationCenterCard (WebSocket integration)", () => {
       logs: [],
       notificationHistory: [],
       lastEvent: null,
+      subscription: null,
+      subscribe: jest.fn(),
+      unsubscribe: jest.fn(),
       sendTestNotification: jest.fn().mockResolvedValue(undefined),
       requestPermission: jest.fn().mockResolvedValue("granted"),
       dismissEvent: jest.fn(),
       clearLogs: jest.fn(),
     });
+    process.env.NEXT_PUBLIC_FEATURE_NOTIFICATIONS_DEBUG = "false";
   });
 
   it("muestra un toast al recibir un evento WS simulado", async () => {

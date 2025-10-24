@@ -19,6 +19,11 @@ from backend.services.ai_service import PROVIDER_TIMEOUTS, AIService
 
 
 @pytest.fixture(autouse=True)
+def ensure_mistral_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AI_PROVIDER", "mistral")
+
+
+@pytest.fixture(autouse=True)
 def reset_ai_metrics() -> None:
     """Reinicia los contadores Prometheus entre pruebas."""
 
@@ -150,12 +155,8 @@ async def test_ai_metrics_increment_on_calls() -> None:
     )._value.get()  # type: ignore[attr-defined]
     assert failure_metric >= 1
 
-    success_metric = ai_requests_total.labels(
-        provider="huggingface", status="success"
-    )._value.get()  # type: ignore[attr-defined]
+    success_metric = ai_requests_total.labels(outcome="success")._value.get()  # type: ignore[attr-defined]
     assert success_metric == 1
 
-    failure_requests = ai_requests_total.labels(
-        provider="mistral", status="failure"
-    )._value.get()  # type: ignore[attr-defined]
+    failure_requests = ai_requests_total.labels(outcome="error")._value.get()  # type: ignore[attr-defined]
     assert failure_requests >= 1

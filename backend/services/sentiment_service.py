@@ -35,7 +35,9 @@ logger = get_logger(service="sentiment_service")
 if pipeline is not None:
     try:  # pragma: no cover - carga de modelo externa
         _sentiment_analyzer = pipeline("sentiment-analysis")
-    except OSError:  # pragma: no cover - modelo no disponible
+    except (
+        Exception
+    ):  # pragma: no cover - modelo no disponible o dependencias faltantes
         _sentiment_analyzer = None
 else:  # pragma: no cover - transformers no instalado
     _sentiment_analyzer = None

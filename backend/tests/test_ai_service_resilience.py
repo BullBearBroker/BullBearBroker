@@ -14,6 +14,7 @@ def anyio_backend() -> str:  # pragma: no cover - required by anyio plugin
 
 @pytest.fixture(autouse=True)
 def configure_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("AI_PROVIDER", "mistral")
     monkeypatch.setattr(
         ai_service_module.Config, "HUGGINGFACE_API_KEY", "token", raising=False
     )
@@ -117,7 +118,7 @@ async def test_corrupted_responses_trigger_local_fallback(
     assert result.text == "respuesta local"
     assert mistral.await_count == 3
     assert ollama.await_count == 3
-    assert sleep_mock.await_count == 4
+    assert sleep_mock.await_count == 6
     local_fallback.assert_awaited_once()
 
 

@@ -6,7 +6,7 @@ from prometheus_client import Counter, Gauge, Histogram
 ai_requests_total = Counter(
     "ai_requests_total",
     "Total de requests IA",
-    ["provider", "status"],
+    ["outcome"],
 )
 
 ai_latency_seconds = Histogram(
@@ -70,8 +70,8 @@ ai_provider_failures_total = Counter(
 
 ai_provider_requests_total = Counter(
     "ai_provider_requests_total",
-    "Llamadas a proveedor IA",
-    ["provider", "route"],
+    "Llamadas a proveedor IA (por estado)",
+    ["provider", "outcome"],
 )
 
 ai_provider_fallbacks_total = Counter(

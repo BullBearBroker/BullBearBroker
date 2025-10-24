@@ -26,39 +26,107 @@ especializado para acompañar decisiones de trading en tiempo real.
 ├── docker-compose.yml      # Orquestación de stack completo (backend, frontend, DB, Redis)
 ├── Dockerfile              # Imagen del backend (FastAPI + Uvicorn)
 ├── Makefile                # Atajos para Docker Compose y pruebas
-├── .env.sample             # Variables de entorno mínimas
+├── .env.example            # Guía rápida hacia los ejemplos versionados
 └── backend/tests/          # Suite de pruebas (autenticación, alertas, servicios...)
 ```
 
-## Variables de entorno
+## Gestión de variables de entorno
 
-El archivo [.env.sample](./.env.sample) lista los valores mínimos para correr el
-stack en local. Copia el archivo y ajusta los secretos antes de iniciar los
-servicios:
+El repositorio incluye plantillas sin secretos para cada servicio:
+
+- `./.env.example`: índice rápido que explica dónde viven las variables reales.
+- `backend/.env.example`: referencia del backend (copiala a `backend/.env.local`).
+- `frontend/.env.example`: referencia del frontend (copiala a `frontend/.env.local`).
+
+Pasos recomendados:
+
+1. Copiá `backend/.env.example` a `backend/.env.local` y completá los valores necesarios solo en tu máquina.
+2. Copiá `frontend/.env.example` a `frontend/.env.local`. Next.js solo expone variables que comienzan con `NEXT_PUBLIC_`.
+3. No subas archivos `.env*` con secretos: el `.gitignore` ya los protege y los ejemplos son documentación únicamente.
+
+Precedencia en runtime: variables ya presentes en el proceso > `.env.local` > `.env.staging`/`.env.production` > valores por defecto definidos en código. Los archivos `*.example` no se cargan automáticamente.
+
+Scripts útiles:
+
+- `make env-sync`: sincroniza `backend/.env.sample` desde el ejemplo principal.
+- `make env-validate-backend`: ejecuta `backend/scripts/validate_env.py` dentro del servicio `api`.
+- `make env-validate-frontend`: ejecuta `frontend/scripts/validate-env.mjs`.
+
+Antes de levantar los servicios por primera vez:
 
 ```bash
-cp .env.sample .env
+cp backend/.env.example backend/.env.local
+cp frontend/.env.example frontend/.env.local
 ```
 
-Campos destacados:
+Luego rellená los secretos manualmente y corré los validadores (`make env-validate-backend`, `make env-validate-frontend`) para verificar que no falte nada crítico.
 
-- **SECRET_KEY / ACCESS_TOKEN_SECRET / REFRESH_TOKEN_SECRET**: claves para firmar
-  JWT y sesiones.
-- **DATABASE_URL**: apunta por defecto al contenedor de PostgreSQL lanzado vía
-  Docker Compose (`postgresql+psycopg2://bullbear:bullbear@db:5432/bullbear`).
-- **REDIS_URL**: requerido para rate limiting y futuras colas de tareas.
-- **LOGIN_IP_LIMIT_TIMES / LOGIN_IP_LIMIT_SECONDS**: controlan el límite suave por IP
-  para `/api/auth/login`.
-- **BULLBEAR_DEFAULT_USER / PASSWORD**: credenciales sembradas automáticamente para pruebas.
-- **NEXT_PUBLIC_API_URL**: URL base que consume el frontend (en Docker se
-  resuelve a `http://backend:8000`).
-- **PUSH_VAPID_PUBLIC_KEY / PUSH_VAPID_PRIVATE_KEY**: claves VAPID usadas para
-  firmar notificaciones web push desde el backend. Genera un par con
-  `npx web-push generate-vapid-keys` y compártelas con el frontend.
-- **NEXT_PUBLIC_PUSH_VAPID_PUBLIC_KEY**: clave pública expuesta al navegador
-  para registrar la suscripción push mediante el Service Worker.
-- **AI_PROVIDER_KEYS**: configura `MISTRAL_API_KEY` o `HUGGINGFACE_API_KEY` para
-  habilitar respuestas del asistente con persistencia de historial.
+## QA (flujo unificado)
+
+1) Validar entornos
+   ```bash
+   make env-validate-backend
+   make env-validate-frontend
+   ```
+
+2) QA completo (genera `qa/QA_SUMMARY.md`)
+   ```bash
+   make qa-full
+   ```
+
+Artefactos:
+- `qa/backend-coverage.xml` (PyTest)
+- `qa/frontend-coverage/` (Jest)
+- `frontend/playwright-report/` (Playwright)
+
+## Web Push
+
+- Configurá `NEXT_PUBLIC_VAPID_PUBLIC_KEY` en `frontend/.env.local` y `VAPID_PRIVATE_KEY`,
+  `VAPID_PUBLIC_KEY`, `VAPID_SUBJECT` en `backend/.env.local`. Sin claves reales el flujo queda en modo seguro.
+- El `NotificationCenter` muestra un panel de depuración (solo en desarrollo) con acciones para pedir
+  permisos, suscribirse/desuscribirse y disparar pruebas. Los logs visibles ayudan a diagnosticar navegadores.
+- `make push-info` imprime si el backend carga las claves y qué valor tiene el frontend.
+- `make push-test` ejecuta `backend/scripts/send_test_push.py` dentro del contenedor y envía una notificación
+  básica a todas las suscripciones almacenadas.
+- Compatibilidad:
+  - **Chrome / Edge**: soporte completo; requiere gesto de usuario para solicitar permisos.
+  - **Firefox**: soportado; la UI de permisos puede mostrarse fuera de foco, asegúrate de que la pestaña esté activa.
+  - **Safari (macOS/iOS)**: requiere HTTPS o `http://localhost` y un gesto explícito; la notificación puede tardar
+    unos segundos en mostrarse.
+- Regla general: todas las suscripciones usan `userVisibleOnly: true` y el Service Worker muestra la notificación al
+  recibir un `push` antes de resolver la promesa del evento.
+
+### Web Push – Hardening
+
+- Retries con backoff exponencial (410/404 → marcadas para pruning, 429 → reintentos con backoff progresivo, 5xx → reintentos cortos) y logging con `endpoint_fingerprint` para preservar privacidad.
+- El servicio incrementa `fail_count`/`last_fail_at` y marca `pruning_marked` ante fallos críticos; ejecutá `make push-prune` (usa `backend/scripts/prune_stale_push_subs.py`) para limpiar suscripciones caducas.
+- Los healthchecks incluyen el subcomponente `push` (`/api/health` → `services.push`) para verificar la presencia de claves VAPID sin exponerlas.
+- Audit trail ligero via `AuditService`: altas/bajas y envíos de prueba quedan registrados en los logs de backend.
+- La UI respeta la flag `NEXT_PUBLIC_FEATURE_NOTIFICATIONS_DEBUG` (solo activa en desarrollo) y deshabilita la suscripción cuando detecta claves placeholder.
+
+## Secretos y .env
+
+- `backend/.env` es la fuente de verdad local para credenciales y URIs sensibles (no se versiona). Copiá solo lo necesario a `backend/.env.local` y `frontend/.env.local` para ejecutar la app.
+- `docker-compose.yml` utiliza `backend/.env.local` mediante `env_file`; nunca montes `.env.example` en contenedores.
+- Los archivos `.env.example`/`.env.sample` incluyen únicamente placeholders (# QA) y se sincronizan con `tools/sync_env_examples.py`.
+- Comandos útiles:
+  - `make env-validate-backend`
+  - `make env-validate-frontend`
+  - `make secrets-scan`
+- Regla estricta: ningún secreto real en código, docs ni archivos de ejemplo. Usa la checklist `qa/SECRETS_CHECKLIST.md` y el barrido `make secrets-scan` antes de publicar.
+- # QA: En redes sin IPv6, define `SUPABASE_DB_HOSTADDR` en `backend/.env.local` para forzar IPv4 (el valor se inserta como `hostaddr=<ip>` en `SUPABASE_DB_URL`).
+- # QA: Para forzar conexión directa sin PgBouncer usando un puente IPv4→IPv6, ejecutá `qa/direct_db_bridge.sh` (requiere `SUPABASE_DIRECT_USER` y `SUPABASE_DIRECT_PASS_URLENC` exportados si `backend/.env.local` no contiene las credenciales). El script levanta el puente con `socat`, reinicia el stack Docker y corre `make db-smoke`/`make db-migrate-direct`.
+- Secuencia recomendada para verificar la conexión directa (IPv4):
+  ```bash
+  docker compose down
+  docker compose up -d --build
+  make db-force-ipv4
+  make db-smoke
+  make db-migrate-direct
+  curl -s http://127.0.0.1:8000/api/health | jq .
+  ```
+- Si `make db-force-ipv4` devuelve `no_ipv4`, define manualmente `SUPABASE_DB_HOSTADDR=<IPv4>` en `backend/.env.local` y vuelve a ejecutar el comando.
+- Evitar pegar comentarios (`# …`) en el shell: zsh los interpreta como comandos si se parte la línea.
 
 ## Puesta en marcha con Docker Compose
 
@@ -285,3 +353,33 @@ python -m pip install -r backend/requirements-dev.txt
 pre-commit run --all-files (o make lint)
 pytest backend -q (debe quedar en verde)
 make postman crea postman/BullBearBroker.postman_collection.json
+
+## Running backend tests isolated on Supabase Session Pooler
+
+Some CI/dev envs are IPv4-only. Use Supabase Session Pooler (IPv4) and isolate the test run in a dedicated schema to avoid residual data and PgBouncer prepared-statement issues.
+
+### One-time
+```bash
+chmod +x qa/test_isolated.sh
+```
+
+```bash
+# Replace with your Session Pooler DSN from Supabase (user/pass redacted here):
+export SUPABASE_POOLER_URL='postgresql+psycopg://postgres.<project>:<password>@aws-1-us-east-2.pooler.supabase.com:5432/postgres'
+
+# Run isolated suite (creates a test_YYYYmmdd_HHMMSS schema, migrates it to head and runs tests)
+qa/test_isolated.sh
+
+# Optional: custom schema name, extra pytest opts, and cleanup at the end:
+qa/test_isolated.sh --schema my_ephemeral_schema --pytest-opts "-k rate_limits -q" --drop-after
+```
+
+The runner:
+- forces TLS (`sslmode=require`) and disables prepared statements for PgBouncer via SQLAlchemy connect args;
+- sets the `search_path` to the ephemeral schema;
+- runs Alembic migrations on that schema;
+- executes the suite without polluting other schemas.
+
+Notes
+- Keep secrets out of commits and terminals; the script masks user/password in its preview logs.
+- If your Pooler hostname differs (e.g. `aws-0-…`), just set `SUPABASE_POOLER_URL` accordingly.

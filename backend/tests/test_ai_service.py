@@ -13,6 +13,7 @@ def anyio_backend():
 
 @pytest.fixture(autouse=True)
 def configure_providers(monkeypatch):
+    monkeypatch.setenv("AI_PROVIDER", "mistral")
     monkeypatch.setattr(
         ai_service_module.Config, "HUGGINGFACE_API_KEY", "test-token", raising=False
     )

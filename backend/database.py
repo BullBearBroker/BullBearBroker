@@ -7,16 +7,24 @@ import os
 import threading
 from collections.abc import Callable, Generator
 from typing import Any, cast
+from urllib.parse import urlparse
 
-import sqlalchemy as sa
+from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import QueuePool
 
 from backend.core.logging_config import get_logger
 from backend.models.base import Base
-from backend.utils.config import Config
+from backend.utils.config import (
+    Config,
+    get_database_details,
+    get_database_url,
+)
 
 logger = get_logger(service="database")
+
+_DATABASE_DETAILS: dict[str, Any] = {}
 
 _TESTING_MODE = bool(getattr(Config, "TESTING", False)) or os.getenv(
     "TESTING", ""
@@ -26,6 +34,9 @@ _TESTING_MODE = bool(getattr(Config, "TESTING", False)) or os.getenv(
     "on",
     "yes",
 }
+
+_ENGINE: Engine | None = None
+_ENGINE_LOCK = threading.Lock()
 
 
 def _current_env() -> str:
@@ -96,6 +107,7 @@ def create_all_if_local(engine) -> None:
         return
 
     try:
+        # QA: create_all only in local
         Base.metadata.create_all(bind=engine)
     except Exception as error:  # pragma: no cover - defensive logging
         logger.warning(
@@ -144,68 +156,96 @@ def create_all_if_local(engine) -> None:
         )
 
 
-def _make_engine() -> Engine:
-    """Build a SQLAlchemy engine honouring current pool configuration."""
+def _build_engine_from_env() -> Engine:
+    """Build a SQLAlchemy engine honouring Supabase connection rules."""
 
-    database_url = (
-        os.environ.get("DATABASE_URL")
-        or os.environ.get("BULLBEAR_DB_URL")
-        or getattr(Config, "DATABASE_URL", "sqlite:///./bullbearbroker.db")
-    )
+    database_url = get_database_url()
+    if not database_url:
+        logger.error(
+            {
+                "service": "database",
+                "event": "database_url_missing",
+                "level": "error",
+            }
+        )
+        raise RuntimeError("Database URL not configured")
 
-    connect_args: dict[str, Any] = {}
+    use_pool = Config.DB_USE_POOL
+    connect_timeout = int(getattr(Config, "DB_CONNECT_TIMEOUT", 10))
+
+    schema_override = os.getenv("TEST_SCHEMA")
+
     if database_url.startswith("sqlite"):
-        connect_args["check_same_thread"] = False
-
-    engine_kwargs: dict[str, Any] = {
-        "future": True,
-        "echo": False,
-        "connect_args": connect_args,
-    }
-
-    if not database_url.startswith("sqlite"):
-        # QA 2.8: SQLAlchemy pool tuning for PgBouncer (transaction mode)
-        pool_size_env = os.getenv("SQLALCHEMY_POOL_SIZE")
-        max_overflow_env = os.getenv("SQLALCHEMY_MAX_OVERFLOW")
-        pool_recycle_env = os.getenv("SQLALCHEMY_POOL_RECYCLE")
-        pool_timeout_env = os.getenv("SQLALCHEMY_POOL_TIMEOUT")
-        prefer_env = not os.getenv("PYTEST_CURRENT_TEST")
-
-        if pool_size_env and prefer_env:
-            pool_size = int(pool_size_env)
-        else:
-            pool_size = int(getattr(Config, "DB_POOL_SIZE", 5))
-
-        if max_overflow_env and prefer_env:
-            max_overflow = int(max_overflow_env)
-        else:
-            max_overflow = int(getattr(Config, "DB_MAX_OVERFLOW", 5))
-
-        if pool_recycle_env and prefer_env:
-            pool_recycle = int(pool_recycle_env)
-        else:
-            pool_recycle = int(getattr(Config, "DB_POOL_RECYCLE", 1800))
-
-        if pool_timeout_env and prefer_env:
-            pool_timeout = int(pool_timeout_env)
-        else:
-            pool_timeout = int(getattr(Config, "DB_POOL_TIMEOUT", 30))
-        pool_pre_ping = (
-            os.getenv(
-                "SQLALCHEMY_POOL_PRE_PING",
-                "true",
-            ).lower()
-            == "true"
+        engine = cast(
+            Engine,
+            create_engine(
+                database_url,
+                future=True,
+                echo=False,
+                connect_args={"check_same_thread": False},
+            ),
         )
-        engine_kwargs.update(
-            pool_size=pool_size,
-            max_overflow=max_overflow,
-            pool_recycle=pool_recycle,
-            pool_timeout=pool_timeout,
-            pool_pre_ping=pool_pre_ping,
-        )
+        connect_args: dict[str, Any] = {"check_same_thread": False}
+    else:
+        if use_pool:
+            connect_args = {
+                "sslmode": "require",
+                "prepare_threshold": None,
+                "connect_timeout": connect_timeout,
+            }
+            if schema_override:
+                connect_args["options"] = f"-c search_path={schema_override},public"
+            pool_size = getattr(Config, "DB_POOL_SIZE", None)
+            if pool_size is None:
+                pool_size = getattr(Config, "POOL_SIZE", 5)
+            max_overflow = getattr(Config, "DB_MAX_OVERFLOW", None)
+            if max_overflow is None:
+                max_overflow = getattr(Config, "MAX_OVERFLOW", 10)
+            pool_timeout = getattr(Config, "DB_POOL_TIMEOUT", None)
+            if pool_timeout is None:
+                pool_timeout = getattr(Config, "POOL_TIMEOUT", 30)
+            pool_recycle = getattr(Config, "DB_POOL_RECYCLE", None)
+            if pool_recycle is None:
+                pool_recycle = getattr(Config, "POOL_RECYCLE", 1800)
+            engine = cast(
+                Engine,
+                create_engine(
+                    database_url,
+                    future=True,
+                    echo=False,
+                    poolclass=QueuePool,
+                    pool_size=pool_size,
+                    max_overflow=max_overflow,
+                    pool_timeout=pool_timeout,
+                    pool_recycle=pool_recycle,
+                    pool_pre_ping=True,
+                    connect_args=connect_args,
+                ),
+            )
+        else:
+            connect_args = {
+                "connect_timeout": connect_timeout,
+                "prepared_statement_cache_size": 0,
+            }
+            if schema_override:
+                connect_args["options"] = f"-c search_path={schema_override},public"
+            engine = cast(
+                Engine,
+                create_engine(
+                    database_url,
+                    future=True,
+                    echo=False,
+                    poolclass=QueuePool,
+                    pool_size=int(getattr(Config, "POOL_SIZE", 5)),
+                    max_overflow=int(getattr(Config, "MAX_OVERFLOW", 10)),
+                    pool_timeout=int(getattr(Config, "POOL_TIMEOUT", 30)),
+                    pool_recycle=int(getattr(Config, "POOL_RECYCLE", 1800)),
+                    pool_pre_ping=True,
+                    connect_args=connect_args,
+                ),
+            )
 
-    engine = cast(Engine, sa.create_engine(database_url, **engine_kwargs))
+    _log_engine_initialization(database_url, connect_args, use_pool)
     create_all_if_local(engine)
 
     if _TESTING_MODE and getattr(engine, "dialect", None) is not None:
@@ -225,20 +265,72 @@ def _make_engine() -> Engine:
     return engine
 
 
-def _is_valid_engine(obj: Any) -> bool:
-    if obj is None:
-        return False
+def _log_engine_initialization(
+    database_url: str, connect_args: dict[str, Any], use_pool: bool
+) -> None:
+    """Emit a sanitized log containing database connectivity metadata."""
+
+    global _DATABASE_DETAILS
+
     try:
-        hash(obj)
-    except Exception:
-        return False
-    return all(
-        callable(getattr(obj, attr, None)) for attr in ("dispose", "connect")
-    ) and hasattr(getattr(obj, "dialect", None), "name")
+        details = get_database_details()
+        _DATABASE_DETAILS = dict(details)
+    except Exception as exc:  # pragma: no cover - defensive logging only
+        logger.warning(
+            {
+                "service": "database",
+                "event": "database_details_unavailable",
+                "error": str(exc),
+                "level": "warning",
+            }
+        )
+        details = {
+            "pool": "pgbouncer" if use_pool else "direct",
+            "mode": "pooler" if use_pool else "direct",
+            "ipv4_forced": False,
+        }
 
+    parsed = urlparse(database_url)
+    host = parsed.hostname or "localhost"
+    port = parsed.port or (6543 if use_pool else 5432)
+    ipv4_forced = bool(details.get("ipv4_forced"))
+    mode = details.get("mode", "pooler" if use_pool else "direct")
 
-_ENGINE_CACHE: Engine | None = None
-_ENGINE_LOCK = threading.Lock()
+    prepared_statement_cache_size = (
+        connect_args.get("prepared_statement_cache_size") if not use_pool else None
+    )
+
+    log_payload = {
+        "service": "database",
+        "event": "database_engine_initialized",
+        "host": host,
+        "port": port,
+        "pool": details.get("pool", "direct"),
+        "mode": mode,
+        "sslmode": details.get("sslmode"),
+        "connect_timeout": connect_args.get("connect_timeout"),
+        "prepared_statement_cache_size": prepared_statement_cache_size,
+        "database_ipv4_forced": ipv4_forced,
+        "level": "info",
+    }
+    logger.info(log_payload)
+    logger.info(
+        "# QA: database_ipv4_forced", extra={"database_ipv4_forced": ipv4_forced}
+    )
+
+    _DATABASE_DETAILS.update(
+        {
+            "host": host,
+            "port": port,
+            "mode": mode,
+            "pool": details.get("pool", "direct"),
+            "sslmode": details.get("sslmode"),
+            "connect_timeout": connect_args.get("connect_timeout"),
+            "ipv4_forced": ipv4_forced,
+            "hostaddr": details.get("hostaddr"),
+        }
+    )
+
 
 _SESSIONMAKER = sessionmaker(autocommit=False, autoflush=False, future=True)
 
@@ -263,80 +355,57 @@ SessionLocal = _SessionFactoryProxy(_SESSIONMAKER)
 
 def _ensure_session_bind() -> Engine:
     engine_obj = get_engine()
-    if not _is_valid_engine(engine_obj):
-        with _ENGINE_LOCK:
-            engine_obj = _make_engine()
-            if not _is_valid_engine(engine_obj):
-                raise RuntimeError("Engine not available (invalid stub detected)")
-            global _ENGINE_CACHE
-            _ENGINE_CACHE = cast(Engine, engine_obj)
-    _SESSIONMAKER.configure(bind=cast(Engine, engine_obj))
-    return cast(Engine, engine_obj)
+    _SESSIONMAKER.configure(bind=engine_obj)
+    return engine_obj
 
 
-def get_engine() -> Engine | Any:
-    """Return a cached SQLAlchemy engine, rebuilding if the cache is invalid."""
+def get_engine() -> Engine:
+    """Return a singleton SQLAlchemy engine, failing fast on initialization errors."""
 
-    global _ENGINE_CACHE
+    global _ENGINE
+    if _ENGINE is not None:
+        return _ENGINE
+
     with _ENGINE_LOCK:
-        if _ENGINE_CACHE is not None and _is_valid_engine(_ENGINE_CACHE):
-            return _ENGINE_CACHE
+        if _ENGINE is not None:
+            return _ENGINE
+        try:
+            engine_obj = _build_engine_from_env()
+            if hasattr(engine_obj, "connect"):
+                with engine_obj.connect() as connection:
+                    connection.exec_driver_sql("SELECT 1")
+        except Exception as exc:  # pragma: no cover - surfaced to callers/tests
+            logger.exception(
+                {
+                    "service": "database",
+                    "event": "engine_init_failed",
+                    "error": str(exc),
+                }
+            )
+            raise RuntimeError(f"Engine initialization failed: {exc}") from exc
 
-        candidate = _make_engine()
-        if _is_valid_engine(candidate):
-            _ENGINE_CACHE = cast(Engine, candidate)
-            _SESSIONMAKER.configure(bind=_ENGINE_CACHE)
-            return _ENGINE_CACHE
-
-        return candidate
-
-
-class _EngineProxy:
-    def __getattr__(self, name: str) -> Any:
-        engine_obj = get_engine()
-        if not _is_valid_engine(engine_obj):
-            with _ENGINE_LOCK:
-                real_engine = _make_engine()
-                if not _is_valid_engine(real_engine):
-                    raise RuntimeError("Engine not available (invalid stub detected)")
-                global _ENGINE_CACHE
-                _ENGINE_CACHE = cast(Engine, real_engine)
-                engine_obj = _ENGINE_CACHE
-        return getattr(engine_obj, name)
+        _ENGINE = engine_obj
+        if hasattr(_SESSIONMAKER, "configure"):
+            _SESSIONMAKER.configure(bind=_ENGINE)
+        return _ENGINE
 
 
-engine = _EngineProxy()
-
-
-def _initialize_engine_cache() -> None:
-    """Prime the engine cache on import so tests can capture create_engine kwargs."""
-
-    global _ENGINE_CACHE
-    try:
-        candidate = _make_engine()
-    except Exception:
-        return
-
-    if _is_valid_engine(candidate):
-        with _ENGINE_LOCK:
-            _ENGINE_CACHE = cast(Engine, candidate)
-            _SESSIONMAKER.configure(bind=_ENGINE_CACHE)
-
-
-_initialize_engine_cache()
+# Prime engine on import so dependent modules get a ready-to-use instance.
+engine = get_engine()
 
 
 def reset_engine() -> None:
     """Reset the cached engine, useful for test suites that monkeypatch SQLAlchemy."""
 
-    global _ENGINE_CACHE
+    global _ENGINE
     with _ENGINE_LOCK:
         try:
-            if _ENGINE_CACHE is not None and _is_valid_engine(_ENGINE_CACHE):
-                _ENGINE_CACHE.dispose()
+            if _ENGINE is not None:
+                _ENGINE.dispose()
         finally:
-            _ENGINE_CACHE = None
-            _SESSIONMAKER.configure(bind=None)
+            _ENGINE = None
+            if hasattr(_SESSIONMAKER, "configure"):
+                _SESSIONMAKER.configure(bind=None)
 
 
 def get_db() -> Generator:
@@ -348,4 +417,18 @@ def get_db() -> Generator:
         db.close()
 
 
-__all__ = ["Base", "engine", "SessionLocal", "get_engine", "reset_engine", "get_db"]
+def get_database_diagnostics() -> dict[str, Any]:
+    """Expose cached database connection metadata for health checks."""
+
+    return dict(_DATABASE_DETAILS)
+
+
+__all__ = [
+    "Base",
+    "engine",
+    "SessionLocal",
+    "get_engine",
+    "reset_engine",
+    "get_db",
+    "get_database_diagnostics",
+]

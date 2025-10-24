@@ -22,7 +22,8 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 
 
-PROVIDER_LABEL = "Mistral"
+PROVIDER_NAME = "Mistral"
+PROVIDER_METRIC = "mistral"
 
 
 class MistralAPIError(Exception):
@@ -151,7 +152,6 @@ class MistralService:
         payload: dict[str, Any],
     ) -> dict[str, Any]:
         route = get_current_route()
-        ai_provider_requests_total.labels(PROVIDER_LABEL, route).inc()
         start = time.perf_counter()
         try:
             async with session.post(
@@ -164,15 +164,16 @@ class MistralService:
                 if status_code == 200:
                     data = await response.json()
                     duration = time.perf_counter() - start
-                    ai_provider_latency_seconds.labels(PROVIDER_LABEL, route).observe(
+                    ai_provider_latency_seconds.labels(PROVIDER_NAME, route).observe(
                         duration
                     )
+                    ai_provider_requests_total.labels(PROVIDER_METRIC, "success").inc()
                     self._last_reason = None
                     logger.info(
                         json.dumps(
                             {
                                 "ai_event": "provider_call",
-                                "provider": PROVIDER_LABEL,
+                                "provider": PROVIDER_NAME,
                                 "route": route,
                                 "latency_ms": round(duration * 1000, 2),
                                 "status": "ok",
@@ -185,16 +186,17 @@ class MistralService:
                 error_body = await response.text()
                 reason = self._map_reason(status_code)
                 duration = time.perf_counter() - start
-                ai_provider_latency_seconds.labels(PROVIDER_LABEL, route).observe(
+                ai_provider_latency_seconds.labels(PROVIDER_NAME, route).observe(
                     duration
                 )
-                ai_provider_failures_total.labels(PROVIDER_LABEL, reason, route).inc()
+                ai_provider_failures_total.labels(PROVIDER_NAME, reason, route).inc()
+                ai_provider_requests_total.labels(PROVIDER_METRIC, "error").inc()
                 self._last_reason = reason
                 logger.warning(
                     json.dumps(
                         {
                             "ai_event": "provider_call",
-                            "provider": PROVIDER_LABEL,
+                            "provider": PROVIDER_NAME,
                             "route": route,
                             "latency_ms": round(duration * 1000, 2),
                             "status": "error",
@@ -210,14 +212,15 @@ class MistralService:
         except TimeoutError as exc:
             duration = time.perf_counter() - start
             reason = "timeout"
-            ai_provider_latency_seconds.labels(PROVIDER_LABEL, route).observe(duration)
-            ai_provider_failures_total.labels(PROVIDER_LABEL, reason, route).inc()
+            ai_provider_latency_seconds.labels(PROVIDER_NAME, route).observe(duration)
+            ai_provider_failures_total.labels(PROVIDER_NAME, reason, route).inc()
+            ai_provider_requests_total.labels(PROVIDER_METRIC, "error").inc()
             self._last_reason = reason
             logger.warning(
                 json.dumps(
                     {
                         "ai_event": "provider_call",
-                        "provider": PROVIDER_LABEL,
+                        "provider": PROVIDER_NAME,
                         "route": route,
                         "latency_ms": round(duration * 1000, 2),
                         "status": "error",
@@ -233,14 +236,15 @@ class MistralService:
         except aiohttp.ClientError as exc:
             duration = time.perf_counter() - start
             reason = "unknown"
-            ai_provider_latency_seconds.labels(PROVIDER_LABEL, route).observe(duration)
-            ai_provider_failures_total.labels(PROVIDER_LABEL, reason, route).inc()
+            ai_provider_latency_seconds.labels(PROVIDER_NAME, route).observe(duration)
+            ai_provider_failures_total.labels(PROVIDER_NAME, reason, route).inc()
+            ai_provider_requests_total.labels(PROVIDER_METRIC, "error").inc()
             self._last_reason = reason
             logger.warning(
                 json.dumps(
                     {
                         "ai_event": "provider_call",
-                        "provider": PROVIDER_LABEL,
+                        "provider": PROVIDER_NAME,
                         "route": route,
                         "latency_ms": round(duration * 1000, 2),
                         "status": "error",

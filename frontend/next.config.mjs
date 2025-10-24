@@ -60,6 +60,21 @@ const nextConfig = {
     // 🧩 Bloque 8A
     NEXT_PUBLIC_VAPID_KEY: process.env.NEXT_PUBLIC_VAPID_KEY,
   },
+  // QA: CSP example – habilitar cuando la infraestructura soporte cabeceras adicionales
+  // async headers() {
+  //   return [
+  //     {
+  //       source: "/(.*)",
+  //       headers: [
+  //         {
+  //           key: "Content-Security-Policy",
+  //           value:
+  //             "default-src 'self'; script-src 'self'; connect-src 'self' https://your-api.example.com; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; frame-src 'self';",
+  //         },
+  //       ],
+  //     },
+  //   ];
+  // },
 };
 
 export default withBundleAnalyzer(nextConfig);

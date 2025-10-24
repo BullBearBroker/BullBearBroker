@@ -55,6 +55,12 @@ def get_vapid_public_key() -> dict[str, str]:
     return {"vapidPublicKey": settings.VAPID_PUBLIC_KEY}
 
 
+@router.get("/vapid-public-key")
+def get_vapid_public_key_legacy() -> dict[str, str]:
+    # QA: alias legacy para clientes antiguos.
+    return {"vapidPublicKey": settings.VAPID_PUBLIC_KEY}
+
+
 # 🧩 Codex fix
 @router.get("/test", status_code=status.HTTP_200_OK)
 def notifications_healthcheck() -> dict[str, str]:

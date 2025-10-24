@@ -7,12 +7,10 @@ services:
       dockerfile: Dockerfile
     container_name: bullbear_api
     env_file:
-      - backend/.env  # QA 2.9: env order (staging overrides base; local overrides ambos)
-      - backend/.env.staging
-      - backend/.env.staging.local
-      # - backend/.env.production  # QA 2.8: ejemplo para despliegues productivos
-      # - backend/.env.production.local
+      - backend/.env.local  # QA: local overrides copied from backend/.env.example
     environment:
+      # QA: ensure containers default to staging runtime unless overridden
+      APP_ENV: "staging"
       BULLBEAR_ENV: "development"
       BULLBEAR_DB_URL: "sqlite:////app/data/app.db"
       BULLBEAR_RATE_LIMIT_BACKEND: "memory"

@@ -72,10 +72,8 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             logging.info(json.dumps(log_data))
             # ✅ Codex fix: registrar métrica genérica HTTP→IA
             if "/api/ai" in request.url.path:
-                ai_requests_total.labels(
-                    provider="unknown",
-                    status=str(status_code),
-                ).inc()
+                outcome = "success" if 200 <= status_code < 400 else "error"
+                ai_requests_total.labels(outcome=outcome).inc()
 
         if response is None:
             # ✅ Codex fix: Defensive guard for unexpected middleware behavior

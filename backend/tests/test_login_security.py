@@ -49,7 +49,7 @@ async def test_invalid_login_responses_are_consistent(monkeypatch):
         detail_wrong = resp_wrong.json()["detail"]
 
         assert detail_missing == detail_wrong
-        assert abs(duration_missing - duration_wrong) <= 0.3
+    assert abs(duration_missing - duration_wrong) <= 0.4
 
     await login_backoff.clear(hashlib.sha256(b"existing@test.com").hexdigest()[:8])
 

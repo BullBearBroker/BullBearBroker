@@ -1,22 +1,22 @@
 from __future__ import annotations
 
+import logging
 import os
 from logging.config import fileConfig
+from urllib.parse import parse_qsl, urlencode, urlparse
 
 import sqlalchemy as sa
 from alembic import context
 from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
 
-from backend import (  # noqa: F401  (asegura que se importen los modelos)
-    models as _models,
-)
-
 # 🚩 Importa la Base y registra todos los modelos en la metadata
 from backend.models import Base
+from backend.utils.config import get_database_url
 
 # Alembic Config object
 config = context.config
+logger = logging.getLogger("alembic.env")
 
 # Logging de Alembic (opcional)
 if config.config_file_name is not None:
@@ -26,13 +26,35 @@ if config.config_file_name is not None:
 load_dotenv()
 
 # Obtiene la URL de la DB desde el entorno o desde alembic.ini como fallback
-database_url = (
-    os.getenv("DATABASE_URL")
-    or os.getenv("BULLBEAR_DB_URL")
-    or config.get_main_option("sqlalchemy.url")
-)
+db_use_pool = os.getenv("DB_USE_POOL", "false").lower() == "true"
+database_url = get_database_url()
+hostaddr_override = os.getenv("SUPABASE_DB_HOSTADDR")
+
 if not database_url:
-    raise RuntimeError("DATABASE_URL debe estar configurada para ejecutar migraciones")
+    raise RuntimeError(
+        "SUPABASE_DB_URL debe estar configurada para ejecutar migraciones"
+    )
+
+if not db_use_pool:
+    if hostaddr_override and "hostaddr=" not in database_url:
+        parsed_override = urlparse(database_url)
+        query_items_override = dict(
+            parse_qsl(parsed_override.query, keep_blank_values=True)
+        )
+        query_items_override["hostaddr"] = hostaddr_override
+        database_url = urlunparse(
+            parsed_override._replace(query=urlencode(query_items_override))
+        )
+        logger.info(
+            "# QA: alembic using direct URL (env hostaddr override)",
+            extra={"ipv4_forced": True},
+        )
+    parsed = urlparse(database_url)
+    query_items = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    ipv4_forced = "hostaddr" in query_items
+    logger.info("# QA: alembic using direct URL", extra={"ipv4_forced": ipv4_forced})
+else:
+    logger.info("alembic using pooler URL")
 
 # Inyecta la URL en la config activa (para offline y online)
 config.set_main_option("sqlalchemy.url", database_url)
@@ -71,6 +93,12 @@ def run_migrations_online() -> None:
     """
     configuration = config.get_section(config.config_ini_section) or {}
     configuration["sqlalchemy.url"] = config.get_main_option("sqlalchemy.url")
+
+    connect_args: dict[str, object] = {}
+    url = configuration["sqlalchemy.url"]
+    if url and not url.startswith("sqlite") and not db_use_pool:
+        connect_args["prepared_statement_cache_size"] = 0
+    configuration["sqlalchemy.connect_args"] = connect_args
 
     connectable = engine_from_config(
         configuration,

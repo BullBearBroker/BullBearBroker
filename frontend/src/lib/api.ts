@@ -508,28 +508,52 @@ export interface PushConfigResponse {
 }
 
 export async function fetchVapidPublicKey(): Promise<string | null> {
-  try {
-    const { vapidPublicKey } = await request<PushConfigResponse>(
-      "/api/notifications/vapid-public-key",
-    );
+  const readKey = async (path: string) => {
+    const { vapidPublicKey } = await request<PushConfigResponse>(path);
     if (typeof vapidPublicKey === "string" && vapidPublicKey.length > 0) {
       return vapidPublicKey;
     }
     return null;
-  } catch (error) {
-    if (process.env.NODE_ENV !== "production") {
-      console.warn("Failed to retrieve VAPID public key from backend", error);
+  };
+
+  const candidates = ["/api/notifications/vapid-key", "/api/notifications/vapid-public-key"];
+
+  for (const path of candidates) {
+    try {
+      const found = await readKey(path);
+      if (found) {
+        return found;
+      }
+    } catch (error) {
+      if (error instanceof HttpError && error.status === 404) {
+        continue;
+      }
+      if (process.env.NODE_ENV !== "production") {
+        console.warn(`Failed to retrieve VAPID public key from ${path}`, error);
+      }
     }
-    return null;
   }
+
+  return null;
 }
 
 export function subscribePush(payload: PushSubscriptionPayload, token: string) {
   return request<PushSubscriptionResponse>(
-    "/api/notifications/subscribe", // ✅ Codex fix: usamos el endpoint final consolidado para las suscripciones push.
+    "/api/push/subscribe", // QA: endpoint unificado para alta de suscripciones push
     {
       method: "POST",
       body: JSON.stringify(payload),
+    },
+    token,
+  );
+}
+
+export function unsubscribePush(endpoint: string, token: string) {
+  return request<{ removed: boolean }>(
+    "/api/push/subscribe",
+    {
+      method: "DELETE",
+      body: JSON.stringify({ endpoint }),
     },
     token,
   );
