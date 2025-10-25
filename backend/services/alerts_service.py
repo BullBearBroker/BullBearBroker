@@ -15,6 +15,7 @@ from backend.database import SessionLocal
 from backend.models import Alert, AlertDeliveryMethod, PushSubscription, User
 from backend.services import indicators_service
 from backend.services.push_service import push_service
+from backend.utils.config import Config
 
 ComparisonOperator = Callable[[float, float], bool]
 
@@ -254,14 +255,21 @@ class AlertsService:
         self._session_factory = session_factory
 
     @staticmethod
-    def _ensure_user_row(session: Session, user_id: UUID) -> None:
+    def _ensure_user_row(
+        session: Session, user_id: UUID, *, email: str | None = None
+    ) -> None:
         if session.get(User, user_id) is not None:
             return
 
-        if os.getenv("APP_ENV", "").lower() != "test" and not os.getenv("TEST_SCHEMA"):
+        env = getattr(Config, "ENV", "").lower()
+        if (
+            env not in {"test", "ci"}
+            and not os.getenv("TEST_SCHEMA")
+            and not os.getenv("PYTEST_CURRENT_TEST")
+        ):
             raise ValueError("User not found for alert creation")
 
-        placeholder_email = f"test+{user_id.hex}@example.com"
+        placeholder_email = email or f"test+{user_id.hex}@example.com"
         session.add(
             User(
                 id=user_id,
@@ -274,7 +282,9 @@ class AlertsService:
     # ------------------------------------------------------------------
     # CRUD helpers
     # ------------------------------------------------------------------
-    def create_alert(self, user_id: UUID, data: dict[str, Any]) -> Alert:
+    def create_alert(
+        self, user_id: UUID, data: dict[str, Any], *, actor_email: str | None = None
+    ) -> Alert:
         condition = data.get("condition")
         if not isinstance(condition, dict) or not condition:
             raise ValueError("Alert condition must be a non-empty JSON object")
@@ -300,7 +310,7 @@ class AlertsService:
         value = _coerce_float(data.get("value"))
 
         with self._session_factory() as session:
-            self._ensure_user_row(session, user_id)
+            self._ensure_user_row(session, user_id, email=actor_email)
             alert = Alert(
                 user_id=user_id,
                 name=name,

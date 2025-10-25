@@ -47,13 +47,13 @@ class CacheClient:
                 data = await self._redis.get(namespaced_key)
             except Exception as exc:  # pragma: no cover - depende de redis
                 print(f"CacheClient: error obteniendo valor de Redis ({exc})")
-                return None
-            if data is None:
-                return None
-            try:
-                return json.loads(data)
-            except json.JSONDecodeError:
-                return data
+            else:
+                if data is None:
+                    return None
+                try:
+                    return json.loads(data)
+                except json.JSONDecodeError:
+                    return data
 
         async with self._lock:
             cached = self._memory_cache.get(namespaced_key)

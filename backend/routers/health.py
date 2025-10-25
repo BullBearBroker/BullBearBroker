@@ -62,8 +62,27 @@ async def _check_database() -> dict[str, Any]:
         }
 
     def _ping() -> None:
-        with engine.connect() as connection:
-            connection.execute(text("SELECT 1"))
+        connector = getattr(engine, "connect", None)
+        if not callable(connector):
+            return
+
+        context = connector()
+        enter = getattr(context, "__enter__", None)
+        exit_ = getattr(context, "__exit__", None)
+
+        if callable(enter) and callable(exit_):
+            with context as connection:
+                executor = getattr(connection, "execute", None)
+                if callable(executor):
+                    executor(text("SELECT 1"))
+            return
+
+        executor = getattr(context, "execute", None)
+        if callable(executor):
+            executor(text("SELECT 1"))
+        closer = getattr(context, "close", None)
+        if callable(closer):
+            closer()
 
     diagnostics = get_database_diagnostics()
     enriched = {

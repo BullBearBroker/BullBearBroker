@@ -151,6 +151,32 @@ class UserService:
             session.flush()  # ✅ se asegura de generar el ID
             return self._user_with_relationships(session, user)
 
+    def create_user_with_id(
+        self,
+        *,
+        user_id: UUID | None,
+        email: str,
+        password_hash: str = "!",
+    ) -> User:
+        with self._session_scope() as session:
+            if user_id is not None:
+                existing = session.get(User, user_id)
+                if existing is not None:
+                    return self._user_with_relationships(session, existing)
+
+            existing = session.query(User).filter(User.email == email).first()
+            if existing is not None:
+                return self._user_with_relationships(session, existing)
+
+            user = User(
+                id=user_id or uuid4(),
+                email=email,
+                password_hash=password_hash,
+            )
+            session.add(user)
+            session.flush()
+            return self._user_with_relationships(session, user)
+
     def ensure_user(self, email: str, password: str) -> User:
         """Garantiza que exista un usuario con las credenciales indicadas."""
 
@@ -182,6 +208,13 @@ class UserService:
                 return None
             session.expunge(user)  # ✅ suficiente
             return user
+
+    def get_user_by_id(self, user_id: UUID) -> User | None:
+        with self._session_scope() as session:
+            user = session.get(User, user_id)
+            if not user:
+                return None
+            return self._user_with_relationships(session, user)
 
     def authenticate_user(self, email: str, password: str) -> User:
         user = self.get_user_by_email(email)
