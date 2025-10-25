@@ -229,6 +229,18 @@ def _build_engine_from_env() -> Engine:
             }
             if schema_override:
                 connect_args["options"] = f"-c search_path={schema_override},public"
+            pool_size = getattr(Config, "DB_POOL_SIZE", None)
+            if pool_size is None:
+                pool_size = getattr(Config, "POOL_SIZE", 5)
+            max_overflow = getattr(Config, "DB_MAX_OVERFLOW", None)
+            if max_overflow is None:
+                max_overflow = getattr(Config, "MAX_OVERFLOW", 10)
+            pool_timeout = getattr(Config, "DB_POOL_TIMEOUT", None)
+            if pool_timeout is None:
+                pool_timeout = getattr(Config, "POOL_TIMEOUT", 30)
+            pool_recycle = getattr(Config, "DB_POOL_RECYCLE", None)
+            if pool_recycle is None:
+                pool_recycle = getattr(Config, "POOL_RECYCLE", 1800)
             engine = cast(
                 Engine,
                 create_engine(
@@ -236,10 +248,10 @@ def _build_engine_from_env() -> Engine:
                     future=True,
                     echo=False,
                     poolclass=QueuePool,
-                    pool_size=int(getattr(Config, "POOL_SIZE", 5)),
-                    max_overflow=int(getattr(Config, "MAX_OVERFLOW", 10)),
-                    pool_timeout=int(getattr(Config, "POOL_TIMEOUT", 30)),
-                    pool_recycle=int(getattr(Config, "POOL_RECYCLE", 1800)),
+                    pool_size=int(pool_size),
+                    max_overflow=int(max_overflow),
+                    pool_timeout=int(pool_timeout),
+                    pool_recycle=int(pool_recycle),
                     pool_pre_ping=True,
                     connect_args=connect_args,
                 ),

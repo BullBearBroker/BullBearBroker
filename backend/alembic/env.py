@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from logging.config import fileConfig
-from urllib.parse import parse_qsl, urlencode, urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import sqlalchemy as sa
 from alembic import context

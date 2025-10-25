@@ -211,6 +211,11 @@ Cuando trabajes fuera de `local` debes aplicar las migraciones manualmente:
 make migrate          # docker compose exec backend alembic upgrade head
 ```
 
+Si necesitás inspeccionar las tablas en tu base local cuando el perfil activo es
+`staging`, podés forzar el autocreate configurando `ENV=local` o `ENV=development`
+en el archivo de Compose, o ejecutar manualmente `docker compose exec <servicio-api>
+alembic upgrade head` contra la base que esté corriendo.
+
 💡 Recomendación: tras cada despliegue en staging/prod ejecuta `make migrate` (o el comando equivalente en tu pipeline) antes de exponer la API. Esto garantiza que el esquema coincida con la última versión del código.
 
 ## Testing
